@@ -85,11 +85,28 @@ export interface Dns {
 }
 
 export function call<T>(command: string, args?: Record<string, unknown>, fallback?: T): Promise<T> {
-  return inTauri ? invoke<T>(command, args) : Promise.resolve(fallback as T);
+  if (inTauri) return invoke<T>(command, args);
+  const shown = vitrina()?.call(command, args);
+  return Promise.resolve((shown === undefined ? fallback : shown) as T);
 }
 
 export function on<T>(event: string, handler: (payload: T) => void) {
+  subscribe(event, handler);
+}
+
+// la vitrina: la misma interfaz en un navegador con datos inventados, para grabar lo del github
+interface Vitrina {
+  call(command: string, args?: Record<string, unknown>): unknown;
+  on(event: string, handler: (payload: never) => void): void;
+}
+
+function vitrina(): Vitrina | undefined {
+  return (window as unknown as { __vitrina?: Vitrina }).__vitrina;
+}
+
+function subscribe<T>(event: string, handler: (payload: T) => void) {
   if (inTauri) void listen<T>(event, (e) => handler(e.payload));
+  else vitrina()?.on(event, handler as (payload: never) => void);
 }
 
 export interface ChordEvent {
@@ -171,17 +188,16 @@ export interface Captured {
 const inTauri = "__TAURI_INTERNALS__" in window;
 
 export function onPlace(handler: (place: Place) => void) {
-  if (!inTauri) return;
-  void listen<Place>("place", (e) => handler(e.payload));
-  void invoke<Place>("get_place").then(handler);
+  subscribe("place", handler);
+  if (inTauri) void invoke<Place>("get_place").then(handler);
 }
 
 export function onSelect(handler: (phase: "start" | "cancel") => void) {
-  if (inTauri) void listen<"start" | "cancel">("select", (e) => handler(e.payload));
+  subscribe("select", handler);
 }
 
 export function onCaptured(handler: (result: Captured) => void) {
-  if (inTauri) void listen<Captured>("captured", (e) => handler(e.payload));
+  subscribe("captured", handler);
 }
 
 export function captureCommit(box: { x: number; y: number; w: number; h: number }): Promise<Captured> {
@@ -194,7 +210,7 @@ export function captureDiscard() {
 }
 
 export function onSettingsRequested(handler: () => void) {
-  if (inTauri) void listen("settings", handler);
+  subscribe("settings", handler);
 }
 
 const DEFAULTS: Settings = {
@@ -243,14 +259,16 @@ const DEFAULTS: Settings = {
 };
 
 export function onKey(handler: (vk: number) => void) {
-  if (inTauri) void listen<number>("key", (e) => handler(e.payload));
+  subscribe("key", handler);
 }
 
 export function getSettings(): Promise<Settings> {
-  return inTauri ? invoke<Settings>("get_settings") : Promise.resolve({ ...DEFAULTS });
+  if (inTauri) return invoke<Settings>("get_settings");
+  return Promise.resolve({ ...DEFAULTS, ...((vitrina()?.call("get_settings") as Partial<Settings> | undefined) ?? {}) });
 }
 
 export function setSettings(settings: Settings): Promise<void> {
+  if (!inTauri) vitrina()?.call("set_settings", { settings });
   return inTauri ? invoke<void>("set_settings", { settings }) : Promise.resolve();
 }
 
@@ -271,8 +289,8 @@ export function setChordsPaused(on: boolean) {
 }
 
 export function onChord(handler: (e: ChordEvent) => void) {
-  if (inTauri) void listen<ChordEvent>("chord", (e) => handler(e.payload));
-  else browserChords.push(handler);
+  subscribe("chord", handler);
+  if (!inTauri) browserChords.push(handler);
 }
 
 export function onKeys(handler: (mask: number) => void) {
@@ -281,11 +299,11 @@ export function onKeys(handler: (mask: number) => void) {
 }
 
 export function onGuideRequested(handler: () => void) {
-  if (inTauri) void listen("guide", handler);
+  subscribe("guide", handler);
 }
 
 export function onDemo(handler: (step: string) => void) {
-  if (inTauri) void listen<string>("demo", (e) => handler(e.payload));
+  subscribe("demo", handler);
 }
 
 export function setRegion(shapes: Shape[] | null) {

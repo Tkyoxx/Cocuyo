@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cocuyo · vitrina</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+    <link rel="stylesheet" href="/src/menu.css" />
+  </head>
+  <body>
+    <canvas id="trail" aria-hidden="true"></canvas>
+
+    <div id="island" data-face="idle">
+      <i class="ear ear-l"></i>
+      <i class="ear ear-r"></i>
+      <div class="shell">
+        <div class="voice" aria-hidden="true"><i></i><i></i><i></i><i></i><b></b></div>
+
+        <div id="menu">
+          <nav class="tabs" id="tabs"><span class="tab-ind" id="tab-ind"></span></nav>
+          <div class="pages" id="pages"></div>
+        </div>
+
+        <section id="install" aria-labelledby="install-title">
+          <div class="inst-top">
+            <svg class="inst-ring" viewBox="0 0 68 68" aria-hidden="true">
+              <circle class="track" cx="34" cy="34" r="29" />
+              <circle class="arc" cx="34" cy="34" r="29" />
+              <path class="tick" d="M23 35l8 8 15-17" />
+            </svg>
+            <div>
+              <h1 id="install-title">Instala Cocuyo</h1>
+              <p id="install-sub">Se copia a tu usuario, sin permisos de administrador. Ocupa 4 MB.</p>
+            </div>
+          </div>
+          <ol class="inst-steps">
+            <li>Copiar la app a tu carpeta de programas</li>
+            <li>Crear el acceso directo en el menú Inicio</li>
+            <li>Registrarla para poder desinstalarla</li>
+          </ol>
+          <footer class="guide-foot">
+            <button type="button" class="link" id="install-skip">Usar sin instalar</button>
+            <button type="button" class="solid" id="install-go">Instalar</button>
+          </footer>
+        </section>
+
+        <section id="guide" aria-labelledby="guide-title">
+          <header class="guide-head">
+            <span class="guide-step" id="guide-step"></span>
+            <span class="lamps" aria-hidden="true"><i></i><i></i><i></i></span>
+          </header>
+          <h1 id="guide-title"></h1>
+          <div class="keys" id="guide-keys" aria-hidden="true"></div>
+          <p class="guide-body" id="guide-body"></p>
+          <p class="guide-live" id="guide-live"></p>
+          <footer class="guide-foot">
+            <button type="button" class="link" id="guide-skip">Saltar la guía</button>
+            <button type="button" class="solid" id="guide-done" hidden>Entendido</button>
+          </footer>
+        </section>
+      </div>
+    </div>
+
+    <div id="select">
+      <div id="select-box"><span id="select-size"></span></div>
+      <p id="select-hint">Arrastra para capturar una zona · Esc para cancelar</p>
+    </div>
+
+    <div id="caption" role="status" aria-live="polite">
+      <p class="said"><span class="who" id="caption-who"></span><span id="caption-words"></span></p>
+    </div>
+
+    <div id="pill" aria-hidden="true">
+      <span class="wave"><i></i><i></i><i></i><i></i><i></i></span>
+      <svg class="check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+    </div>
+
+    <script src="/vitrina/fondo.js"></script>
+    <script src="/vitrina/barra.js"></script>
+    <script src="/vitrina/datos.js"></script>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

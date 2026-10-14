@@ -1259,8 +1259,20 @@ button.ghost:active {
 }
 .page[data-page="fondos"] .chip {
   display: inline-flex;
+  flex: none;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
+}
+.page[data-page="fondos"] #wall-info {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.page[data-page="fondos"] > .chips {
+  flex-wrap: nowrap;
 }
 .page[data-page="fondos"] .chip .ic {
   width: 13px;

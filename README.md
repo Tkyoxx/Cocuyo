@@ -1,8 +1,83 @@
-# Cocuyo
+<div align="center">
 
-Una isla negra arriba de tu pantalla, estilo notch: dicta, dale órdenes por voz, captura la pantalla y ten tus cosas a un gesto. Libre, sin cuenta, sin licencia y sin telemetría.
+<img src="media/portada.webp" alt="Cocuyo en un escritorio de Windows 10: le pides música por voz, responde con un subtítulo y la canción aparece en Controles" width="100%">
 
-La voz se transcribe **en tu PC**. No hace falta clave, ni suscripción, ni internet una vez descargada.
+<br>
+
+<a href="https://github.com/Tkyoxx/Cocuyo/releases/latest"><img src="https://img.shields.io/github/v/release/Tkyoxx/Cocuyo?style=for-the-badge&label=Descargar&color=F2B84B&labelColor=101012" alt="Descargar"></a>
+<img src="https://img.shields.io/badge/Windows-10%20%7C%2011-F2B84B?style=for-the-badge&labelColor=101012" alt="Windows 10 y 11">
+<img src="https://img.shields.io/badge/Hecho%20con-Rust%20%2B%20Tauri-FF8A3D?style=for-the-badge&labelColor=101012" alt="Hecho con Rust y Tauri">
+<img src="https://img.shields.io/badge/Licencia-MIT-8C8791?style=for-the-badge&labelColor=101012" alt="Licencia MIT">
+
+<br><br>
+
+Una isla negra arriba de tu pantalla que te escucha. Le hablas y pone música, abre apps,<br>
+te recuerda cosas, escribe por ti o te cuenta qué le está comiendo la RAM a tu PC.<br>
+La voz se entiende <b>en tu equipo</b>: sin cuenta, sin suscripción y sin mandar nada a nadie.
+
+<br>
+
+<img src="media/recorrido.webp" alt="Recorrido por las pestañas de la isla: Hoy, Controles, Equipo, Apps, Fondos y Portapapeles" width="100%">
+
+</div>
+
+<img src="media/separador.svg" width="100%" alt="">
+
+## Lo que hace
+
+- Dictas en cualquier app y queda escrito, con la puntuación puesta.
+- Le das órdenes como te salgan: «pon algo de salsa», «ábreme Discord», «recuérdame en 20 minutos sacar la ropa».
+- Rodeas algo de la pantalla con el mouse y le preguntas qué es.
+- Spotify, volumen, clima, tareas, agenda y rutinas, todo desde la misma isla.
+- Fondos animados que no se comen el PC, uno distinto por monitor.
+- La barra de tareas a tu gusto: transparente, acrílico o centrada, también en Windows 11.
+- Scripts por voz y una galería donde la gente comparte los suyos.
+- Se actualiza sola, y si tienes un modelo de IA (Gemini tiene plan gratis), entiende todavía mejor.
+
+<br>
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="media/barra.webp" alt="Ajustes de la barra de tareas: al tocarlos, la barra de Windows de abajo se vuelve transparente, acrílica y con los íconos al centro">
+      <h3>Tu barra, como la quieras</h3>
+      Transparente, desenfoque o acrílico, cuánto se oscurece y los íconos al centro, con su animación. Sin instalar nada más.
+    </td>
+    <td width="50%" valign="top">
+      <img src="media/galeria.webp" alt="Galería de scripts con el nombre y la foto de quien subió cada uno">
+      <h3>Una galería de scripts</h3>
+      Como un workshop: cada script con el nombre y la foto de quien lo subió. Los instalas con un clic y los usas por voz.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="media/fondos.webp" alt="Pestaña Fondos con el carrusel y la opción de elegir monitor">
+      <h3>Fondos animados</h3>
+      Videos detrás de los íconos, decodificados por la gráfica. Se pausan solos cuando no se ven y cada monitor puede tener el suyo.
+    </td>
+    <td width="50%" valign="top">
+      <img src="media/pantalla-hoy.webp" alt="Pestaña Hoy con la hora, el clima de Medellín y las tareas">
+      <h3>Tu día de un vistazo</h3>
+      La hora, el clima de tu ciudad por horas, tus tareas y lo que le pediste recordar.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="media/pantalla-equipo.webp" alt="Pestaña Equipo con el uso de procesador, memoria y disco">
+      <h3>Qué le pasa a tu PC</h3>
+      Procesador, memoria, disco y qué programa se está comiendo la RAM. También por voz: «¿qué me pone lento?».
+    </td>
+    <td width="50%" valign="top">
+      <img src="media/pantalla-portapapeles.webp" alt="Pestaña Portapapeles con textos e imágenes copiados">
+      <h3>Lo que copiaste</h3>
+      El historial del portapapeles, con imágenes. De una captura puedes sacar el texto y dejarlo copiado.
+    </td>
+  </tr>
+</table>
+
+<p align="center"><sub>Las imágenes son de la app real, grabadas con datos inventados (nombres, canciones y apps de ejemplo). Se regeneran con <code>vitrina/grabar.mjs</code>.</sub></p>
+
+<img src="media/separador.svg" width="100%" alt="">
 
 > **Estado:** en construcción, pero ya se usa. Si algo te falla, [cuéntamelo en un issue](https://github.com/Tkyoxx/Cocuyo/issues).
 
@@ -251,6 +326,7 @@ npm run tauri dev
 - `overlay/` — la librería que pinta el aviso dentro de los juegos.
 - `barra/` — la librería que le quita el fondo a la barra de Windows 11.
 - `galeria/` — los scripts de la galería y su índice.
+- `vitrina/` — la misma interfaz en un navegador con datos inventados y una barra de Windows 10 de mentira; `grabar.mjs` graba ahí las imágenes de este README.
 - `.github/` — el formulario para subir scripts, el bot que los publica y el que compila cada versión.
 
 La voz usa [whisper.cpp](https://github.com/ggml-org/whisper.cpp) con el modelo Parakeet TDT 0.6b v3. Los dos se descargan de sus repositorios oficiales y se comprueban con SHA-256 antes de usarse.

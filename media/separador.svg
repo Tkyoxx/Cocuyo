@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 48" width="1200" height="48">
+  <defs>
+    <linearGradient id="linea" x1="0" x2="1200" y1="0" y2="0" gradientUnits="userSpaceOnUse" spreadMethod="repeat">
+      <stop offset="0" stop-color="#F2B84B"/>
+      <stop offset=".5" stop-color="#FF8A3D"/>
+      <stop offset="1" stop-color="#F2B84B"/>
+      <animateTransform attributeName="gradientTransform" type="translate" from="0 0" to="1200 0" dur="9s" repeatCount="indefinite"/>
+    </linearGradient>
+    <linearGradient id="borde" x1="0" x2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+      <stop offset=".2" stop-color="#fff"/>
+      <stop offset=".8" stop-color="#fff"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <mask id="m"><rect width="1200" height="48" fill="url(#borde)"/></mask>
+    <filter id="brillo" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5"/></filter>
+  </defs>
+  <g mask="url(#m)">
+    <rect x="0" y="23" width="1200" height="2" rx="1" fill="url(#linea)" opacity=".75"/>
+    <g>
+      <animateTransform attributeName="transform" type="translate" values="80 24;1120 24;80 24" dur="11s" repeatCount="indefinite" calcMode="spline" keySplines=".45 0 .55 1;.45 0 .55 1"/>
+      <circle r="10" fill="#F2B84B" filter="url(#brillo)" opacity=".9"><animate attributeName="opacity" values=".9;.35;.9" dur="1.8s" repeatCount="indefinite"/></circle>
+      <circle r="3" fill="#FFE3A3"/>
+    </g>
+  </g>
+</svg>

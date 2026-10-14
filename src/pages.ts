@@ -803,6 +803,7 @@ async function paintScreens(el: HTMLElement) {
   if (wallScreen && !screens.some((screen) => screen.id === wallScreen)) wallScreen = null;
   const box = el.querySelector<HTMLElement>("#wall-screens")!;
   box.hidden = screens.length < 2;
+  el.querySelector<HTMLElement>("#wall-info")!.hidden = screens.length > 1;
   box.innerHTML = [`<button class="chip${wallScreen === null ? " on" : ""}" data-screen="">Todos</button>`]
     .concat(
       screens.map(
