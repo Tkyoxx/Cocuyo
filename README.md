@@ -372,4 +372,4 @@ La voz usa [whisper.cpp](https://github.com/ggml-org/whisper.cpp) con el modelo 
 
 ## Licencia
 
-MIT
+MIT. Lo que Cocuyo usa de otros, con su licencia, está en [TERCEROS.md](TERCEROS.md).
