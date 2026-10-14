@@ -1061,6 +1061,11 @@ class SettingsPage implements Page {
     if (section === "extensiones") void this.paintExtensions();
     if (section === "agente") void this.paintMcp();
     for (const node of this.el.querySelectorAll<HTMLElement>("[data-sec]")) node.classList.toggle("on", node.dataset.sec === section);
+    const measure = () => {
+      for (const node of this.el.querySelectorAll<HTMLElement>(".ssec.on")) node.classList.toggle("long", node.scrollHeight > node.clientHeight + 4);
+    };
+    setTimeout(measure, 60);
+    setTimeout(measure, 600);
   }
 
   private el!: HTMLElement;
@@ -1139,14 +1144,6 @@ class SettingsPage implements Page {
         section(
           "voz",
           `<div class="card">
-             <label class="srow"><div><b>Conversación en vivo</b><small>Con Gemini, Cocuyo te va escuchando mientras hablas y contesta con voz al instante, como en una llamada. Usa las mismas herramientas: música, apps, mensajes, el mouse. Gratis con tu clave.</small></div><input type="checkbox" class="switch" id="s-live"></label>
-             <div class="srow stack"><div><b>Su voz</b><small>Las voces en vivo de Gemini.</small></div><div class="srow chips flat" id="s-live-voice"></div></div>
-           </div>
-           <div class="card">
-             <div class="srow"><div><b>Voz local</b><small id="s-voice"></small></div><button class="ghost" id="s-voice-get">Descargar</button></div>
-             <div class="bar" id="s-voice-bar"><i></i></div>
-           </div>
-           <div class="card">
              <div class="srow stack">
                <div><b>Idioma</b><small>El de la interfaz, el que guía a la voz para que no transcriba en otro, y en el que responde.</small></div>
                <div class="segmented" id="s-lang"><span class="thumb"></span><button data-value="es">Español</button><button data-value="en">English</button><button data-value="pt">Português</button></div>
@@ -1159,6 +1156,12 @@ class SettingsPage implements Page {
                <div><b>Voz al responder</b><small id="s-voice-help">La de Windows, una local que suena a persona (se descarga una vez y habla sin internet) o una de Gemini.</small></div>
                <div class="srow chips flat" id="s-voice-kind"></div>
              </div>
+           </div>
+           <div class="card">
+             <label class="srow"><div><b>Conversación en vivo</b><small>Con Gemini, Cocuyo te va escuchando mientras hablas y contesta con voz al instante, como en una llamada. Usa las mismas herramientas: música, apps, mensajes, el mouse. Gratis con tu clave.</small></div><input type="checkbox" class="switch" id="s-live"></label>
+             <div class="srow stack"><div><b>Su voz</b><small>Las voces en vivo de Gemini.</small></div><div class="srow chips flat" id="s-live-voice"></div></div>
+             <div class="srow"><div><b>Voz local</b><small id="s-voice"></small></div><button class="ghost" id="s-voice-get">Descargar</button></div>
+             <div class="bar" id="s-voice-bar"><i></i></div>
            </div>`,
         ) +
         section(

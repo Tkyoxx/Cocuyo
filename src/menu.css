@@ -1340,16 +1340,20 @@ button.ghost:active {
 
 .page[data-page="ajustes"] {
   grid-template-columns: 132px 1fr;
+  grid-template-rows: minmax(0, 1fr);
   align-items: stretch;
   gap: 14px;
 }
 .snav {
   display: grid;
   align-content: start;
-  gap: 3px;
+  gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
 }
 .snav button {
-  height: 36px;
+  height: 31px;
   padding: 0 14px;
   border: 0;
   border-radius: 12px;
@@ -1383,7 +1387,12 @@ button.ghost:active {
   align-items: start;
   gap: 8px;
   overflow-y: auto;
-  scrollbar-width: none;
+  scrollbar-color: color-mix(in srgb, var(--dim) 45%, transparent) transparent;
+  scrollbar-width: thin;
+}
+.ssec.long {
+  padding-bottom: 22px;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent);
 }
 .ssec.one {
   grid-template-columns: 1fr;
