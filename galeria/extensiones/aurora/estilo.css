@@ -4,30 +4,52 @@
   --accent-ink: #032019;
   --black: #04090d;
 }
+#island {
+  --aurora-va: to top;
+  --aurora-cruza: 90deg;
+}
+#island[data-dock="right"] {
+  --aurora-va: to right;
+  --aurora-cruza: 180deg;
+}
+#island .shell {
+  box-shadow: inset 0 -14px 20px -15px rgb(94 242 194 / 0.5);
+}
+#island .shell::before,
 #island .shell::after {
   content: "";
   position: absolute;
   inset: 0;
+  padding: 1.5px;
   border-radius: inherit;
   pointer-events: none;
-  box-shadow:
-    inset 0 -1.5px 0 rgb(94 242 194 / 0.9),
-    inset 0 -16px 24px -16px rgb(94 242 194 / 0.55);
+  mask:
+    linear-gradient(var(--aurora-va), #000 15%, rgb(0 0 0 / 0.45) 50%, transparent 92%),
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: intersect, exclude;
+}
+#island .shell::before {
+  background: linear-gradient(var(--aurora-cruza), #5ec8f2, #5ef2c2 30%, #8ff7a7 50%, #5ef2c2 70%, #5ec8f2);
+}
+#island .shell::after {
+  background: linear-gradient(var(--aurora-cruza), #c08bff, #8b7bff 30%, #5ef2c2 50%, #8b7bff 70%, #c08bff);
+  opacity: 0;
   animation: aurora-respira 7s ease-in-out infinite;
 }
-#island:not([data-face="menu"]) {
-  filter: drop-shadow(0 6px 14px rgb(94 242 194 / 0.28));
-}
 @keyframes aurora-respira {
-  0%,
-  100% {
-    filter: hue-rotate(0deg);
-    opacity: 0.8;
-  }
   50% {
-    filter: hue-rotate(115deg);
     opacity: 1;
   }
+}
+#island:not([data-face="menu"]) {
+  filter:
+    drop-shadow(0 0 1.5px rgb(94 242 194 / 0.55))
+    drop-shadow(0 2px 6px rgb(94 242 194 / 0.28))
+    drop-shadow(0 3px 10px rgb(139 123 255 / 0.16));
+}
+:root[data-lite] #island .shell::after {
+  animation: none;
 }
 #caption[data-who="app"] .said {
   border-color: rgb(94 242 194 / 0.35);
