@@ -395,6 +395,82 @@ fn forget_old_views(messages: &mut [Value]) {
     }
 }
 
+fn plain_schema(schema: &Value) -> Option<Value> {
+    let object = schema.as_object()?;
+    let mut out = serde_json::Map::new();
+    let kind = match object.get("type") {
+        Some(Value::Array(kinds)) => kinds.iter().find(|kind| *kind != "null").cloned(),
+        other => other.cloned(),
+    };
+    if let Some(kind) = kind {
+        out.insert("type".into(), kind);
+    }
+    for key in ["description", "enum", "required", "nullable"] {
+        if let Some(value) = object.get(key) {
+            out.insert(key.into(), value.clone());
+        }
+    }
+    if let Some(items) = object.get("items").and_then(plain_schema) {
+        out.insert("items".into(), items);
+    }
+    if let Some(properties) = object.get("properties").and_then(Value::as_object) {
+        let inner: serde_json::Map<String, Value> = properties.iter().filter_map(|(name, value)| plain_schema(value).map(|value| (name.clone(), value))).collect();
+        if inner.is_empty() {
+            return None;
+        }
+        out.insert("properties".into(), Value::Object(inner));
+    }
+    if out.get("type").and_then(Value::as_str) == Some("object") && !out.contains_key("properties") {
+        return None;
+    }
+    if out.get("type").and_then(Value::as_str) == Some("array") && !out.contains_key("items") {
+        out.insert("items".into(), json!({ "type": "string" }));
+    }
+    Some(Value::Object(out))
+}
+
+pub fn declarations(app: &AppHandle) -> Vec<Value> {
+    let (tools, _) = toolbox(app);
+    tools
+        .iter()
+        .filter_map(|tool| {
+            let function = &tool["function"];
+            let mut declaration = json!({ "name": function["name"], "description": function["description"] });
+            if let Some(parameters) = plain_schema(&function["parameters"]) {
+                declaration["parameters"] = parameters;
+            }
+            Some(declaration)
+        })
+        .collect()
+}
+
+pub fn call_tool(app: &AppHandle, name: &str, args: &Value) -> String {
+    let (_, doers) = toolbox(app);
+    progress(app, &label(name, args), false);
+    let result = match doers.get(name) {
+        Some(doer) => act(app, doer, args),
+        None => Err(format!("no existe la herramienta «{name}»")),
+    };
+    progress(app, "Listo", true);
+    match result {
+        Ok(done) if done.text.trim().is_empty() => "Hecho.".into(),
+        Ok(done) => done.text,
+        Err(why) => format!("ERROR: {why}"),
+    }
+}
+
+pub fn voice_prompt(app: &AppHandle) -> String {
+    crate::pc::begin();
+    let hands = crate::settings::load(app).agent_hands;
+    let mut text = prompt(app, "", hands);
+    text.push_str(
+        "\n\nEstás hablando en voz alta, en una conversación en vivo: contesta como en una charla, corto (una o dos frases), sin leer listas ni \
+         enlaces. Para cualquier cosa en el PC usa las herramientas (música, apps, volumen, recordatorios, notas: cocuyo_orden; mensajes: \
+         cocuyo_mensaje) y no digas que hiciste algo sin haber llamado a la herramienta. Mientras una herramienta trabaja, no rellenes.",
+    );
+    text
+}
+
 const QUICK: [&str; 3] = ["cocuyo_orden", "cocuyo_script", "cocuyo_mensaje"];
 
 pub fn quick_message(spoken: &str) -> Option<(String, String, String)> {

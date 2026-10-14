@@ -150,6 +150,9 @@ export interface Settings {
   aiAgent: boolean;
   agentHands: boolean;
   agentConfirm: boolean;
+  aiLive: boolean;
+  liveVoice: string;
+  liveModel: string;
   extensions: string[];
   checkUpdates: boolean;
   aiDaily: number;
@@ -251,6 +254,9 @@ const DEFAULTS: Settings = {
   aiAgent: true,
   agentHands: true,
   agentConfirm: true,
+  aiLive: true,
+  liveVoice: "Charon",
+  liveModel: "",
   extensions: [],
   checkUpdates: true,
   aiDaily: 480,

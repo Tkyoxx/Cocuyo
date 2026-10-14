@@ -38,7 +38,7 @@ fn key_path(app: &AppHandle) -> Option<PathBuf> {
     Some(app.path().app_config_dir().ok()?.join("ia.bin"))
 }
 
-fn key(app: &AppHandle) -> Option<String> {
+pub(crate) fn key(app: &AppHandle) -> Option<String> {
     let sealed = std::fs::read(key_path(app)?).ok()?;
     String::from_utf8(crate::spotify::protect(&sealed, true)?).ok().filter(|k| !k.is_empty())
 }
@@ -589,7 +589,7 @@ fn heard_in(reply: &str) -> (String, String) {
     (said.trim_matches(|c: char| matches!(c, '"' | '«' | '»')).to_string(), order_in(&order))
 }
 
-fn unbase64(text: &str) -> Vec<u8> {
+pub(crate) fn unbase64(text: &str) -> Vec<u8> {
     let mut out = Vec::with_capacity(text.len() / 4 * 3);
     let (mut group, mut bits) = (0u32, 0);
     for value in text.bytes().filter_map(|c| match c {
@@ -686,6 +686,23 @@ fn chats(id: &str) -> bool {
         "robotics", "deep-research", "computer-use", "transcribe", "antigravity", "customtools", "realtime", "omni", "search",
     ];
     !OTHER_JOBS.iter().any(|kind| id.contains(kind))
+}
+
+pub fn live_models(app: &AppHandle) -> Result<Vec<String>, String> {
+    let key = key(app).ok_or("Falta la clave de Gemini.")?;
+    let (status, reply) = send("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000", &[format!("x-goog-api-key: {key}")], None)?;
+    if !(200..300).contains(&status) {
+        return Err(refusal(status, &reply, ""));
+    }
+    Ok(reply["models"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|model| model["supportedGenerationMethods"].as_array().is_some_and(|ways| ways.iter().any(|way| way == "bidiGenerateContent")))
+        .filter_map(|model| model["name"].as_str())
+        .map(|name| name.trim_start_matches("models/").to_string())
+        .filter(|name| !["tts", "transcribe", "translate", "robotics"].iter().any(|job| name.contains(job)))
+        .collect())
 }
 
 #[tauri::command]

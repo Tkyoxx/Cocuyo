@@ -488,6 +488,9 @@ fn fire(app: &AppHandle, signal: Signal) {
                 overlay::cursor_in_window(app)
             } else {
                 mic::start();
+                if chord == Chord::Command {
+                    crate::talk::begin(app);
+                }
                 crate::cue::play(crate::cue::Cue::Listen);
                 crate::gamelayer::listening(app);
                 None

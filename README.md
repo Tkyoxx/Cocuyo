@@ -27,6 +27,7 @@ La voz se entiende <b>en tu equipo</b>: sin cuenta, sin suscripción y sin manda
 
 - Dictas en cualquier app y queda escrito, con la puntuación puesta.
 - Le das órdenes como te salgan: «pon algo de salsa», «ábreme Discord», «recuérdame en 20 minutos sacar la ropa».
+- Conversación en vivo con Gemini: te va escuchando mientras hablas y contesta con voz al instante (Charon, Puck, Kore…), y mientras tanto usa sus herramientas.
 - Rodeas algo de la pantalla con el mouse y le preguntas qué es.
 - Spotify, volumen, clima, tareas, agenda y rutinas, todo desde la misma isla.
 - Fondos animados que no se comen el PC, uno distinto por monitor.
@@ -160,6 +161,7 @@ Cocuyo entiende las órdenes solo, sin IA, y eso no cambia. En **Ajustes → IA*
 - **Entender lo que la tabla no entiende**: frases raras, nombres mal transcritos, otro idioma.
 - **Responder preguntas**: «¿cuánto es 15 por 12?», «¿cómo se dice gato en inglés?».
 - **Rodear y preguntar**: mantén `Ctrl` + `Shift`, rodea algo en pantalla y pregunta en voz alta mientras lo rodeas.
+- **Conversación en vivo** (Ajustes → Voz, solo con Gemini): mientras mantienes el atajo, tu voz va llegando a Gemini Live por una conexión abierta, así que al soltar ya te entendió y empieza a contestar con voz en un par de segundos. Recuerda lo que van hablando y usa las mismas herramientas que el modo agente. Si no hay conexión, Cocuyo sigue por el camino de siempre con lo que grabó.
 
 | Servicio | Costo | Qué necesitas |
 |---|---|---|

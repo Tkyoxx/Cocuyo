@@ -22,6 +22,18 @@ enum Command {
 
 static TX: OnceLock<Sender<Command>> = OnceLock::new();
 static LEVEL: AtomicU32 = AtomicU32::new(0);
+static TAP: Mutex<Option<Sender<(u32, Vec<f32>)>>> = Mutex::new(None);
+static RATE: AtomicU32 = AtomicU32::new(0);
+
+pub fn tap() -> mpsc::Receiver<(u32, Vec<f32>)> {
+    let (tx, rx) = mpsc::channel();
+    *TAP.lock().unwrap() = Some(tx);
+    rx
+}
+
+pub fn untap() {
+    *TAP.lock().unwrap() = None;
+}
 
 pub fn start() {
     if let Some(tx) = TX.get() {
@@ -43,12 +55,16 @@ type Buffer = Arc<Mutex<Vec<f32>>>;
 fn push<T: Copy>(data: &[T], channels: usize, buffer: &Buffer, to_f32: impl Fn(T) -> f32) {
     let mut peak = 0f32;
     let mut out = buffer.lock().unwrap();
+    let from = out.len();
     for frame in data.chunks(channels.max(1)) {
         let sample = frame.iter().map(|&s| to_f32(s)).sum::<f32>() / frame.len() as f32;
         peak = peak.max(sample.abs());
         out.push(sample);
     }
     LEVEL.store(peak.to_bits(), Ordering::Relaxed);
+    if let Some(tap) = TAP.lock().unwrap().as_ref() {
+        let _ = tap.send((RATE.load(Ordering::Relaxed), out[from..].to_vec()));
+    }
 }
 
 fn open(buffer: Buffer) -> Result<(cpal::Stream, u32), String> {
@@ -57,6 +73,7 @@ fn open(buffer: Buffer) -> Result<(cpal::Stream, u32), String> {
         .ok_or("No hay ningún micrófono conectado.")?;
     let config = device.default_input_config().map_err(|e| format!("El micrófono no responde: {e}"))?;
     let rate = config.sample_rate();
+    RATE.store(rate, Ordering::Relaxed);
     let channels = config.channels() as usize;
     let format = config.sample_format();
     let config: cpal::StreamConfig = config.into();

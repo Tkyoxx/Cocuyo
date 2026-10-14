@@ -31,6 +31,7 @@ mod scripts;
 mod settings;
 mod spotify;
 mod system;
+mod talk;
 mod taskbar;
 mod tray;
 mod tts;
@@ -70,6 +71,13 @@ fn demo(app: tauri::AppHandle) {
                 let heard = voice::transcribe_file(&app, std::path::Path::new(wav));
                 let pasted = heard.as_ref().map(|text| inject::paste(text));
                 eprintln!("[voz] dictado {heard:?} -> {pasted:?}");
+            } else if step == "vivo-modelos" {
+                eprintln!("[vivo] modelos: {:?}", ai::live_models(&app));
+            } else if let Some(wav) = step.strip_prefix("vivo-oir=") {
+                eprintln!("[vivo] {:?}", talk::probe_audio(&app, std::path::Path::new(wav)));
+            } else if let Some(text) = step.strip_prefix("vivo=") {
+                let started = std::time::Instant::now();
+                eprintln!("[vivo] {:?} en {:?}", talk::probe(&app, text), started.elapsed());
             } else if step == "ia" {
                 let started = std::time::Instant::now();
                 let order = ai::rewrite(&app, "oye ponme la de beibi dol de dominic faik porfa", &scripts::list(&app));
@@ -273,6 +281,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 taskbar::restore();
                 mcp::shutdown();
+                talk::forget();
             }
         });
 }

@@ -186,8 +186,14 @@ pub fn play(cue: Cue) {
     sound(cue);
 }
 
+static HELD: AtomicBool = AtomicBool::new(false);
+
+pub fn hold_voice(on: bool) {
+    HELD.store(on, Ordering::Relaxed);
+}
+
 pub fn answer(text: &str) {
-    if text.trim().is_empty() {
+    if text.trim().is_empty() || HELD.load(Ordering::Relaxed) {
         return;
     }
     ANSWERED.store(true, Ordering::Relaxed);
@@ -200,7 +206,7 @@ pub fn answer(text: &str) {
 static ANSWERED: AtomicBool = AtomicBool::new(false);
 
 pub fn speak(text: &str) {
-    if ANSWERED.swap(false, Ordering::Relaxed) {
+    if ANSWERED.swap(false, Ordering::Relaxed) || HELD.load(Ordering::Relaxed) {
         return;
     }
     if !SPEAK.load(Ordering::Relaxed) || !crate::placement::fullscreen() || text.trim().is_empty() {

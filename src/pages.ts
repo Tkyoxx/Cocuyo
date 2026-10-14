@@ -1034,6 +1034,17 @@ const SECTIONS: [string, string][] = [
   ["atajos", "Atajos"],
 ];
 
+const LIVE_VOICES: [string, string][] = [
+  ["Charon", "grave"],
+  ["Fenrir", "intensa"],
+  ["Orus", "firme"],
+  ["Puck", "alegre"],
+  ["Kore", "clara"],
+  ["Aoede", "suave"],
+  ["Leda", "joven"],
+  ["Zephyr", "brillante"],
+];
+
 class SettingsPage implements Page {
   id = "ajustes";
   label = "Ajustes";
@@ -1128,6 +1139,10 @@ class SettingsPage implements Page {
         section(
           "voz",
           `<div class="card">
+             <label class="srow"><div><b>Conversación en vivo</b><small>Con Gemini, Cocuyo te va escuchando mientras hablas y contesta con voz al instante, como en una llamada. Usa las mismas herramientas: música, apps, mensajes, el mouse. Gratis con tu clave.</small></div><input type="checkbox" class="switch" id="s-live"></label>
+             <div class="srow stack"><div><b>Su voz</b><small>Las voces en vivo de Gemini.</small></div><div class="srow chips flat" id="s-live-voice"></div></div>
+           </div>
+           <div class="card">
              <div class="srow"><div><b>Voz local</b><small id="s-voice"></small></div><button class="ghost" id="s-voice-get">Descargar</button></div>
              <div class="bar" id="s-voice-bar"><i></i></div>
            </div>
@@ -1255,7 +1270,7 @@ class SettingsPage implements Page {
     for (const button of el.querySelectorAll<HTMLElement>("#s-lang button")) {
       button.addEventListener("click", () => this.save({ language: button.dataset.value as Settings["language"] }));
     }
-    const toggle = (sel: string, key: "hideOnFullscreen" | "askWhere" | "copyToClipboard" | "autostart" | "cueFullscreen" | "speakFullscreen" | "gameOverlay" | "aiOn" | "aiDictation" | "aiHear" | "padOn" | "checkUpdates" | "barCenter" | "barSolidMax" | "extensionsOn" | "aiAgent" | "agentHands" | "agentConfirm") => {
+    const toggle = (sel: string, key: "hideOnFullscreen" | "askWhere" | "copyToClipboard" | "autostart" | "cueFullscreen" | "speakFullscreen" | "gameOverlay" | "aiOn" | "aiDictation" | "aiHear" | "padOn" | "checkUpdates" | "barCenter" | "barSolidMax" | "extensionsOn" | "aiAgent" | "agentHands" | "agentConfirm" | "aiLive") => {
       const input = q<HTMLInputElement>(sel);
       input.addEventListener("change", () => {
         const change: Partial<Settings> = {};
@@ -1394,6 +1409,11 @@ class SettingsPage implements Page {
     toggle("#s-ext-on", "extensionsOn");
     toggle("#s-agent", "aiAgent");
     toggle("#s-agent-hands", "agentHands");
+    toggle("#s-live", "aiLive");
+    q("#s-live-voice").addEventListener("click", (e) => {
+      const target = (e.target as HTMLElement).closest<HTMLElement>("[data-live]");
+      if (target) void this.save({ liveVoice: target.dataset.live ?? "Charon" });
+    });
     toggle("#s-agent-confirm", "agentConfirm");
     q("#s-mcp-open").addEventListener("click", () => void call("mcp_open").catch((error) => this.note(String(error))));
     q("#s-mcp-reload").addEventListener("click", () => void this.paintMcp(true));
@@ -1907,6 +1927,8 @@ class SettingsPage implements Page {
     q<HTMLInputElement>("#s-ext-on").checked = s.extensionsOn;
     q<HTMLInputElement>("#s-agent").checked = s.aiAgent;
     q<HTMLInputElement>("#s-agent-hands").checked = s.agentHands;
+    q<HTMLInputElement>("#s-live").checked = s.aiLive;
+    q("#s-live-voice").innerHTML = LIVE_VOICES.map(([voice, kind]) => `<button class="chip${voice === (s.liveVoice || "Charon") ? " on" : ""}" data-live="${voice}">${voice} · ${tr(kind)}</button>`).join("");
     q<HTMLInputElement>("#s-agent-confirm").checked = s.agentConfirm;
     q("#s-agent-need").textContent = !s.aiOn
       ? "Primero enciende un modelo de IA en la sección IA (Gemini viene listo)."

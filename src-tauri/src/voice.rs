@@ -822,6 +822,25 @@ fn hear_with_ai(app: &AppHandle, recording: &mic::Recording, dictation: bool) ->
 
 pub fn finish(app: &AppHandle, chord: Chord, cancelled: bool) {
     let recording = mic::stop();
+    if chord == Chord::Command {
+        match crate::talk::finish(cancelled || PRACTICE.load(Ordering::Relaxed)) {
+            crate::talk::Ended::Spoke(said, reply) => {
+                crate::ai::talked(&said, &reply);
+                let error = (said.is_empty() && reply.is_empty()).then(|| crate::i18n::tr("No te escuché. Mantén las teclas mientras hablas."));
+                match &error {
+                    Some(error) => {
+                        crate::cue::play(crate::cue::Cue::Fail);
+                        crate::gamelayer::finished(&said, error, true, false);
+                    }
+                    None => crate::gamelayer::finished(&said, &reply, false, false),
+                }
+                let _ = app.emit_to(overlay::LABEL, "heard", Heard { chord, text: said, reply, error });
+                return;
+            }
+            crate::talk::Ended::Failed(why) if cfg!(debug_assertions) => eprintln!("[vivo] no salió en vivo: {why}"),
+            _ => {}
+        }
+    }
     if cancelled || PRACTICE.load(Ordering::Relaxed) {
         crate::gamelayer::cancel();
         return;
