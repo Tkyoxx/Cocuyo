@@ -5,15 +5,18 @@
   --black: #04090d;
 }
 #island {
+  filter: none;
   --aurora-va: to top;
   --aurora-cruza: 90deg;
+  --aurora-forma: 0 0 var(--r) var(--r);
 }
 #island[data-dock="right"] {
   --aurora-va: to right;
   --aurora-cruza: 180deg;
+  --aurora-forma: var(--r) 0 0 var(--r);
 }
 #island .shell {
-  box-shadow: inset 0 -14px 20px -15px rgb(94 242 194 / 0.5);
+  box-shadow: inset 0 -12px 18px -14px rgb(94 242 194 / 0.45);
 }
 #island .shell::before,
 #island .shell::after {
@@ -32,21 +35,50 @@
 #island .shell::before {
   background: linear-gradient(var(--aurora-cruza), #5ec8f2, #5ef2c2 30%, #8ff7a7 50%, #5ef2c2 70%, #5ec8f2);
 }
+#island .shell::after,
+#island::after {
+  opacity: 0;
+}
+#island:is([data-face="peek"], [data-face="voice"]) .shell::after,
+#island:is([data-face="peek"], [data-face="voice"])::after {
+  animation: aurora-respira 7s ease-in-out infinite;
+}
 #island .shell::after {
   background: linear-gradient(var(--aurora-cruza), #c08bff, #8b7bff 30%, #5ef2c2 50%, #8b7bff 70%, #c08bff);
-  opacity: 0;
-  animation: aurora-respira 7s ease-in-out infinite;
+}
+#island::before,
+#island::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: var(--aurora-forma);
+  pointer-events: none;
+  filter: blur(5px);
+  transition: visibility 0.2s;
+}
+#island::before {
+  background: linear-gradient(var(--aurora-va), rgb(94 242 194 / 0.7), rgb(94 242 194 / 0.22) 45%, transparent 85%);
+}
+#island::after {
+  background: linear-gradient(var(--aurora-va), rgb(139 123 255 / 0.7), rgb(139 123 255 / 0.22) 45%, transparent 85%);
+}
+#island[data-face="menu"]::before,
+#island[data-face="menu"]::after,
+#island[data-face="guide"]::before,
+#island[data-face="guide"]::after,
+#island[data-face="install"]::before,
+#island[data-face="install"]::after {
+  visibility: hidden;
 }
 @keyframes aurora-respira {
   50% {
     opacity: 1;
   }
 }
-#island:not([data-face="menu"]) {
-  filter:
-    drop-shadow(0 0 1.5px rgb(94 242 194 / 0.55))
-    drop-shadow(0 2px 6px rgb(94 242 194 / 0.28))
-    drop-shadow(0 3px 10px rgb(139 123 255 / 0.16));
+:root[data-lite] #island::before,
+:root[data-lite] #island::after {
+  display: none;
 }
 :root[data-lite] #island .shell::after {
   animation: none;
