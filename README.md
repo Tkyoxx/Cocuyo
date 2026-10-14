@@ -32,7 +32,7 @@ La voz se entiende <b>en tu equipo</b>: sin cuenta, sin suscripción y sin manda
 - Fondos animados que no se comen el PC, uno distinto por monitor.
 - La barra de tareas a tu gusto: transparente, acrílico o centrada, también en Windows 11.
 - Scripts por voz y una galería donde la gente comparte los suyos.
-- Modo agente con MCP: tu propio Jarvis, que encadena herramientas por voz.
+- Modo agente: decide solo si algo es una orden rápida o una tarea con pasos, y la hace con sus herramientas, servidores MCP o el mouse y el teclado.
 - Se actualiza sola, y si tienes un modelo de IA (Gemini tiene plan gratis), entiende todavía mejor.
 
 <br>
@@ -224,9 +224,11 @@ Y como Spicetify con Spotify, la isla se deja cambiar entera: **temas** (un CSS 
 
 Todo explicado, con ejemplos, en [`sdk/`](sdk/README.md).
 
-### Jarvis: el modo agente y MCP
+### El modo agente: tu Jarvis
 
-Con **Ajustes → Jarvis → Modo agente**, Cocuyo piensa en pasos y usa herramientas: sus propias órdenes, tus scripts, lo que copiaste, lo que hay en pantalla, las extensiones y cualquier **servidor MCP** (los mismos de Claude Desktop: archivos, GitHub, el navegador, tu casa…). Le dices «Jarvis, qué hora es en Tokio y ponme un pomodoro de 40 minutos», y lo resuelve solo y te contesta. Cómo conectarlo y cómo darle herramientas nuevas, en [`sdk/`](sdk/README.md#jarvis-el-modo-agente).
+Le hablas normal y Cocuyo decide: lo simple lo hace al instante y lo que tiene pasos lo piensa. Para eso usa herramientas: sus propias órdenes, tus scripts, lo que copiaste, lo que hay en pantalla, las extensiones, cualquier **servidor MCP** (los mismos de Claude Desktop: archivos, GitHub, el navegador, tu casa…) y **el mouse y el teclado**.
+
+Con las manos encendidas, «mándale a Angela por WhatsApp que llego en 10 minutos» abre WhatsApp, busca el chat, comprueba que es Angela, escribe y te pregunta «¿Lo hago?» antes de enviar. No adivina píxeles: lee los botones de la ventana con la accesibilidad de Windows, así que funciona en cualquier resolución y monitor. Si mueves el mouse, suelta todo. Cómo funciona y cómo darle herramientas nuevas, en [`sdk/`](sdk/README.md#el-modo-agente).
 
 ### La galería
 

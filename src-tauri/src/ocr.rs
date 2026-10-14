@@ -18,6 +18,29 @@ pub fn read(bgra: &[u8], w: i32, h: i32) -> Result<String, String> {
     Ok(lines.join("\r\n"))
 }
 
+pub fn lines(bgra: &[u8], w: i32, h: i32) -> Result<Vec<(String, f32, f32, f32, f32)>, String> {
+    let fail = |e: windows::core::Error| e.to_string();
+    let engine = OcrEngine::TryCreateFromUserProfileLanguages().map_err(|_| "Windows no tiene instalado el lector de texto para tu idioma.".to_string())?;
+    let writer = DataWriter::new().map_err(fail)?;
+    writer.WriteBytes(bgra).map_err(fail)?;
+    let bitmap = SoftwareBitmap::CreateCopyFromBuffer(&writer.DetachBuffer().map_err(fail)?, BitmapPixelFormat::Bgra8, w, h).map_err(fail)?;
+    let seen = engine.RecognizeAsync(&bitmap).map_err(fail)?.join().map_err(fail)?;
+    let mut found = Vec::new();
+    for line in seen.Lines().map_err(fail)? {
+        let Ok(text) = line.Text() else { continue };
+        let boxes: Vec<_> = line.Words().map_err(fail)?.into_iter().filter_map(|word| word.BoundingRect().ok()).collect();
+        if boxes.is_empty() {
+            continue;
+        }
+        let left = boxes.iter().map(|b| b.X).fold(f32::MAX, f32::min);
+        let top = boxes.iter().map(|b| b.Y).fold(f32::MAX, f32::min);
+        let right = boxes.iter().map(|b| b.X + b.Width).fold(0.0, f32::max);
+        let bottom = boxes.iter().map(|b| b.Y + b.Height).fold(0.0, f32::max);
+        found.push((text.to_string(), left, top, right - left, bottom - top));
+    }
+    Ok(found)
+}
+
 pub fn read_png(png: &[u8]) -> Result<String, String> {
     let mut reader = png::Decoder::new(Cursor::new(png)).read_info().map_err(|e| e.to_string())?;
     let mut pixels = vec![0; reader.output_buffer_size().ok_or("La imagen es demasiado grande.")?];

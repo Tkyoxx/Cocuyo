@@ -1029,7 +1029,7 @@ const SECTIONS: [string, string][] = [
   ["capturas", "Capturas"],
   ["musica", "Música"],
   ["ia", "IA"],
-  ["jarvis", "Jarvis"],
+  ["agente", "Agente"],
   ["extensiones", "Extensiones"],
   ["atajos", "Atajos"],
 ];
@@ -1048,7 +1048,7 @@ class SettingsPage implements Page {
   private open(section: string) {
     this.section = section;
     if (section === "extensiones") void this.paintExtensions();
-    if (section === "jarvis") void this.paintMcp();
+    if (section === "agente") void this.paintMcp();
     for (const node of this.el.querySelectorAll<HTMLElement>("[data-sec]")) node.classList.toggle("on", node.dataset.sec === section);
   }
 
@@ -1198,10 +1198,12 @@ class SettingsPage implements Page {
            </div>`,
         ) +
         section(
-          "jarvis",
+          "agente",
           `<div class="card">
-             <label class="srow"><div><b>Modo agente</b><small>Cocuyo piensa en pasos y usa herramientas: sus propias órdenes, tus scripts, lo que copiaste, lo que hay en pantalla y los servidores MCP que conectes. Gasta más consultas del modelo.</small></div><input type="checkbox" class="switch" id="s-agent"></label>
-             <div class="srow slim"><div><b>Cómo se le habla</b><small>Lo que Cocuyo no entienda solo se lo pasa al agente. Para ir directo, empieza con «Jarvis…»: «Jarvis, resume lo que copié y guárdalo en una nota».</small></div></div>
+             <label class="srow"><div><b>Modo agente</b><small>Para lo que tiene varios pasos, Cocuyo piensa y usa herramientas: sus órdenes, tus scripts, la pantalla, las extensiones y los servidores MCP. Lo simple sigue siendo al instante.</small></div><input type="checkbox" class="switch" id="s-agent"></label>
+             <label class="srow"><div><b>Usar el mouse y el teclado</b><small>Abre apps, mira sus botones y hace clic y escribe como tú, en cualquier resolución: «mándale a Angela por WhatsApp que llego tarde». Si mueves el mouse, suelta todo.</small></div><input type="checkbox" class="switch" id="s-agent-hands"></label>
+             <label class="srow"><div><b>Pedir permiso antes de enviar</b><small>Antes de mandar, publicar, comprar o borrar algo, te muestra a dónde va y espera tu «Hazlo».</small></div><input type="checkbox" class="switch" id="s-agent-confirm"></label>
+             <div class="srow slim"><div><b>Cómo se le habla</b><small>Normal: Cocuyo decide solo si es una orden rápida o una tarea. Para obligarlo a pensar, empieza con «Encárgate de…».</small></div></div>
              <div class="srow slim"><div><b>Necesita</b><small id="s-agent-need">Un modelo de IA conectado en la sección IA, con formato OpenAI (Gemini viene listo).</small></div></div>
            </div>
            <div class="card">
@@ -1253,7 +1255,7 @@ class SettingsPage implements Page {
     for (const button of el.querySelectorAll<HTMLElement>("#s-lang button")) {
       button.addEventListener("click", () => this.save({ language: button.dataset.value as Settings["language"] }));
     }
-    const toggle = (sel: string, key: "hideOnFullscreen" | "askWhere" | "copyToClipboard" | "autostart" | "cueFullscreen" | "speakFullscreen" | "gameOverlay" | "aiOn" | "aiDictation" | "aiHear" | "padOn" | "checkUpdates" | "barCenter" | "barSolidMax" | "extensionsOn" | "aiAgent") => {
+    const toggle = (sel: string, key: "hideOnFullscreen" | "askWhere" | "copyToClipboard" | "autostart" | "cueFullscreen" | "speakFullscreen" | "gameOverlay" | "aiOn" | "aiDictation" | "aiHear" | "padOn" | "checkUpdates" | "barCenter" | "barSolidMax" | "extensionsOn" | "aiAgent" | "agentHands" | "agentConfirm") => {
       const input = q<HTMLInputElement>(sel);
       input.addEventListener("change", () => {
         const change: Partial<Settings> = {};
@@ -1391,6 +1393,8 @@ class SettingsPage implements Page {
     q("#s-gallery").addEventListener("click", () => void this.openGallery());
     toggle("#s-ext-on", "extensionsOn");
     toggle("#s-agent", "aiAgent");
+    toggle("#s-agent-hands", "agentHands");
+    toggle("#s-agent-confirm", "agentConfirm");
     q("#s-mcp-open").addEventListener("click", () => void call("mcp_open").catch((error) => this.note(String(error))));
     q("#s-mcp-reload").addEventListener("click", () => void this.paintMcp(true));
     q("#s-ext-on").addEventListener("change", () => reloadInto("extensiones"));
@@ -1902,6 +1906,8 @@ class SettingsPage implements Page {
     q<HTMLInputElement>("#s-pad").checked = s.padOn;
     q<HTMLInputElement>("#s-ext-on").checked = s.extensionsOn;
     q<HTMLInputElement>("#s-agent").checked = s.aiAgent;
+    q<HTMLInputElement>("#s-agent-hands").checked = s.agentHands;
+    q<HTMLInputElement>("#s-agent-confirm").checked = s.agentConfirm;
     q("#s-agent-need").textContent = !s.aiOn
       ? "Primero enciende un modelo de IA en la sección IA (Gemini viene listo)."
       : s.aiFormat === "anthropic"

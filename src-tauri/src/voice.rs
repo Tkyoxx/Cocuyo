@@ -454,23 +454,27 @@ pub fn local_order(app: &AppHandle, spoken: &str) -> Result<String, String> {
     first_things(app, spoken).unwrap_or_else(|| act(app, spoken))
 }
 
-fn jarvis(app: &AppHandle, spoken: &str) -> Result<String, String> {
-    let answer = crate::agent::run(app, spoken)?;
-    crate::cue::answer(&answer);
+fn agent(app: &AppHandle, task: &str) -> Result<String, String> {
+    let (answer, aloud) = crate::agent::run(app, task)?;
+    if aloud {
+        crate::cue::answer(&answer);
+    }
     Ok(answer)
+}
+
+fn task_for(app: &AppHandle, spoken: &str) -> Option<String> {
+    if !crate::agent::wanted(app) {
+        return None;
+    }
+    crate::agent::called(spoken).or_else(|| (crate::agent::asked() || crate::agent::needs_steps(spoken)).then(|| spoken.to_string()))
 }
 
 pub fn run_order(app: &AppHandle, spoken: &str) -> Result<String, String> {
     if let Some(done) = crate::scripts::answered(app, spoken) {
         return done;
     }
-    if crate::ai::mode(app).is_some() {
-        if let Some(rest) = crate::agent::called(spoken) {
-            return jarvis(app, &rest);
-        }
-        if crate::agent::wanted(app) && crate::ai::asking() {
-            return jarvis(app, spoken);
-        }
+    if let Some(task) = task_for(app, spoken) {
+        return agent(app, &task);
     }
     if let Some(done) = crate::extensions::spoken(app, spoken) {
         return done;
@@ -484,10 +488,6 @@ pub fn run_order(app: &AppHandle, spoken: &str) -> Result<String, String> {
         return done;
     }
     match crate::ai::mode(app) {
-        Some(_) if crate::agent::wanted(app) && !understood(app, spoken) => match jarvis(app, spoken) {
-            Err(why) if understood(app, spoken) => act(app, spoken).map_err(|_| why),
-            done => done,
-        },
         Some(always) if (always && has_names(app, spoken)) || !understood(app, spoken) => {
             match crate::ai::rewrite(app, spoken, &crate::scripts::list(app)) {
                 Ok(order) => follow(app, spoken, &order),
@@ -563,6 +563,19 @@ fn understood(app: &AppHandle, spoken: &str) -> bool {
 fn follow(app: &AppHandle, spoken: &str, order: &str) -> Result<String, String> {
     let order = order.trim();
     let lower = order.to_lowercase();
+    if let Some(task) = lower.strip_prefix("agente").filter(|rest| rest.is_empty() || rest.starts_with([' ', ':'])) {
+        let task = order[order.len() - task.len()..].trim_start_matches([' ', ':']).trim();
+        let task = if task.is_empty() { spoken } else { task };
+        if crate::agent::wanted(app) {
+            return agent(app, task);
+        }
+        if !understood(app, spoken) {
+            return Err("Eso tiene varios pasos: enciende el modo agente en Ajustes, sección Agente, y lo hago yo.".into());
+        }
+    }
+    if (lower.is_empty() || lower == "nada") && crate::agent::wanted(app) && !understood(app, spoken) {
+        return agent(app, spoken);
+    }
     if let Some(rest) = lower.strip_prefix("script ") {
         return crate::scripts::named(app, rest, spoken);
     }
@@ -824,9 +837,7 @@ pub fn finish(app: &AppHandle, chord: Chord, cancelled: bool) {
                 let outcome = match &order {
                     Some(order) => match crate::scripts::answered(app, &text).or_else(|| crate::extensions::spoken(app, &text)) {
                         Some(done) => done,
-                        None if crate::agent::wanted(app) && (crate::agent::called(&text).is_some() || crate::ai::asking() || !crate::voice::understood(app, &text)) => {
-                            jarvis(app, &crate::agent::called(&text).unwrap_or_else(|| text.clone()))
-                        }
+                        None if task_for(app, &text).is_some() => agent(app, &task_for(app, &text).unwrap_or_else(|| text.clone())),
                         None if crate::ai::asking() => follow(app, &text, order),
                         None => first_things(app, &text).unwrap_or_else(|| follow(app, &text, order)),
                     },

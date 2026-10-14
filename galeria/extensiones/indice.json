@@ -14,7 +14,7 @@
   {
     "id": "reloj-mundial",
     "nombre": "Reloj mundial",
-    "descripcion": "La hora de varias ciudades en una pestaña. Jarvis también la consulta.",
+    "descripcion": "La hora de varias ciudades en una pestaña. El agente también la consulta.",
     "autor": "Tkyoxx",
     "tipo": "extension",
     "archivos": [

@@ -24,6 +24,7 @@ mod notes;
 mod ocr;
 mod overlay;
 mod pad;
+mod pc;
 mod placement;
 mod player;
 mod scripts;

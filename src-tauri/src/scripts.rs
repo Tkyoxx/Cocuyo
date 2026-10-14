@@ -509,10 +509,16 @@ pub struct Action {
     copiar: Option<String>,
     ejecutar: Option<String>,
     dato: Option<String>,
+    agente: Option<u64>,
+    si: Option<bool>,
 }
 
 #[tauri::command]
 pub async fn script_action(app: AppHandle, action: Action) -> Result<String, String> {
+    if let Some(call) = action.agente {
+        crate::agent::answered_permission(call, action.si.unwrap_or(false));
+        return Ok(String::new());
+    }
     if let Some(target) = action.abrir.filter(|t| !t.trim().is_empty()) {
         crate::apps::open(target.trim())?;
         return Ok(String::new());

@@ -244,7 +244,7 @@ fn about_the_person(app: &AppHandle, said: &str) -> String {
     text
 }
 
-fn instructions(scripts: &[Script]) -> String {
+fn instructions(scripts: &[Script], agent: bool) -> String {
     let mut text = String::from(
         "Eres el intérprete de órdenes de un asistente de voz para Windows. Recibes lo que la persona dijo, transcrito por una máquina: \
          puede traer errores de oído, palabras pegadas, nombres mal escritos, o venir en otro idioma.\n\
@@ -257,6 +257,14 @@ fn instructions(scripts: &[Script]) -> String {
         for script in scripts.iter().take(40) {
             text.push_str(&format!("- {}: {}\n", script.name, if script.about.is_empty() { "sin descripción" } else { &script.about }));
         }
+    }
+    if agent {
+        text.push_str(
+            "\nagente <la tarea completa, con todos los datos que dio la persona>\n\n\
+             Usa «agente» solo cuando lo pedido no cabe en una de las formas de arriba: necesita varios pasos seguidos, manejar una app con el \
+             mouse y el teclado (mandar un mensaje por WhatsApp, Discord o Telegram, llenar algo, cambiar un ajuste de una app), leer lo que hay \
+             en pantalla, o buscar y combinar información. Si cabe en una forma, usa la forma: es mucho más rápido.\n",
+        );
     }
     text.push_str(
         "\nUsa «responde» solo cuando sea una pregunta o un comentario y no una orden (¿cuánto es 15 por 12?, ¿cómo se dice gato en inglés?). \
@@ -556,7 +564,7 @@ pub fn hear(app: &AppHandle, wav: &[u8], dictation: bool, scripts: &[Script]) ->
     let system = format!(
         "{}{}{}\n\nEsta vez lo que dijo la persona no viene escrito: está en el audio. Suele hablar en {language}. Responde con DOS líneas exactas y nada más:\n\
          dicho: <lo que dijo, transcrito tal cual, en su idioma>\norden: <la orden, con una de las formas de arriba>",
-        instructions(scripts),
+        instructions(scripts, crate::agent::wanted(app)),
         about_the_person(app, ""),
         recent()
     );
@@ -756,7 +764,7 @@ pub fn rewrite(app: &AppHandle, said: &str, scripts: &[Script]) -> Result<String
             return Ok(order.clone());
         }
     }
-    let system = format!("{}{}{talking}", instructions(scripts), about_the_person(app, said));
+    let system = format!("{}{}{talking}", instructions(scripts, crate::agent::wanted(app)), about_the_person(app, said));
     let order = chat(app, &system, said, Extra::None).map(|reply| order_in(&reply))?;
     if !order.is_empty() && !order.to_lowercase().starts_with("responde") {
         let mut answers = ANSWERS.lock().unwrap();
@@ -932,8 +940,9 @@ mod tests {
     #[test]
     fn scripts_are_offered_to_the_model() {
         let scripts = [Script { name: "copia de seguridad".into(), about: "Copia mis documentos al disco externo.".into(), path: PathBuf::new() }];
-        let text = instructions(&scripts);
+        let text = instructions(&scripts, false);
         assert!(text.contains("script <nombre>") && text.contains("- copia de seguridad: Copia mis documentos"));
-        assert!(!instructions(&[]).contains("script <nombre>"));
+        assert!(!instructions(&[], false).contains("script <nombre>"));
+        assert!(!instructions(&[], false).contains("agente <") && instructions(&[], true).contains("agente <"));
     }
 }

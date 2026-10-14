@@ -303,6 +303,14 @@ pub async fn capture_commit(app: AppHandle, x: f64, y: f64, w: f64, h: f64) -> C
     result
 }
 
+pub fn pixels(x: i32, y: i32, w: i32, h: i32) -> Option<(Vec<u8>, i32, i32)> {
+    grab(x, y, w, h).map(|frame| (frame.bgra, frame.w, frame.h))
+}
+
+pub fn png_of(x: i32, y: i32, w: i32, h: i32) -> Option<Vec<u8>> {
+    grab(x, y, w, h)?.png_for_asking()
+}
+
 pub fn screen_text() -> Result<String, String> {
     use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
     let (w, h) = unsafe { (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)) };
