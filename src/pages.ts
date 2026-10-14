@@ -782,6 +782,12 @@ const appsPage: Page = {
 const ANIMATED = /\.(mp4|webm|mkv|mov|gif)$/i;
 let walls: string[] = [];
 let wallIndex = 0;
+/** El número junto al deslizador de la barra, y su relleno. */
+function paintAmount(el: HTMLElement, value: number) {
+  el.querySelector("#s-bar-amount-text")!.textContent = value === 0 ? "Nada: se ve todo lo de atrás" : `${value} %`;
+  el.querySelector<HTMLElement>("#s-bar-amount")!.style.setProperty("--p", `${value}%`);
+}
+
 let wallScreen: string | null = null;
 
 async function paintScreens(el: HTMLElement) {
@@ -993,6 +999,7 @@ const AI_KIND_NOTE = {
 const SECTIONS: [string, string][] = [
   ["tu", "Tú"],
   ["isla", "Isla"],
+  ["barra", "Barra"],
   ["voz", "Voz"],
   ["juegos", "Juegos"],
   ["capturas", "Capturas"],
@@ -1063,6 +1070,25 @@ class SettingsPage implements Page {
            <div class="card">
              <div class="srow"><div><b id="s-version">Cocuyo</b><small id="s-update">Mira en GitHub si hay una versión nueva.</small></div><button class="ghost" id="s-update-go">Buscar ahora</button></div>
              <label class="srow"><div><b>Actualizarse sola</b><small>Cuando sale una versión nueva la baja, se cambia y vuelve a abrirse. Nunca en medio de un juego.</small></div><input type="checkbox" class="switch" id="s-updates"></label>
+           </div>`,
+        ) +
+        section(
+          "barra",
+          `<div class="card">
+             <div class="srow stack">
+               <div><b>Cómo se ve la barra de tareas</b><small id="s-bar-help">Se aplica al instante, en todas tus barras.</small></div>
+               <div class="segmented" id="s-bar-style"><span class="thumb"></span><button data-value="normal">Normal</button><button data-value="clear">Transparente</button><button data-value="blur">Desenfoque</button><button data-value="acrylic">Acrílico</button></div>
+             </div>
+             <div class="srow stack" id="s-bar-amount-row">
+               <div><b>Cuánto se oscurece</b><small id="s-bar-amount-text"></small></div>
+               <input type="range" class="range" id="s-bar-amount" min="0" max="100" step="5" />
+             </div>
+           </div>
+           <div class="card">
+             <label class="srow"><div><b>Centrar los íconos</b><small>Se deslizan al centro y se acomodan solos cuando abres o cierras algo.</small></div><input type="checkbox" class="switch" id="s-bar-center"></label>
+             <label class="srow"><div><b>Normal si hay una ventana maximizada</b><small>Con el escritorio a la vista, como la elegiste; con algo ocupando la pantalla, la de siempre.</small></div><input type="checkbox" class="switch" id="s-bar-solid"></label>
+             <label class="srow"><div><b>Esconderla sola</b><small>Aparece al llevar el mouse abajo. Es el ajuste de Windows de siempre.</small></div><input type="checkbox" class="switch" id="s-bar-hide"></label>
+             <small class="warn" id="s-bar-rival" hidden></small>
            </div>`,
         ) +
         section(
@@ -1169,7 +1195,7 @@ class SettingsPage implements Page {
     for (const button of el.querySelectorAll<HTMLElement>("#s-lang button")) {
       button.addEventListener("click", () => this.save({ language: button.dataset.value as Settings["language"] }));
     }
-    const toggle = (sel: string, key: "hideOnFullscreen" | "askWhere" | "copyToClipboard" | "autostart" | "cueFullscreen" | "speakFullscreen" | "gameOverlay" | "aiOn" | "aiDictation" | "aiHear" | "padOn" | "checkUpdates") => {
+    const toggle = (sel: string, key: "hideOnFullscreen" | "askWhere" | "copyToClipboard" | "autostart" | "cueFullscreen" | "speakFullscreen" | "gameOverlay" | "aiOn" | "aiDictation" | "aiHear" | "padOn" | "checkUpdates" | "barCenter" | "barSolidMax") => {
       const input = q<HTMLInputElement>(sel);
       input.addEventListener("change", () => {
         const change: Partial<Settings> = {};
@@ -1250,6 +1276,21 @@ class SettingsPage implements Page {
       void this.paintVoices();
     });
     toggle("#s-pad", "padOn");
+    toggle("#s-bar-center", "barCenter");
+    toggle("#s-bar-solid", "barSolidMax");
+    for (const button of el.querySelectorAll<HTMLElement>("#s-bar-style button")) {
+      button.addEventListener("click", () => this.save({ barStyle: button.dataset.value as Settings["barStyle"] }));
+    }
+    const amount = q<HTMLInputElement>("#s-bar-amount");
+    let sending = 0;
+    amount.addEventListener("input", () => {
+      paintAmount(this.el, Number(amount.value));
+      window.clearTimeout(sending);
+      sending = window.setTimeout(() => void this.save({ barOpacity: Number(amount.value) }), 90);
+    });
+    q<HTMLInputElement>("#s-bar-hide").addEventListener("change", (e) => {
+      void call("taskbar_autohide", { on: (e.target as HTMLInputElement).checked });
+    });
     toggle("#s-updates", "checkUpdates");
     for (const button of el.querySelectorAll<HTMLElement>("#s-pad-combo button")) {
       button.addEventListener("click", () => this.save({ padCombo: Number(button.dataset.value), padButtons: 0 }));
@@ -1705,6 +1746,27 @@ class SettingsPage implements Page {
     q<HTMLInputElement>("#s-copy").checked = s.copyToClipboard;
     void this.paintVoices();
     q<HTMLInputElement>("#s-pad").checked = s.padOn;
+    const barStyle = q("#s-bar-style");
+    [...barStyle.querySelectorAll<HTMLElement>("button")].forEach((button, i) => {
+      const active = button.dataset.value === s.barStyle;
+      button.classList.toggle("on", active);
+      if (active) barStyle.style.setProperty("--i", String(i));
+    });
+    q("#s-bar-amount-row").classList.toggle("off", s.barStyle === "normal");
+    q<HTMLInputElement>("#s-bar-amount").value = String(s.barOpacity);
+    paintAmount(this.el, s.barOpacity);
+    q<HTMLInputElement>("#s-bar-center").checked = s.barCenter;
+    q<HTMLInputElement>("#s-bar-solid").checked = s.barSolidMax;
+    void call<{ autohide: boolean; windows11: boolean; rival: string | null } | null>("taskbar_state", undefined, null).then((bar) => {
+      if (!bar) return;
+      q<HTMLInputElement>("#s-bar-hide").checked = bar.autohide;
+      q("#s-bar-help").textContent = bar.windows11
+        ? "En Windows 11, centrar usa el ajuste del propio Windows, y la transparencia puede notarse poco: esa barra la pinta Windows a su manera."
+        : "Se aplica al instante, en todas tus barras.";
+      const rival = q("#s-bar-rival");
+      rival.hidden = !bar.rival;
+      if (bar.rival) rival.textContent = `Tienes ${bar.rival} abierto. Si los dos tocan la barra se pelean: usa uno solo.`;
+    });
     q<HTMLInputElement>("#s-updates").checked = s.checkUpdates;
     void call<string>("version", undefined, "").then((version) => (q("#s-version").textContent = `Cocuyo ${version}`));
     const into = q("#s-into");

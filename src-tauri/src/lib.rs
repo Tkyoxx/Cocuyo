@@ -27,6 +27,7 @@ mod scripts;
 mod settings;
 mod spotify;
 mod system;
+mod taskbar;
 mod tray;
 mod tts;
 mod update;
@@ -207,6 +208,8 @@ pub fn run() {
             update::update_check,
             update::update_install,
             update::update_done,
+            taskbar::taskbar_state,
+            taskbar::taskbar_autohide,
             scripts::gallery_publish,
             scripts::gallery_list,
             scripts::gallery_install,
@@ -243,6 +246,11 @@ pub fn run() {
             demo(app.handle().clone());
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error al iniciar Cocuyo");
+        .build(tauri::generate_context!())
+        .expect("error al iniciar Cocuyo")
+        .run(|_app, event| {
+            if let tauri::RunEvent::Exit = event {
+                taskbar::restore();
+            }
+        });
 }

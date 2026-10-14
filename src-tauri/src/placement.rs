@@ -184,7 +184,7 @@ fn is_shell(class: &str) -> bool {
     matches!(class, "Progman" | "WorkerW" | "Shell_TrayWnd" | "Shell_SecondaryTrayWnd" | "XamlExplorerHostIslandWindow" | "TopLevelWindowForOverflowXamlIsland")
 }
 
-unsafe fn is_app_window(hwnd: HWND, own_process: u32) -> bool {
+pub(crate) unsafe fn is_app_window(hwnd: HWND, own_process: u32) -> bool {
     if !IsWindowVisible(hwnd).as_bool() || IsIconic(hwnd).as_bool() {
         return false;
     }

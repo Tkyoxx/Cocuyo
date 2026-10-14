@@ -50,6 +50,10 @@ pub struct Settings {
     pub pad_on: bool,
     pub pad_combo: u8,
     pub pad_buttons: u16,
+    pub bar_style: String,
+    pub bar_opacity: u8,
+    pub bar_center: bool,
+    pub bar_solid_max: bool,
     pub dictation_into: String,
     pub check_updates: bool,
     pub city: String,
@@ -88,6 +92,10 @@ impl Default for Settings {
             pad_on: false,
             pad_combo: 0,
             pad_buttons: 0,
+            bar_style: "normal".into(),
+            bar_opacity: 0,
+            bar_center: false,
+            bar_solid_max: true,
             dictation_into: String::new(),
             ai_daily: 480,
             voice: String::new(),
@@ -167,6 +175,12 @@ pub fn apply(app: &AppHandle) {
     crate::tray::relabel();
     crate::cue::attach(app.clone(), &settings.voice);
     crate::pad::configure(app, settings.pad_on, settings.pad_combo, settings.pad_buttons);
+    crate::taskbar::configure(crate::taskbar::Look {
+        style: crate::taskbar::Style::from_name(&settings.bar_style),
+        opacity: settings.bar_opacity.min(100),
+        center: settings.bar_center,
+        solid_when_max: settings.bar_solid_max,
+    });
 }
 
 pub fn capture_dir(app: &AppHandle, settings: &Settings) -> Option<PathBuf> {

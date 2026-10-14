@@ -116,6 +116,10 @@ export interface Settings {
   wallpaperDir: string | null;
   liveWallpaper: string | null;
   liveScreens: Record<string, string>;
+  barStyle: "normal" | "clear" | "blur" | "acrylic";
+  barOpacity: number;
+  barCenter: boolean;
+  barSolidMax: boolean;
   autostart: boolean;
   portable: boolean;
   spotifyClientId: string | null;
@@ -209,6 +213,10 @@ const DEFAULTS: Settings = {
   wallpaperDir: null,
   liveWallpaper: null,
   liveScreens: {},
+  barStyle: "normal",
+  barOpacity: 0,
+  barCenter: false,
+  barSolidMax: true,
   autostart: false,
   portable: false,
   spotifyClientId: null,

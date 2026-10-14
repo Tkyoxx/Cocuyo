@@ -193,6 +193,17 @@ En **Ajustes → Juegos → Hablarle desde el mando** (apagado de fábrica) elig
 - **Dibujar el aviso dentro del juego** (Ajustes → Juegos, apagado de fábrica) carga una pequeña librería en el juego, la de [`overlay/`](overlay/), que pinta ahí la misma píldora y los mismos subtítulos. Direct3D 11, 64 bits. No intenta saltarse ningún anti-trampas: un juego protegido puede negarse a cargarla, cerrarse o sancionar la cuenta, así que no la actives en esos.
 - El lazo (`Ctrl` + `Shift`) no se arma con un juego delante: son teclas que ahí se mantienen todo el rato.
 
+## La barra de tareas
+
+En **Ajustes → Barra** la dejas como quieras, sin instalar nada más:
+
+- **Normal, Transparente, Desenfoque o Acrílico**, y un deslizador para decidir cuánto se oscurece. Los cambios se ven al instante, con su transición.
+- **Centrar los íconos**: se deslizan al centro y se reacomodan solos cuando abres o cierras algo. En Windows 11 usa el ajuste de centrado del propio Windows.
+- **Normal si hay una ventana maximizada**: transparente con el escritorio a la vista, la de siempre cuando algo ocupa la pantalla.
+- **Esconderla sola**, el ajuste de Windows de toda la vida, a un clic.
+
+Funciona por avisos de Windows, sin revisar nada cada tantos milisegundos: si no pasa nada, no gasta nada. Al cerrar Cocuyo, la barra vuelve a como estaba. Si tienes TaskbarX, TranslucentTB o parecidos abiertos, Cocuyo te avisa: dos programas tocando la barra a la vez se pelean. En Windows 11 la transparencia puede notarse poco, porque esa barra la pinta Windows a su manera.
+
 ## Fondos animados
 
 En la pestaña **Fondos**, los videos y GIF de tu carpeta se ponen como fondo animado, detrás de los íconos del escritorio.
