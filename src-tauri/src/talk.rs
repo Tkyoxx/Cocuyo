@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde_json::{json, Value};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use windows::core::{w, HSTRING, PCWSTR};
 use windows::Win32::Networking::WinHttp::*;
 
@@ -505,9 +505,13 @@ fn listen(app: &AppHandle, live: &Live, events: &Receiver<Value>, asked: Instant
         if let Some(content) = message.get("serverContent") {
             if let Some(text) = content["inputTranscription"]["text"].as_str() {
                 said.push_str(text);
+                if reply.is_empty() {
+                    let _ = app.emit_to(crate::overlay::LABEL, "live-text", json!({ "who": "you", "text": said.trim() }));
+                }
             }
             if let Some(text) = content["outputTranscription"]["text"].as_str() {
                 reply.push_str(text);
+                let _ = app.emit_to(crate::overlay::LABEL, "live-text", json!({ "who": "app", "text": reply.trim() }));
             }
             for part in content["modelTurn"]["parts"].as_array().into_iter().flatten() {
                 owed = false;

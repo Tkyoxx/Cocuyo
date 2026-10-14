@@ -12,9 +12,29 @@ export class Caption {
   private words = document.getElementById("caption-words")!;
   private visible = false;
   private timer = 0;
+  private shown = { who: "", text: "" };
+
+  stream(who: "you" | "app", text: string, ms: number) {
+    const before = this.shown;
+    if (!this.visible || before.who !== who || !text.startsWith(before.text)) return this.say(who, text, ms);
+    clearTimeout(this.timer);
+    const fresh = text.slice(before.text.length);
+    const spans = fresh.split(/(?<=\s)/).filter(Boolean).map((word, i) => {
+      const span = document.createElement("span");
+      span.className = "word";
+      span.textContent = word;
+      span.style.animationDelay = `${i * 34}ms`;
+      return span;
+    });
+    this.words.append(...spans);
+    this.shown = { who, text };
+    this.onShape();
+    this.timer = window.setTimeout(() => this.hide(), ms);
+  }
 
   say(who: "you" | "app", text: string, ms = 3400) {
     clearTimeout(this.timer);
+    this.shown = { who, text };
     this.el.dataset.who = who;
     this.who.textContent = who === "you" ? tr("Tú") : "Cocuyo";
     text = tr(text);

@@ -10,6 +10,7 @@ export interface Heard {
   text: string;
   reply: string;
   error: string | null;
+  live?: boolean;
 }
 
 export interface VoiceStatus {

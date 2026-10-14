@@ -739,6 +739,7 @@ struct Heard {
     text: String,
     reply: String,
     error: Option<String>,
+    live: bool,
 }
 
 pub fn lasso_listen(app: &AppHandle) -> bool {
@@ -834,7 +835,7 @@ pub fn finish(app: &AppHandle, chord: Chord, cancelled: bool) {
                     }
                     None => crate::gamelayer::finished(&said, &reply, false, false),
                 }
-                let _ = app.emit_to(overlay::LABEL, "heard", Heard { chord, text: said, reply, error });
+                let _ = app.emit_to(overlay::LABEL, "heard", Heard { chord, text: said, reply, error, live: true });
                 return;
             }
             crate::talk::Ended::Failed(why) if cfg!(debug_assertions) => eprintln!("[vivo] no salió en vivo: {why}"),
@@ -845,7 +846,7 @@ pub fn finish(app: &AppHandle, chord: Chord, cancelled: bool) {
         crate::gamelayer::cancel();
         return;
     }
-    let mut heard = Heard { chord, text: String::new(), reply: String::new(), error: None };
+    let mut heard = Heard { chord, text: String::new(), reply: String::new(), error: None, live: false };
     let dictation = chord == Chord::Dictation;
     let direct = recording.as_ref().ok().and_then(|recording| hear_with_ai(app, recording, dictation));
     let was_direct = direct.is_some();

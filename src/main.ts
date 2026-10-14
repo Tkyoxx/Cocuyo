@@ -227,7 +227,19 @@ function setLevel(peak: number) {
 }
 on<number>("level", setLevel);
 
+on<{ who: "you" | "app"; text: string }>("live-text", (live) => {
+  if (!live.text) return;
+  if (live.who === "app") pill.done();
+  caption.stream(live.who, live.text, readingTime(live.text) + 1500);
+});
+
 on<Heard>("heard", (heard) => {
+  if (heard.live && !heard.error) {
+    pill.done();
+    if (heard.reply) caption.stream("app", heard.reply, readingTime(heard.reply));
+    else if (heard.text) caption.stream("you", heard.text, 1600);
+    return;
+  }
   if (heard.error) {
     pill.cancel();
     if (heard.text) caption.say("you", heard.text, 1600);
