@@ -1020,6 +1020,20 @@ const AI_KIND_NOTE = {
   pago: "De pago: necesita la clave de tu cuenta con ese proveedor.",
 };
 
+function outgoing(s: Settings) {
+  if (!s.aiOn) return "Nada: sin IA, tu voz y tus capturas se quedan aquí. Todo se entiende en tu PC.";
+  let host = "";
+  try {
+    host = new URL(s.aiUrl).hostname;
+  } catch {
+    host = s.aiUrl;
+  }
+  if (/^(127\.0\.0\.1|localhost|\[::1\])$/.test(host)) return "Nada: tu modelo corre en este PC, así que tu voz y tus capturas no salen de aquí.";
+  if (host.endsWith("googleapis.com"))
+    return "Lo que digas y las capturas que le pidas mirar van a Google. En el plan gratis de Gemini, Google puede usarlos para mejorar sus productos.";
+  return `Lo que digas y las capturas que le pidas mirar van a ${host}. Qué hace con ellos depende de sus condiciones.`;
+}
+
 const SECTIONS: [string, string][] = [
   ["tu", "Tú"],
   ["isla", "Isla"],
@@ -1202,6 +1216,7 @@ class SettingsPage implements Page {
              <div class="srow slim"><input id="s-ai-url" placeholder="Dirección del servicio" spellcheck="false" /></div>
              <div class="srow slim pair"><input id="s-ai-model" placeholder="Modelo" spellcheck="false" /><button class="ghost pick" id="s-ai-pick">Elegir modelos ${ic("down")}</button></div>
              <div class="srow slim pair"><input id="s-ai-key" type="password" placeholder="Clave" spellcheck="false" autocomplete="off" /><button class="ghost" id="s-ai-getkey" hidden>Conseguir clave</button></div>
+             <div class="srow"><div><b>Qué sale de tu PC</b><small id="s-ai-out"></small></div></div>
            </div>
            <div class="card">
              <div class="ai-list" id="s-ai-list" hidden></div>
@@ -1999,6 +2014,7 @@ class SettingsPage implements Page {
       button.classList.toggle("on", active);
       if (active) when.style.setProperty("--i", String(i));
     });
+    q("#s-ai-out").textContent = outgoing(s);
     q("#s-ai-when-help").textContent = s.aiAlways
       ? "En cada orden: afina más los nombres, pero tarda más."
       : "Solo cuando Cocuyo no reconoce la frase.";

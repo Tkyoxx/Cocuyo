@@ -115,6 +115,13 @@ guide.onOpen = (size) => {
   void call("set_voice_practice", { on: true });
 };
 guide.onResize = (size) => island.setPanel(size);
+guide.onVoice = () =>
+  setTimeout(() => {
+    settingsPage.goTo("voz");
+    menu.show("ajustes");
+    cards.behind = true;
+    emit("menu", true);
+  }, 420);
 let wanted: Place = "top";
 guide.onClose = () => {
   island.setBase("idle");

@@ -47,14 +47,24 @@
         <section id="guide" aria-labelledby="guide-title">
           <header class="guide-head">
             <span class="guide-step" id="guide-step"></span>
-            <span class="lamps" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="lamps" aria-hidden="true"></span>
           </header>
           <h1 id="guide-title"></h1>
           <div class="keys" id="guide-keys" aria-hidden="true"></div>
           <p class="guide-body" id="guide-body"></p>
+          <div class="guide-brain" id="guide-brain" hidden>
+            <button type="button" data-brain="local"><b>Solo en mi PC</b><small>Sin IA, todo aquí</small></button>
+            <button type="button" data-brain="gemini"><b>Con Gemini gratis</b><small>Con tu propia clave</small></button>
+            <button type="button" data-brain="later"><b>Decidir después</b><small>Queda sin IA</small></button>
+          </div>
+          <div class="guide-keyrow" id="guide-keyrow" hidden>
+            <input id="guide-key" type="password" placeholder="Pega aquí tu clave" spellcheck="false" autocomplete="off" />
+            <button type="button" class="ghost" id="guide-getkey">Conseguir clave</button>
+          </div>
           <p class="guide-live" id="guide-live"></p>
           <footer class="guide-foot">
             <button type="button" class="link" id="guide-skip">Saltar la guía</button>
+            <button type="button" class="link" id="guide-voice" hidden>Ir a Ajustes → Voz</button>
             <button type="button" class="solid" id="guide-done" hidden>Entendido</button>
           </footer>
         </section>
