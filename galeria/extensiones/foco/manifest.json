@@ -1,0 +1,8 @@
+{
+  "nombre": "Foco",
+  "descripcion": "Pestaña Pomodoro: 25 minutos de trabajo, 5 de descanso. Di «empieza el foco» y listo.",
+  "autor": "Tkyoxx",
+  "version": "1.0",
+  "tipo": "extension",
+  "codigo": "index.js"
+}

@@ -1,0 +1,34 @@
+/* aurora: la isla respira entre verde agua y violeta */
+:root {
+  --accent: #5ef2c2;
+  --accent-ink: #032019;
+  --black: #04090d;
+}
+#island .shell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow:
+    inset 0 -1.5px 0 rgb(94 242 194 / 0.9),
+    inset 0 -16px 24px -16px rgb(94 242 194 / 0.55);
+  animation: aurora-respira 7s ease-in-out infinite;
+}
+#island:not([data-face="menu"]) {
+  filter: drop-shadow(0 6px 14px rgb(94 242 194 / 0.28));
+}
+@keyframes aurora-respira {
+  0%,
+  100% {
+    filter: hue-rotate(0deg);
+    opacity: 0.8;
+  }
+  50% {
+    filter: hue-rotate(115deg);
+    opacity: 1;
+  }
+}
+#caption[data-who="app"] .said {
+  border-color: rgb(94 242 194 / 0.35);
+}

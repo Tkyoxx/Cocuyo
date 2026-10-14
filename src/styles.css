@@ -719,3 +719,223 @@ button.solid:active {
     transition-duration: 0.01ms !important;
   }
 }
+
+#cards {
+  position: fixed;
+  top: 58px;
+  left: 50%;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(380px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.sc {
+  --tint: var(--accent);
+  position: relative;
+  overflow: hidden;
+  padding: 14px 16px 15px;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 22px;
+  background:
+    radial-gradient(120% 90% at 0% 0%, color-mix(in srgb, var(--tint) 16%, transparent), transparent 60%),
+    rgb(12 12 15 / 0.96);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.08),
+    0 18px 44px rgb(0 0 0 / 0.55);
+  color: var(--ink);
+  pointer-events: auto;
+  opacity: 0;
+  transform: translateY(-14px) scale(0.94);
+  transform-origin: 50% 0;
+  transition:
+    opacity 0.22s var(--ui),
+    transform 0.22s var(--ui);
+}
+.sc.on {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 0.3s var(--ui),
+    transform 0.62s var(--pop);
+}
+.sc.gone {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.96);
+}
+.sc-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.sc-art {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  object-fit: cover;
+  background: color-mix(in srgb, var(--tint) 22%, transparent);
+}
+.sc-emoji {
+  display: grid;
+  place-items: center;
+  font-size: 24px;
+}
+.sc-title {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.sc-title b {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sc-title small {
+  color: var(--dim);
+  font-size: 11.5px;
+}
+.sc-x {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.08);
+  color: var(--dim);
+  font-size: 16px;
+  line-height: 1;
+}
+.sc-text {
+  margin: 11px 0 0;
+  color: rgb(230 228 234);
+  font-size: 13.5px;
+  font-weight: 450;
+  line-height: 1.45;
+}
+.sc-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 12px;
+}
+.sc-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 10px;
+  font-size: 12.5px;
+}
+.sc-row:has(i) {
+  grid-template-columns: minmax(0, 1fr) 90px auto;
+}
+.sc-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sc-row i {
+  height: 5px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--tint) calc(var(--p) * 100%), rgb(255 255 255 / 0.1) 0);
+}
+.sc-row b {
+  color: var(--tint);
+  font-weight: 650;
+}
+.sc-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 13px;
+}
+.sc-buttons button {
+  height: 30px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 0.1);
+  color: var(--ink);
+  font: 600 12.5px var(--font);
+}
+.sc-buttons button:first-child {
+  background: var(--tint);
+  color: #15120c;
+}
+.sc-time {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 100%;
+  background: color-mix(in srgb, var(--tint) 70%, transparent);
+  transform-origin: 0 50%;
+  animation: sc-life var(--life, 10s) linear forwards;
+}
+.sc.held .sc-time {
+  animation-play-state: paused;
+}
+@keyframes sc-life {
+  to {
+    transform: scaleX(0);
+  }
+}
+.sc-progress .sc-art {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+}
+.sc-spin {
+  border: 3px solid color-mix(in srgb, var(--tint) 25%, transparent);
+  border-top-color: var(--tint);
+  background: none;
+  animation: sc-spin 0.9s linear infinite;
+}
+.sc-progress.finished .sc-spin {
+  border-color: var(--tint);
+  animation: none;
+}
+@keyframes sc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.sc-bar {
+  height: 6px;
+  margin-top: 12px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: rgb(255 255 255 / 0.1);
+}
+.sc-bar i {
+  display: block;
+  width: calc(var(--p, 0) * 100%);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--tint);
+  transition: width 0.4s var(--out);
+}
+.sc-progress.unknown .sc-bar i {
+  width: 34%;
+  animation: sc-slide 1.2s var(--ui) infinite;
+}
+@keyframes sc-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+#cards.behind {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s var(--ui);
+}

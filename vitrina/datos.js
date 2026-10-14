@@ -237,6 +237,22 @@
     ai_budget: [37, 960],
     ai_models: ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemma-4-27b-it"],
     update_check: null,
+    extensions_list: [
+      { id: "cocuyos", nombre: "Cocuyos", descripcion: "Luciérnagas alrededor de la isla al ritmo de tu voz.", autor: "Tkyoxx", version: "1.0", tipo: "extension", estilo: null, codigo: `${location.origin}/galeria/extensiones/cocuyos/index.js`, vista: null, activa: true },
+      { id: "foco", nombre: "Foco", descripcion: "Pestaña Pomodoro: di «empieza el foco».", autor: "Tkyoxx", version: "1.0", tipo: "extension", estilo: null, codigo: `${location.origin}/galeria/extensiones/foco/index.js`, vista: null, activa: true },
+      { id: "aurora", nombre: "Aurora", descripcion: "La isla con un borde de aurora boreal que respira.", autor: "Tkyoxx", version: "1.0", tipo: "tema", estilo: `${location.origin}/galeria/extensiones/aurora/estilo.css`, codigo: null, vista: null, activa: new URLSearchParams(location.search).has("aurora") },
+      { id: "neon", nombre: "Neón", descripcion: "Cyberpunk: magenta, cian y letra de terminal.", autor: "Tkyoxx", version: "1.0", tipo: "tema", estilo: `${location.origin}/galeria/extensiones/neon/estilo.css`, codigo: null, vista: null, activa: new URLSearchParams(location.search).has("neon") },
+    ],
+    extensions_gallery: [
+      { id: "cocuyos", nombre: "Cocuyos", descripcion: "Luciérnagas que revolotean alrededor de la isla al ritmo de tu voz.", autor: "Tkyoxx", tipo: "extension", vista: "", have: true },
+      { id: "foco", nombre: "Foco", descripcion: "Pestaña Pomodoro: 25 de trabajo, 5 de descanso.", autor: "Tkyoxx", tipo: "extension", vista: "", have: true },
+      { id: "aurora", nombre: "Aurora", descripcion: "La isla con un borde de aurora boreal que respira.", autor: "Tkyoxx", tipo: "tema", vista: "", have: true },
+      { id: "medianoche", nombre: "Medianoche", descripcion: "Azul noche y lila. Para los que programan a las 3 a. m.", autor: "Tkyoxx", tipo: "tema", vista: "", have: false },
+      { id: "neon", nombre: "Neón", descripcion: "Cyberpunk: magenta, cian y letra de terminal.", autor: "Tkyoxx", tipo: "tema", vista: "", have: true },
+    ],
+    extension_commands: null,
+    script_action: "",
+    say_aloud: null,
     lasso_ask: { question: "¿Qué es esta planta?", answer: "Es una monstera. Le gusta la luz indirecta y regarla cuando la tierra está seca." },
   };
 

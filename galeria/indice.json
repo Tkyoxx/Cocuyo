@@ -1,5 +1,17 @@
 [
   {
+    "name": "adivina el numero",
+    "about": "Piensa un número del 1 al 20 y te deja adivinarlo, conversando.",
+    "file": "adivina el numero.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "cuenta regresiva",
+    "about": "Una cuenta regresiva con barra de progreso. Dile los segundos: «ejecuta cuenta regresiva 30».",
+    "file": "cuenta regresiva.ps1",
+    "author": "Tkyoxx"
+  },
+  {
     "name": "organiza descargas",
     "about": "Ordena tu carpeta de Descargas en carpetas por tipo: imágenes, videos, documentos, instaladores y demás.",
     "file": "organiza descargas.ps1",
@@ -31,7 +43,7 @@
   },
   {
     "name": "quien usa internet",
-    "about": "Dice qué programas tienen más conexiones a internet abiertas ahora mismo.",
+    "about": "Muestra qué programas tienen más conexiones a internet abiertas ahora mismo.",
     "file": "quien usa internet.ps1",
     "author": "Tkyoxx"
   },
@@ -115,7 +127,7 @@
   },
   {
     "name": "dolar hoy",
-    "about": "Dice a cómo está el dólar en la moneda de tu país.",
+    "about": "Dice a cómo está el dólar en la moneda de tu país, con su tarjeta.",
     "file": "dolar hoy.ps1",
     "author": "Tkyoxx"
   },

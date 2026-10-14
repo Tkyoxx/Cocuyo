@@ -1,0 +1,8 @@
+{
+  "nombre": "Cocuyos",
+  "descripcion": "Mientras le hablas, unas luciérnagas revolotean alrededor de la isla al ritmo de tu voz.",
+  "autor": "Tkyoxx",
+  "version": "1.0",
+  "tipo": "extension",
+  "codigo": "index.js"
+}

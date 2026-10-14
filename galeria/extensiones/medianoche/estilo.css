@@ -1,0 +1,17 @@
+/* medianoche: azul profundo, lila y cero amarillo */
+:root {
+  --black: #0b1024;
+  --accent: #b69cff;
+  --accent-ink: #170b36;
+  --card: rgb(150 160 255 / 0.07);
+  --tile: rgb(150 160 255 / 0.11);
+  --dim: rgb(150 152 190);
+}
+#island .shell {
+  background: linear-gradient(180deg, #0b1024, #121a3a);
+}
+.sc {
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgb(182 156 255 / 0.18), transparent 60%),
+    rgb(11 16 36 / 0.97);
+}

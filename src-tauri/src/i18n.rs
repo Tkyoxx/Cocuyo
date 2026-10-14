@@ -173,6 +173,7 @@ const REPLIES: &[(&str, &str, &str)] = &[
     ("Ver la guía otra vez", "Show the guide again", "Ver o guia de novo"),
     ("Ajustes…", "Settings…", "Ajustes…"),
     ("Soltar teclas atascadas", "Release stuck keys", "Soltar teclas presas"),
+    ("Desactivar extensiones", "Turn off extensions", "Desativar extensões"),
     ("Salir de Cocuyo", "Quit Cocuyo", "Sair do Cocuyo"),
     ("Programas y accesos directos", "Programs and shortcuts", "Programas e atalhos"),
     ("Desinstalar Cocuyo", "Uninstall Cocuyo", "Desinstalar o Cocuyo"),

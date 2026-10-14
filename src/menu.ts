@@ -41,14 +41,7 @@ export class Menu {
   };
 
   constructor() {
-    for (const page of PAGES) {
-      const button = document.createElement("button");
-      button.className = "tab";
-      button.textContent = page.label;
-      button.addEventListener("click", () => this.select(page));
-      this.tabsEl.append(button);
-      this.buttons.set(page.id, button);
-    }
+    for (const page of PAGES) this.addButton(page);
     new ResizeObserver(() => {
       if (this.open) this.layout(true);
     }).observe(this.tabsEl);
@@ -58,6 +51,24 @@ export class Menu {
     window.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && this.open) this.onClose();
     });
+  }
+
+  addPage(page: Page) {
+    if (this.buttons.has(page.id)) return;
+    const settings = PAGES.indexOf(settingsPage);
+    PAGES.splice(settings < 0 ? PAGES.length : settings, 0, page);
+    this.addButton(page, this.buttons.get(settingsPage.id));
+    if (this.open) this.layout(true);
+  }
+
+  private addButton(page: Page, before?: HTMLElement) {
+    const button = document.createElement("button");
+    button.className = "tab";
+    button.textContent = page.label;
+    button.addEventListener("click", () => this.select(page));
+    if (before) this.tabsEl.insertBefore(button, before);
+    else this.tabsEl.append(button);
+    this.buttons.set(page.id, button);
   }
 
   show(id?: string) {

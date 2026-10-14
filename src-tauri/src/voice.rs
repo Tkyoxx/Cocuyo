@@ -448,6 +448,17 @@ fn first_things(app: &AppHandle, spoken: &str) -> Option<Result<String, String>>
 }
 
 pub fn run_order(app: &AppHandle, spoken: &str) -> Result<String, String> {
+    if let Some(done) = crate::scripts::answered(app, spoken) {
+        return done;
+    }
+    if let Some(done) = crate::extensions::spoken(app, spoken) {
+        return done;
+    }
+    if crate::ai::asking() && crate::ai::mode(app).is_some() {
+        if let Ok(order) = crate::ai::rewrite(app, spoken, &crate::scripts::list(app)) {
+            return follow(app, spoken, &order);
+        }
+    }
     if let Some(done) = first_things(app, spoken) {
         return done;
     }
@@ -538,7 +549,6 @@ fn follow(app: &AppHandle, spoken: &str, order: &str) -> Result<String, String> 
     }
     if lower.starts_with("responde ") {
         let answer = order["responde ".len()..].trim().trim_start_matches(':').trim().to_string();
-        crate::ai::talked(spoken, &answer);
         crate::cue::answer(&answer);
         return Ok(answer);
     }
@@ -786,10 +796,19 @@ pub fn finish(app: &AppHandle, chord: Chord, cancelled: bool) {
             let outcome = if dictation {
                 inject::paste(&text).map(|()| String::new())
             } else {
-                match &order {
-                    Some(order) => first_things(app, &text).unwrap_or_else(|| follow(app, &text, order)),
+                let outcome = match &order {
+                    Some(order) => match crate::scripts::answered(app, &text).or_else(|| crate::extensions::spoken(app, &text)) {
+                        Some(done) => done,
+                        None if crate::ai::asking() => follow(app, &text, order),
+                        None => first_things(app, &text).unwrap_or_else(|| follow(app, &text, order)),
+                    },
                     None => run_order(app, &text),
+                };
+                match &outcome {
+                    Ok(reply) => crate::ai::talked(&text, reply),
+                    Err(why) => crate::ai::talked(&text, &format!("(no pude: {why})")),
                 }
+                outcome
             };
             heard.text = text;
             match outcome {

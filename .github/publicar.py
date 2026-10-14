@@ -8,7 +8,7 @@ import os
 import re
 import sys
 
-TIPOS = ("ps1", "py", "bat", "cmd", "sh")
+TIPOS = ("ps1", "py", "js", "bat", "cmd", "sh")
 GALERIA = "galeria"
 
 

@@ -28,6 +28,9 @@ import { Installer } from "./install";
 import { Island } from "./island";
 import { Lasso } from "./lasso";
 import { Menu } from "./menu";
+import { emit, loadExtensions } from "./extensiones";
+import { settingsPage } from "./pages";
+import { Cards, type Card, type Progress } from "./tarjeta";
 import { Selector } from "./selector";
 
 const memory = (navigator as { deviceMemory?: number }).deviceMemory ?? 8;
@@ -43,6 +46,9 @@ const pill = new Pill();
 const guide = new Guide();
 const installer = new Installer();
 const menu = new Menu();
+const cards = new Cards();
+const floating = new Set<HTMLElement>();
+const floatWatch = new ResizeObserver(() => publish());
 
 function publish() {
   if (lasso.active || selector.active) return;
@@ -50,20 +56,30 @@ function publish() {
   for (const shape of [island.shape(), caption.shape(), pill.shape()]) {
     if (shape) shapes.push(shape);
   }
+  shapes.push(...cards.shapes());
+  for (const el of floating) {
+    const r = el.getBoundingClientRect();
+    if (r.width && r.height) shapes.push({ x: r.left, y: r.top, w: r.width, h: r.height, r: 0 });
+  }
   setRegion(shapes);
 }
 
-island.onShape = caption.onShape = pill.onShape = publish;
+island.onShape = caption.onShape = pill.onShape = cards.onShape = publish;
+cards.onSay = (text) => caption.say("app", text, 4200);
 
 function closeMenu() {
   if (!menu.open) return;
   menu.hide();
   island.setBase("idle");
+  cards.behind = false;
+  emit("menu", false);
 }
 
 island.onOpen = () => {
   if (guide.open || installer.open) return;
   menu.show();
+  cards.behind = true;
+  emit("menu", true);
 };
 island.onLeave = () => {
   if (!menu.typing) closeMenu();
@@ -77,7 +93,10 @@ menu.onSettings = (s) => {
 };
 void getSettings().then(menu.onSettings);
 onSettingsRequested(() => {
-  if (!guide.open && !installer.open) menu.show("ajustes");
+  if (!guide.open && !installer.open) {
+    menu.show("ajustes");
+    cards.behind = true;
+  }
 });
 
 installer.onOpen = (size) => {
@@ -222,6 +241,48 @@ on<Heard>("heard", (heard) => {
 });
 
 on<string>("note", (text) => caption.say("app", text, 5200));
+on<Card>("script-card", (card) => cards.show(card));
+on<Progress>("script-progress", (update) => cards.progress(update));
+on("extensions-off", () => location.reload());
+
+void loadExtensions({
+  island: document.getElementById("island")!,
+  say: (text, ms) => caption.say("app", text, ms ?? readingTime(text)),
+  card: (card) => cards.show(card),
+  progress: (script, valor, texto) => cards.progress({ script, valor, texto }),
+  addPage: (page) => menu.addPage(page),
+  openMenu: (id) => {
+    menu.show(id);
+    cards.behind = true;
+    emit("menu", true);
+  },
+  closeMenu,
+  float: (el) => {
+    if (!el.isConnected) document.body.append(el);
+    floating.add(el);
+    floatWatch.observe(el);
+    publish();
+    return () => {
+      floating.delete(el);
+      floatWatch.unobserve(el);
+      el.remove();
+      publish();
+    };
+  },
+}).then(() => {
+  let reopen: string | null = null;
+  try {
+    reopen = sessionStorage.getItem("cocuyo.reabrir");
+    sessionStorage.removeItem("cocuyo.reabrir");
+  } catch {
+    reopen = null;
+  }
+  if (reopen) {
+    settingsPage.goTo(reopen);
+    menu.show("ajustes");
+    cards.behind = true;
+  }
+});
 
 on<{ version: string }>("update", (found) => caption.say("app", `Actualizando Cocuyo a la ${found.version}. Ya vuelvo.`, 4000));
 void call<string | null>("update_done", undefined, null).then((version) => {
@@ -237,7 +298,10 @@ onDemo((step) => {
   else if (step === "conectar-spotify") void call("spotify_connect");
   else if (step.startsWith("idioma=")) setLanguage(step.slice(7) as "es" | "en" | "pt");
   else if (step === "derecha" || step === "arriba") island.setPlace(step === "derecha" ? "right" : "top");
-  else menu.show(step);
+  else {
+    menu.show(step);
+    cards.behind = true;
+  }
 });
 
 const writable = (target: EventTarget | null) => target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;

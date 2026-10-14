@@ -239,6 +239,53 @@ const scenes = {
     });
   },
 
+  async sdk({ page, emit }) {
+    await record(page, "sdk", TOP, async () => {
+      await wait(700);
+      await emit("chord", { chord: "command", phase: "start", cancelled: false, cursor: null });
+      await speak(emit, 2.2);
+      await emit("chord", { chord: "command", phase: "end", cancelled: false, cursor: null });
+      await wait(700);
+      await emit("heard", { chord: "command", text: "a cómo está el dólar hoy", reply: "El dólar está a 3.185,26 COP.", error: null });
+      await emit("script-card", {
+        id: 1, script: "dolar hoy", titulo: "1 USD = 3.185,26 COP", texto: "Cambio de referencia de hoy. El de la casa de cambio siempre es peor, ya sabes.",
+        icono: "💵", color: "#5fd38d", segundos: 9,
+        filas: [{ texto: "Dólar", valor: "3.185,26" }, { texto: "Euro", valor: "3.565,24" }, { texto: "100 dólares", valor: "318.526" }],
+        botones: [{ texto: "Copiar", copiar: "3185" }, { texto: "Ver gráfica", abrir: "https://x" }],
+      });
+      await wait(4200);
+      for (let i = 0; i <= 10; i++) {
+        await emit("script-progress", { script: "organiza descargas", valor: i / 10, texto: i < 10 ? `Moviendo ${i * 4} de 40 archivos` : "Listo" });
+        await wait(220);
+      }
+      await wait(1500);
+      await page.mouse.move(640, 16, { steps: 30 });
+      await wait(400);
+      await page.mouse.down();
+      await page.mouse.up();
+      await wait(500);
+      const tab = await page.locator("#tabs button.tab", { hasText: "Foco" }).boundingBox();
+      await page.mouse.move(tab.x + tab.width / 2, tab.y + tab.height / 2, { steps: 16 });
+      await page.mouse.down();
+      await page.mouse.up();
+      await wait(1200);
+      const go = await page.locator(".foco-go").boundingBox();
+      await page.mouse.move(go.x + go.width / 2, go.y + go.height / 2, { steps: 16 });
+      await page.mouse.down();
+      await page.mouse.up();
+      await wait(3200);
+      await page.mouse.move(1100, 600, { steps: 24 });
+      await wait(1400);
+      await emit("chord", { chord: "command", phase: "start", cancelled: false, cursor: null });
+      await speak(emit, 3);
+      await emit("chord", { chord: "command", phase: "end", cancelled: false, cursor: null });
+      await wait(600);
+      await emit("heard", { chord: "command", text: "cuánto falta del foco", reply: "", error: null });
+      await emit("note", "Quedan 24:56 de trabajo.");
+      await wait(2600);
+    });
+  },
+
   async fijas({ page, emit }) {
     for (const [tab, wait_ms] of [["hoy", 1600], ["controles", 1600], ["equipo", 1800], ["apps", 1600], ["portapapeles", 1400]]) {
       await emit("demo", tab);

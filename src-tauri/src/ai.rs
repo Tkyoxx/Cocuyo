@@ -29,7 +29,9 @@ static TURN: AtomicUsize = AtomicUsize::new(0);
 static RESTING: Mutex<Vec<(String, Instant, usize)>> = Mutex::new(Vec::new());
 static USAGE: Mutex<(String, Vec<(String, u32)>)> = Mutex::new((String::new(), Vec::new()));
 static TALK: Mutex<Vec<(Instant, String, String)>> = Mutex::new(Vec::new());
-const TALK_FOR: Duration = Duration::from_secs(600);
+const TALK_FOR: Duration = Duration::from_secs(30 * 60);
+const TALK_TURNS: usize = 16;
+const ANSWER_WITHIN: Duration = Duration::from_secs(3 * 60);
 static ANSWERS: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
 
 fn key_path(app: &AppHandle) -> Option<PathBuf> {
@@ -118,10 +120,20 @@ responde <respuesta corta, de una o dos frases, en el idioma de la persona>";
 pub fn talked(said: &str, answer: &str) {
     let mut talk = TALK.lock().unwrap();
     talk.retain(|(when, _, _)| when.elapsed() < TALK_FOR);
-    if talk.len() >= 6 {
+    if talk.len() >= TALK_TURNS {
         talk.remove(0);
     }
-    talk.push((Instant::now(), said.to_string(), answer.chars().take(400).collect()));
+    talk.push((Instant::now(), said.trim().to_string(), answer.trim().chars().take(400).collect()));
+}
+
+pub fn asking() -> bool {
+    let talk = TALK.lock().unwrap();
+    talk.last().is_some_and(|(when, _, answer)| when.elapsed() < ANSWER_WITHIN && answer.trim_end().ends_with('?'))
+}
+
+pub fn conversation() -> String {
+    let talk = TALK.lock().unwrap();
+    talk.iter().filter(|(when, _, _)| when.elapsed() < TALK_FOR).map(|(_, said, answer)| format!("Persona: {said}\nCocuyo: {answer}")).collect::<Vec<_>>().join("\n")
 }
 
 fn recent() -> String {
@@ -130,7 +142,18 @@ fn recent() -> String {
     if lines.is_empty() {
         return String::new();
     }
-    format!("\n\nLo último que hablaron, por si la frase nueva sigue esa conversación:\n{}", lines.join("\n"))
+    let mut text = format!(
+        "\n\nLo que llevan hablando (lo más viejo arriba). Úsalo: la frase nueva casi siempre sigue esta conversación, \
+         y si habla de «eso», «lo de antes» o «la otra», se refiere a algo de aquí:\n{}",
+        lines.join("\n")
+    );
+    if talk.last().is_some_and(|(when, _, answer)| when.elapsed() < ANSWER_WITHIN && answer.trim_end().ends_with('?')) {
+        text.push_str(
+            "\n\nCocuyo acaba de hacerle una pregunta. La frase nueva es la RESPUESTA a esa pregunta: júntala con lo que la persona \
+             quería antes y devuelve la orden completa (o «responde …» si toca seguir conversando). No la trates como una orden suelta.",
+        );
+    }
+    text
 }
 
 fn memory_path(app: &AppHandle) -> Option<PathBuf> {
@@ -242,7 +265,7 @@ fn instructions(scripts: &[Script]) -> String {
     text
 }
 
-fn base64(bytes: &[u8]) -> String {
+pub(crate) fn base64(bytes: &[u8]) -> String {
     const LETTERS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {
@@ -775,6 +798,19 @@ mod tests {
         talked("cómo se dice gato en inglés", "Se dice cat.");
         let recent = recent();
         assert!(recent.contains("Persona: cómo se dice gato en inglés") && recent.contains("Cocuyo: Se dice cat."));
+        assert!(!asking());
+
+        talked("quiero armar una lista de mercado", "¿Para cuántos días la quieres?");
+        assert!(asking(), "acaba de preguntar algo: lo siguiente es la respuesta");
+        let now = super::recent();
+        assert!(now.contains("RESPUESTA") && now.contains("lista de mercado"));
+        assert!(conversation().contains("Cocuyo: ¿Para cuántos días la quieres?"));
+        talked("para una semana", "Listo, lista de mercado para una semana.");
+        assert!(!asking());
+        for n in 0..30 {
+            talked(&format!("frase {n}"), "vale");
+        }
+        assert_eq!(TALK.lock().unwrap().len(), TALK_TURNS);
     }
 
     #[test]

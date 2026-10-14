@@ -1,5 +1,7 @@
 // las pestañas del menu. es largo, si, algun dia lo parto
 
+import { convertFileSrc } from "@tauri-apps/api/core";
+import type { ExtensionInfo } from "./extensiones";
 import { locale, tr, weekLetters } from "./i18n";
 import {
   call,
@@ -783,6 +785,19 @@ const ANIMATED = /\.(mp4|webm|mkv|mov|gif)$/i;
 let walls: string[] = [];
 let wallIndex = 0;
 /** El número junto al deslizador de la barra, y su relleno. */
+function extensionUrl(path: string) {
+  return /^https?:\/\//.test(path) ? path : convertFileSrc(path);
+}
+
+function reloadInto(section: string) {
+  try {
+    sessionStorage.setItem("cocuyo.reabrir", section);
+  } catch {
+    /* sin almacenamiento: abre donde caiga */
+  }
+  setTimeout(() => location.reload(), 350);
+}
+
 function paintPreview(el: HTMLElement, style: Settings["barStyle"], opacity: number, center: boolean) {
   const box = el.querySelector<HTMLElement>("#s-bar-preview")!;
   box.style.setProperty("--bp-a", String(style === "normal" ? 0.96 : opacity / 100));
@@ -1014,6 +1029,7 @@ const SECTIONS: [string, string][] = [
   ["capturas", "Capturas"],
   ["musica", "Música"],
   ["ia", "IA"],
+  ["extensiones", "Extensiones"],
   ["atajos", "Atajos"],
 ];
 
@@ -1023,8 +1039,14 @@ class SettingsPage implements Page {
   w = 900;
   h = 440;
 
+  goTo(section: string) {
+    this.section = section;
+    if (this.el) this.open(section);
+  }
+
   private open(section: string) {
     this.section = section;
+    if (section === "extensiones") void this.paintExtensions();
     for (const node of this.el.querySelectorAll<HTMLElement>("[data-sec]")) node.classList.toggle("on", node.dataset.sec === section);
   }
 
@@ -1174,6 +1196,18 @@ class SettingsPage implements Page {
            </div>`,
         ) +
         section(
+          "extensiones",
+          `<div class="card">
+             <label class="srow"><div><b>Extensiones y temas</b><small>Cambian cómo se ve la isla o le añaden cosas nuevas, como Spicetify con Spotify. Apagado, Cocuyo arranca tal cual viene.</small></div><input type="checkbox" class="switch" id="s-ext-on"></label>
+             <div class="srow slim"><div><b>Hazlas tú</b><small>Un tema es un CSS; una extensión, un poco de JavaScript con la API de Cocuyo.</small></div><button class="ghost" id="s-ext-docs">Cómo se hacen</button></div>
+             <div class="srow slim"><div><b>Tu carpeta</b><small id="s-ext-count"></small></div><button class="ghost pick" id="s-ext-gallery">Galería</button><button class="ghost" id="s-ext-open">Abrir carpeta</button></div>
+           </div>
+           <div class="card ext-card">
+             <div class="ext-list" id="s-ext-list"></div>
+             <div class="ai-list wide" id="s-ext-shop" hidden></div>
+           </div>`,
+        ) +
+        section(
           "atajos",
           `<div class="card">${
             keyRow("dictationKeys", "Dictar", "Mantener y hablar") +
@@ -1205,7 +1239,7 @@ class SettingsPage implements Page {
     for (const button of el.querySelectorAll<HTMLElement>("#s-lang button")) {
       button.addEventListener("click", () => this.save({ language: button.dataset.value as Settings["language"] }));
     }
-    const toggle = (sel: string, key: "hideOnFullscreen" | "askWhere" | "copyToClipboard" | "autostart" | "cueFullscreen" | "speakFullscreen" | "gameOverlay" | "aiOn" | "aiDictation" | "aiHear" | "padOn" | "checkUpdates" | "barCenter" | "barSolidMax") => {
+    const toggle = (sel: string, key: "hideOnFullscreen" | "askWhere" | "copyToClipboard" | "autostart" | "cueFullscreen" | "speakFullscreen" | "gameOverlay" | "aiOn" | "aiDictation" | "aiHear" | "padOn" | "checkUpdates" | "barCenter" | "barSolidMax" | "extensionsOn") => {
       const input = q<HTMLInputElement>(sel);
       input.addEventListener("change", () => {
         const change: Partial<Settings> = {};
@@ -1341,6 +1375,38 @@ class SettingsPage implements Page {
       button.disabled = false;
     });
     q("#s-gallery").addEventListener("click", () => void this.openGallery());
+    toggle("#s-ext-on", "extensionsOn");
+    q("#s-ext-on").addEventListener("change", () => reloadInto("extensiones"));
+    q("#s-ext-open").addEventListener("click", () => void call("extensions_open"));
+    q("#s-ext-docs").addEventListener("click", () => void call("script_action", { action: { abrir: "https://github.com/Tkyoxx/Cocuyo/tree/main/sdk" } }).catch(() => {}));
+    q("#s-ext-gallery").addEventListener("click", () => void this.openExtensionShop());
+    q("#s-ext-list").addEventListener("change", async (e) => {
+      const input = (e.target as HTMLElement).closest<HTMLInputElement>("[data-ext]");
+      if (!input) return;
+      await call("extension_set", { id: input.dataset.ext, on: input.checked });
+      reloadInto("extensiones");
+    });
+    q("#s-ext-shop").addEventListener("click", async (e) => {
+      const target = e.target as HTMLElement;
+      const shop = q("#s-ext-shop");
+      if (target.closest("[data-close]")) {
+        shop.hidden = true;
+        return;
+      }
+      const install = target.closest<HTMLButtonElement>("[data-get]");
+      if (!install) return;
+      install.disabled = true;
+      install.textContent = "Bajando…";
+      try {
+        const name = await call<string>("extension_install", { id: install.dataset.get });
+        this.note(`Listo: ${name}. Recargando la isla…`);
+        reloadInto("extensiones");
+      } catch (error) {
+        install.disabled = false;
+        install.textContent = "Instalar";
+        this.note(String(error));
+      }
+    });
     const name = q<HTMLInputElement>("#s-name");
     const city = q<HTMLInputElement>("#s-city");
     const fact = q<HTMLInputElement>("#s-mem-add");
@@ -1607,6 +1673,44 @@ class SettingsPage implements Page {
     }
   }
 
+  private async paintExtensions() {
+    const list = await call<ExtensionInfo[]>("extensions_list", undefined, []);
+    const on = this.settings?.extensionsOn ?? true;
+    this.el.querySelector("#s-ext-count")!.textContent = list.length
+      ? `${list.length} instaladas, ${list.filter((item) => item.activa).length} activas.`
+      : "Nada todavía. Mira la galería o crea la tuya.";
+    this.el.querySelector("#s-ext-list")!.innerHTML =
+      list
+        .map(
+          (item) => `<label class="ext ${on ? "" : "off"}">
+            ${item.vista ? `<img src="${esc(extensionUrl(item.vista))}" alt="">` : `<span class="ext-glyph">${item.tipo === "tema" ? "🎨" : "✨"}</span>`}
+            <div><b>${esc(item.nombre)}</b><small>${esc(item.descripcion || (item.tipo === "tema" ? "Tema" : "Extensión"))}</small><small class="by">${item.tipo === "tema" ? "Tema" : "Extensión"}${item.autor ? ` · @${esc(item.autor)}` : ""}</small></div>
+            <input type="checkbox" class="switch" data-ext="${esc(item.id)}" ${item.activa ? "checked" : ""}>
+          </label>`,
+        )
+        .join("") || `<small class="empty">Aquí salen los temas y las extensiones que instales.</small>`;
+  }
+
+  private async openExtensionShop() {
+    const shop = this.el.querySelector<HTMLElement>("#s-ext-shop")!;
+    shop.hidden = false;
+    const head = `<div class="ai-head"><small>Temas y extensiones de la comunidad. Corren con el mismo poder que Cocuyo: instala solo lo que entiendas.</small><button class="ghost" data-close>Cerrar</button></div>`;
+    shop.innerHTML = `${head}<small class="empty">Abriendo la galería…</small>`;
+    try {
+      const shared = await call<{ id: string; nombre: string; descripcion: string; autor: string; tipo: string; vista: string; have: boolean }[]>("extensions_gallery");
+      shop.innerHTML = `${head}<div class="gallery shop">${shared
+        .map((item) => {
+          const button = item.have ? `<button class="ghost" disabled>Instalada</button>` : `<button class="ghost" data-get="${esc(item.id)}">Instalar</button>`;
+          const art = item.vista ? `<img class="shop-art" src="${esc(item.vista)}" alt="" loading="lazy">` : `<span class="shop-art">${item.tipo === "tema" ? "🎨" : "✨"}</span>`;
+          return `<div class="shared shop-item">${art}<div><b>${esc(item.nombre)}</b><small>${esc(item.descripcion)}</small><small class="by">${item.tipo === "tema" ? "Tema" : "Extensión"}${item.autor ? ` · @${esc(item.autor)}` : ""}</small></div>${button}</div>`;
+        })
+        .join("")}</div>`;
+    } catch (error) {
+      shop.innerHTML = head;
+      shop.querySelector("small")!.textContent = String(error);
+    }
+  }
+
   private async openPublish() {
     const list = this.el.querySelector<HTMLElement>("#s-ai-list")!;
     const scripts = await call<{ name: string; about: string }[]>("scripts_list", undefined, []);
@@ -1762,6 +1866,7 @@ class SettingsPage implements Page {
     q<HTMLInputElement>("#s-copy").checked = s.copyToClipboard;
     void this.paintVoices();
     q<HTMLInputElement>("#s-pad").checked = s.padOn;
+    q<HTMLInputElement>("#s-ext-on").checked = s.extensionsOn;
     const barStyle = q("#s-bar-style");
     [...barStyle.querySelectorAll<HTMLElement>("button")].forEach((button, i) => {
       const active = button.dataset.value === s.barStyle;

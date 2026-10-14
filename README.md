@@ -50,6 +50,13 @@ La voz se entiende <b>en tu equipo</b>: sin cuenta, sin suscripción y sin manda
     </td>
   </tr>
   <tr>
+    <td colspan="2" valign="top">
+      <img src="media/sdk.webp" alt="Un script responde con una tarjeta del dólar, otro muestra una barra de progreso, la extensión Foco añade una pestaña Pomodoro y la extensión Cocuyos pone luciérnagas alrededor de la isla mientras hablas">
+      <h3>Hazle lo que quieras</h3>
+      Scripts que responden con tarjetas, barras de progreso y preguntas; temas que le cambian la cara a la isla; extensiones que le añaden pestañas, efectos y órdenes de voz. Como Spicetify, pero para tu escritorio. Todo en <a href="sdk/README.md"><code>sdk/</code></a>.
+    </td>
+  </tr>
+  <tr>
     <td width="50%" valign="top">
       <img src="media/fondos.webp" alt="Pestaña Fondos con el carrusel y la opción de elegir monitor">
       <h3>Fondos animados</h3>
@@ -208,6 +215,14 @@ Cocuyo habla siempre que le haces una pregunta (lo que responde la IA, el clima,
 
 Cocuyo solo ejecuta lo que hay en esa carpeta, y lo dicho siempre llega como dato, nunca como código.
 
+### El SDK: tarjetas, preguntas, temas y extensiones
+
+Los scripts ya no solo responden con texto: pueden mostrar **tarjetas** con imagen, filas y botones, una **barra de progreso** mientras trabajan, y **preguntarte** cosas y seguir la conversación. Cocuyo trae la librería para PowerShell, Python y Node.
+
+Y como Spicetify con Spotify, la isla se deja cambiar entera: **temas** (un CSS que le cambia colores, bordes y letras) y **extensiones** (un poco de JavaScript que añade pestañas al menú, efectos alrededor de la isla, widgets en el escritorio u órdenes de voz propias). Vienen de ejemplo un Pomodoro con su pestaña, unas luciérnagas que siguen tu voz y tres temas. Se activan en **Ajustes → Extensiones**.
+
+Todo explicado, con ejemplos, en [`sdk/`](sdk/README.md).
+
 ### La galería
 
 **Ajustes → IA → Galería** es como un workshop: scripts que comparte la gente, cada uno con el nombre y la foto de quien lo subió, y un botón para instalarlo. Ya trae unos cuantos: ordenar la carpeta de Descargas, limpiar temporales, medir el ping, cerrar lo que no responde, buscar un archivo, modo foco, el dólar de hoy, chistes malos…
@@ -326,6 +341,7 @@ npm run tauri dev
 - `overlay/` — la librería que pinta el aviso dentro de los juegos.
 - `barra/` — la librería que le quita el fondo a la barra de Windows 11.
 - `galeria/` — los scripts de la galería y su índice.
+- `sdk/` — la guía para hacer scripts, temas y extensiones, las librerías de PowerShell, Python y Node, y los tipos de la API.
 - `vitrina/` — la misma interfaz en un navegador con datos inventados y una barra de Windows 10 de mentira; `grabar.mjs` graba ahí las imágenes de este README.
 - `.github/` — el formulario para subir scripts, el bot que los publica y el que compila cada versión.
 

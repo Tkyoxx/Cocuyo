@@ -7,6 +7,7 @@ mod capture;
 mod clip;
 mod cue;
 mod dialogs;
+mod extensions;
 mod gamelayer;
 mod hotkeys;
 mod i18n;
@@ -222,6 +223,16 @@ pub fn run() {
             tts::tts_install,
             scripts::scripts_list,
             scripts::scripts_open,
+            scripts::script_action,
+            scripts::script_run,
+            scripts::say_aloud,
+            extensions::extensions_list,
+            extensions::extensions_open,
+            extensions::extension_set,
+            extensions::extensions_master,
+            extensions::extensions_gallery,
+            extensions::extension_install,
+            extensions::extension_commands,
             install::install_state,
             install::install_run,
             install::install_relaunch,
@@ -234,6 +245,7 @@ pub fn run() {
             overlay::prepare(&window)?;
             tray::build(app.handle())?;
             mic::spawn(app.handle().clone());
+            extensions::allow(app.handle());
             settings::apply(app.handle());
             if settings::load(app.handle()).autostart {
                 let _ = system::set_autostart(true);

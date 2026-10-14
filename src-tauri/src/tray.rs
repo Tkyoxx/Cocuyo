@@ -21,12 +21,14 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let guide = MenuItem::with_id(app, "guide", "Ver la guía otra vez", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "Ajustes…", true, None::<&str>)?;
     let unstick = MenuItem::with_id(app, "unstick", "Soltar teclas atascadas", true, None::<&str>)?;
+    let plain = MenuItem::with_id(app, "plain", "Desactivar extensiones", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Salir de Cocuyo", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&settings, &guide, &unstick, &quit])?;
+    let menu = Menu::with_items(app, &[&settings, &guide, &unstick, &plain, &quit])?;
     let _ = ITEMS.set(vec![
         (guide, "Ver la guía otra vez"),
         (settings, "Ajustes…"),
         (unstick, "Soltar teclas atascadas"),
+        (plain, "Desactivar extensiones"),
         (quit, "Salir de Cocuyo"),
     ]);
 
@@ -42,6 +44,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
                 let _ = app.emit_to(overlay::LABEL, "settings", ());
             }
             "unstick" => crate::hotkeys::release_modifiers(),
+            "plain" => crate::extensions::safe_mode(app),
             "quit" => app.exit(0),
             _ => {}
         });

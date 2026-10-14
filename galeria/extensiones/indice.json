@@ -1,0 +1,47 @@
+[
+  {
+    "id": "cocuyos",
+    "nombre": "Cocuyos",
+    "descripcion": "Luciérnagas que revolotean alrededor de la isla al ritmo de tu voz.",
+    "autor": "Tkyoxx",
+    "tipo": "extension",
+    "archivos": ["manifest.json", "index.js"],
+    "vista": ""
+  },
+  {
+    "id": "foco",
+    "nombre": "Foco",
+    "descripcion": "Pestaña Pomodoro: 25 de trabajo, 5 de descanso. Di «empieza el foco».",
+    "autor": "Tkyoxx",
+    "tipo": "extension",
+    "archivos": ["manifest.json", "index.js"],
+    "vista": ""
+  },
+  {
+    "id": "aurora",
+    "nombre": "Aurora",
+    "descripcion": "La isla con un borde de aurora boreal que respira.",
+    "autor": "Tkyoxx",
+    "tipo": "tema",
+    "archivos": ["manifest.json", "estilo.css"],
+    "vista": ""
+  },
+  {
+    "id": "medianoche",
+    "nombre": "Medianoche",
+    "descripcion": "Azul noche y lila. Para los que programan a las 3 a. m.",
+    "autor": "Tkyoxx",
+    "tipo": "tema",
+    "archivos": ["manifest.json", "estilo.css"],
+    "vista": ""
+  },
+  {
+    "id": "neon",
+    "nombre": "Neón",
+    "descripcion": "Cyberpunk: magenta, cian y letra de terminal.",
+    "autor": "Tkyoxx",
+    "tipo": "tema",
+    "archivos": ["manifest.json", "estilo.css"],
+    "vista": ""
+  }
+]
