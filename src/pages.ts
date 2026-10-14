@@ -1742,7 +1742,7 @@ class SettingsPage implements Page {
         .map(
           (item) => `<label class="ext ${on ? "" : "off"}">
             ${item.vista ? `<img src="${esc(extensionUrl(item.vista))}" alt="">` : `<span class="ext-glyph">${item.tipo === "tema" ? "🎨" : "✨"}</span>`}
-            <div><b>${esc(item.nombre)}</b><small>${esc(item.descripcion || (item.tipo === "tema" ? "Tema" : "Extensión"))}</small><small class="by">${item.tipo === "tema" ? "Tema" : "Extensión"}${item.autor ? ` · @${esc(item.autor)}` : ""}</small></div>
+            <div><b>${esc(item.nombre)}</b><small class="desc">${esc(item.descripcion || (item.tipo === "tema" ? "Tema" : "Extensión"))}</small><small class="by">${item.tipo === "tema" ? "Tema" : "Extensión"}${item.autor ? ` · @${esc(item.autor)}` : ""}</small></div>
             <input type="checkbox" class="switch" data-ext="${esc(item.id)}" ${item.activa ? "checked" : ""}>
           </label>`,
         )
@@ -1760,7 +1760,7 @@ class SettingsPage implements Page {
         .map((item) => {
           const button = item.have ? `<button class="ghost" disabled>Instalada</button>` : `<button class="ghost" data-get="${esc(item.id)}">Instalar</button>`;
           const art = item.vista ? `<img class="shop-art" src="${esc(item.vista)}" alt="" loading="lazy">` : `<span class="shop-art">${item.tipo === "tema" ? "🎨" : "✨"}</span>`;
-          return `<div class="shared shop-item">${art}<div><b>${esc(item.nombre)}</b><small>${esc(item.descripcion)}</small><small class="by">${item.tipo === "tema" ? "Tema" : "Extensión"}${item.autor ? ` · @${esc(item.autor)}` : ""}</small></div>${button}</div>`;
+          return `<div class="shared shop-item">${art}<div><b>${esc(item.nombre)}</b><small class="desc">${esc(item.descripcion)}</small><small class="by">${item.tipo === "tema" ? "Tema" : "Extensión"}${item.autor ? ` · @${esc(item.autor)}` : ""}</small></div>${button}</div>`;
         })
         .join("")}</div>`;
     } catch (error) {

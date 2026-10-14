@@ -2136,7 +2136,8 @@ input.range:active::-webkit-slider-thumb {
   gap: 6px;
   max-height: 300px;
   overflow-y: auto;
-  padding: 10px;
+  padding: 10px 10px 24px;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent);
 }
 .ext {
   display: flex;
@@ -2184,6 +2185,15 @@ input.range:active::-webkit-slider-thumb {
 .ext small.by {
   color: var(--accent);
 }
+.ext small.desc,
+.shop-item small.desc {
+  display: -webkit-box;
+  overflow: hidden;
+  line-height: 1.3;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
 .ssec:has(#s-ext-shop:not([hidden])) > .card:first-child {
   visibility: hidden;
 }
@@ -2194,29 +2204,38 @@ input.range:active::-webkit-slider-thumb {
   visibility: hidden;
 }
 .shop-item {
-  flex-direction: column;
-  align-items: stretch;
-  padding: 8px;
+  align-items: center;
+  gap: 11px;
+  min-height: 64px;
+  padding: 9px 10px;
 }
 .shop-item > div {
-  padding: 2px 4px;
+  gap: 2px;
+}
+.shop-item small {
+  color: var(--dim);
+  font-size: 11px;
 }
 .shop-art {
   display: grid;
+  flex: none;
   place-items: center;
-  width: 100%;
-  height: 92px;
+  width: 42px;
+  height: 42px;
   border-radius: 10px;
   object-fit: cover;
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  font-size: 30px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  font-size: 19px;
+}
+img.shop-art {
+  width: 68px;
 }
 .shop-item button {
-  align-self: flex-end;
+  flex: none;
 }
-span.shop-art {
-  height: 54px;
-  font-size: 24px;
+.gallery.shop {
+  gap: 6px;
+  padding-bottom: 4px;
 }
 
 .mcp-list {
