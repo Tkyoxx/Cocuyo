@@ -1,0 +1,164 @@
+[
+  {
+    "name": "organiza descargas",
+    "about": "Ordena tu carpeta de Descargas en carpetas por tipo: imágenes, videos, documentos, instaladores y demás.",
+    "file": "organiza descargas.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "limpia temporales",
+    "about": "Borra los archivos temporales de más de un día y dice cuánto espacio liberó.",
+    "file": "limpia temporales.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "resumen del pc",
+    "about": "Resume tu PC en una frase: procesador, gráfica, memoria, disco y Windows.",
+    "file": "resumen del pc.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "mata lo que no responde",
+    "about": "Cierra a la fuerza los programas que se quedaron colgados, los que Windows marca como «No responde».",
+    "file": "mata lo que no responde.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "como esta mi internet",
+    "about": "Mide el ping, los paquetes perdidos y qué tan estable está la conexión. Para saber si el lag es tuyo.",
+    "file": "como esta mi internet.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "quien usa internet",
+    "about": "Dice qué programas tienen más conexiones a internet abiertas ahora mismo.",
+    "file": "quien usa internet.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "busca archivo",
+    "about": "Busca un archivo por nombre en tus carpetas y te lo señala en el Explorador.",
+    "file": "busca archivo.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "modo foco",
+    "about": "Cierra lo que distrae: Discord, WhatsApp, Telegram, Steam y compañía. La lista está arriba del script, cámbiala a tu gusto.",
+    "file": "modo foco.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "reinicia el explorador",
+    "about": "Reinicia el Explorador de Windows: para cuando la barra de tareas se pega o los íconos desaparecen.",
+    "file": "reinicia el explorador.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "di la hora",
+    "about": "Dice qué hora es.",
+    "file": "di la hora.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "cuanto falta para el viernes",
+    "about": "Cuenta los días que faltan para el viernes.",
+    "file": "cuanto falta para el viernes.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "apaga la pantalla",
+    "about": "Apaga el monitor; vuelve al mover el mouse.",
+    "file": "apaga la pantalla.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "mi ip",
+    "about": "Dice la dirección IP de este equipo en tu red.",
+    "file": "mi ip.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "tira un dado",
+    "about": "Tira un dado. Si le dices un número, ese es el de caras.",
+    "file": "tira un dado.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "cara o cruz",
+    "about": "Lanza una moneda.",
+    "file": "cara o cruz.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "cuanto espacio me queda",
+    "about": "Dice cuánto espacio libre queda en cada disco.",
+    "file": "cuanto espacio me queda.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "cuanto llevo encendido",
+    "about": "Dice hace cuánto está prendido el PC.",
+    "file": "cuanto llevo encendido.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "clave nueva",
+    "about": "Inventa una clave fuerte y la deja copiada. Si le dices un número, ese es el largo.",
+    "file": "clave nueva.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "como llego a",
+    "about": "Abre Google Maps con la ruta al sitio que le digas.",
+    "file": "como llego a.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "dolar hoy",
+    "about": "Dice a cómo está el dólar en la moneda de tu país.",
+    "file": "dolar hoy.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "cuenta un chiste",
+    "about": "Cuenta un chiste malo. Malo de verdad.",
+    "file": "cuenta un chiste.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "modo oscuro",
+    "about": "Cambia Windows entre modo oscuro y modo claro.",
+    "file": "modo oscuro.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "que dia es hoy",
+    "about": "Dice la fecha de hoy.",
+    "file": "que dia es hoy.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "piedra papel o tijera",
+    "about": "Juega una ronda: dile piedra, papel o tijera.",
+    "file": "piedra papel o tijera.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "bola ocho",
+    "about": "Hazle una pregunta de sí o no y la bola responde.",
+    "file": "bola ocho.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "cuanto falta para navidad",
+    "about": "Cuenta los días que faltan para Navidad.",
+    "file": "cuanto falta para navidad.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "elige",
+    "about": "Elige por ti entre lo que le digas: «elige pizza o hamburguesa».",
+    "file": "elige.ps1",
+    "author": "Tkyoxx"
+  }
+]

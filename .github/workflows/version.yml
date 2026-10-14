@@ -1,0 +1,48 @@
+name: Publicar versión
+
+# Al subir una etiqueta v1.2.3 se compila en Windows y se publica con el instalador
+# y el Cocuyo.exe suelto. De ese exe es de donde se actualizan solas las copias instaladas.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Que la etiqueta diga lo mismo que la app
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ("v$version" -ne $env:GITHUB_REF_NAME) { throw "La etiqueta es $env:GITHUB_REF_NAME pero tauri.conf.json dice $version." }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-tauri
+            overlay
+
+      - run: npm ci
+
+      - run: npx tauri build
+
+      - name: Publicar
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Copy-Item src-tauri/target/release/cocuyo.exe Cocuyo.exe
+          $instalador = (Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1).FullName
+          gh release create $env:GITHUB_REF_NAME Cocuyo.exe $instalador --title "Cocuyo $($env:GITHUB_REF_NAME.TrimStart('v'))" --generate-notes

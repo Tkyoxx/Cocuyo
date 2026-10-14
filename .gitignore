@@ -1,0 +1,14 @@
+node_modules/
+dist/
+target/
+src-tauri/gen/
+*.log
+.DS_Store
+Thumbs.db
+
+# notas mias y cosas de mi maquina, no van al repo
+docs/
+voces-prueba/
+.claude/
+.vscode/
+*.zip

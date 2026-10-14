@@ -1,0 +1,85 @@
+[package]
+name = "cocuyo"
+version = "0.1.0"
+description = "Asistente de voz libre para Windows"
+authors = ["Tkyoxx"]
+license = "MIT"
+edition = "2021"
+
+[lib]
+name = "cocuyo_lib"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "protocol-asset"] }
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+png = "0.18"
+cpal = "0.18"
+# Para abrir las voces locales: el tar de Windows 10 no entiende bzip2. Las dos son Rust puro.
+bzip2-rs = "0.1"
+tar = { version = "0.4", default-features = false }
+
+[target.'cfg(windows)'.dependencies]
+# La macro que implementa interfaces COM (el aviso del reproductor de fondos) la busca por este nombre.
+windows-core = "0.62"
+# La misma versión que usa Tauri por dentro: así se compila una sola vez.
+windows = { version = "0.62", features = [
+  "Foundation",
+  "Foundation_Collections",
+  "Media_Control",
+  "Graphics_Imaging",
+  "Media_Core",
+  "Media_Ocr",
+  "Media_SpeechSynthesis",
+  "Storage_Streams",
+  "Win32_Devices_HumanInterfaceDevice",
+  "Win32_Foundation",
+  "Win32_Globalization",
+  "Win32_Graphics_Direct3D",
+  "Win32_Graphics_Direct3D11",
+  "Win32_Graphics_Dwm",
+  "Win32_Graphics_Dxgi",
+  "Win32_Graphics_Dxgi_Common",
+  "Win32_Graphics_Gdi",
+  "Win32_Security_Cryptography",
+  "Win32_Media_Audio",
+  "Win32_Media_Audio_Endpoints",
+  "Win32_Media_MediaFoundation",
+  "Win32_Media_Speech",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Com",
+  "Win32_System_DataExchange",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Memory",
+  "Win32_System_Power",
+  "Win32_System_ProcessStatus",
+  "Win32_System_Registry",
+  "Win32_System_RemoteDesktop",
+  "Win32_System_Shutdown",
+  "Win32_System_SystemInformation",
+  "Win32_System_Threading",
+  "Win32_UI_Accessibility",
+  "Win32_UI_Input",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_Input_XboxController",
+  "Win32_UI_Shell",
+  "Win32_UI_Shell_Common",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+# El binario viaja a máquinas con poco disco y poca RAM: tamaño antes que velocidad de compilación.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# Las dependencias optimizadas hacen que `tauri dev` se sienta como la app real.
+[profile.dev.package."*"]
+opt-level = 2

@@ -1,0 +1,62 @@
+name: Galería
+
+# Alguien manda un script por un issue. Cuando el dueño del repo comenta /aprobar,
+# esto lo mete en galeria/ a nombre de quien lo mandó. Sin /aprobar no pasa nada.
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency: galeria
+
+jobs:
+  publicar:
+    if: >-
+      !github.event.issue.pull_request &&
+      startsWith(github.event.issue.title, 'Script:') &&
+      startsWith(github.event.comment.body, '/aprobar') &&
+      (github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'COLLABORATOR')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Meter el script
+        id: script
+        env:
+          CUERPO: ${{ github.event.issue.body }}
+          AUTOR: ${{ github.event.issue.user.login }}
+        run: python3 .github/publicar.py
+
+      - name: Guardar
+        env:
+          AUTOR: ${{ github.event.issue.user.login }}
+          NUMERO: ${{ github.event.issue.number }}
+          ARCHIVO: ${{ steps.script.outputs.archivo }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add galeria
+          git commit -m "galería: $ARCHIVO de @$AUTOR (#$NUMERO)"
+          git push
+
+      - name: Avisar y cerrar
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMERO: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: gh issue close "$NUMERO" --repo "$REPO" --comment "Ya está en la galería. Gracias por compartirlo."
+
+      - name: Decir qué falló
+        if: failure() && steps.script.outputs.error
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMERO: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+          MOTIVO: ${{ steps.script.outputs.error }}
+        run: |
+          gh issue comment "$NUMERO" --repo "$REPO" --body "No se pudo publicar. $MOTIVO"

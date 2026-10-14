@@ -1,0 +1,254 @@
+# Cocuyo
+
+Una isla negra arriba de tu pantalla, estilo notch: dicta, dale órdenes por voz, captura la pantalla y ten tus cosas a un gesto. Libre, sin cuenta, sin licencia y sin telemetría.
+
+La voz se transcribe **en tu PC**. No hace falta clave, ni suscripción, ni internet una vez descargada.
+
+> **Estado:** en construcción, pero ya se usa. Si algo te falla, [cuéntamelo en un issue](https://github.com/Tkyoxx/Cocuyo/issues).
+
+## Atajos
+
+| Atajo | Para |
+|---|---|
+| Mantener `Ctrl` + `Win` y hablar | Dictar donde tengas el cursor |
+| Mantener `Alt` + `Win` y hablar | Darle una orden |
+| Mantener `Ctrl` + `Shift` y mover el mouse | Rodear una zona y capturarla. Con un modelo de IA conectado, habla mientras rodeas y te responde sobre lo rodeado |
+| `Impr Pant` | Capturar un rectángulo arrastrando |
+| `Alt` + `Impr Pant` | Capturar la ventana activa |
+| `Ctrl` + `Impr Pant` | Capturar toda la pantalla |
+
+Todos se cambian en la pestaña **Ajustes** del menú. Si otra app ya usa `Impr Pant` (Greenshot, por ejemplo), Windows no se lo cede a Cocuyo: ciérrala y reinicia Cocuyo, o elige otro atajo.
+
+## Órdenes que entiende
+
+No hay frases que aprenderse: dilo como te salga. Estos son ejemplos, no la lista.
+
+| Dices | Hace |
+|---|---|
+| «pon De Música Ligera», «quiero escuchar a Héctor Lavoe», «ponme la de Bad Bunny que dice Tití me preguntó» | Suena en Spotify: la canción, o toda la música del artista si nombraste un artista |
+| «pon rock en español», «música para dormir», «pon algo suave» | Una lista de ese género o ambiente |
+| «pon mi lista de entrenar» | Tu lista con ese nombre |
+| «pon algo», «sorpréndeme», «una canción cualquiera» | Algo al azar de una de tus listas |
+| «pausa», «para la música», «quita eso» · «sigue», «dale play» | Pausa · continúa |
+| «siguiente», «pásala», «la que sigue», «otra» · «la anterior», «devuélvela» · «otra vez», «repítela» | Siguiente · anterior · la misma desde el principio |
+| «súbele», «más duro», «bájale un poquito», «volumen al 40», «está muy duro», «no se escucha» | Volumen **de Spotify** |
+| «silencia», «cállate» · «quita el silencio» | Silencia Spotify · le devuelve el sonido |
+| «sube el volumen de la PC», «volumen del equipo al 50» | Volumen de todo el equipo |
+| «abre el bloc de notas», «ábreme Discord y Spotify», «entra a WhatsApp» | Abre la app, o la web si es YouTube, Gmail, WhatsApp… |
+| «busca recetas en YouTube», «quiero ver videos de gatos» | Busca en YouTube |
+| «busca el clima de mañana» | Busca en Google |
+| «anota comprar pan y leche», «toma nota de que…» | Guarda una nota en [Mis Notas](https://github.com/Tkyoxx/mis-notas); si está cerrada, la abre |
+| «recuérdame en 10 minutos sacar la pizza», «pon un temporizador de 5 minutos» | Te avisa, con un tono y en voz alta |
+| «a las 6 de la tarde pon música», «mañana a las 8 recuérdame la cita» | Lo hace o te lo recuerda a esa hora |
+| «todos los días a las 8 abre Spotify», «de lunes a viernes a las 9 abre Discord» | Una rutina |
+| «al encender la PC abre Discord y Spotify» | Una rutina de encendido (con «Abrir con Windows» activado) |
+| «ejecuta copia de seguridad» | Corre un script tuyo |
+| «copia el texto» (después de una captura, o mientras rodeas algo) | Saca el texto de la imagen y lo deja copiado. Lo hace Windows, sin IA |
+| Con un texto seleccionado: «corrígelo», «hazlo más formal», «tradúcelo al inglés» | Reescribe lo seleccionado ahí mismo. Necesita tu modelo de IA |
+| «¿qué me está poniendo lento el PC?» | Te dice quién se está comiendo el procesador y la memoria |
+| «cierra Spotify», «ciérrame Discord», «cierra esto» | Le pide a la app que se cierre, como al pulsar su X (si hay algo sin guardar, pregunta ella) |
+| «pon en cola De Música Ligera», «¿qué suena?», «activa el aleatorio», «ponla en bucle», «me gusta esta canción» | Más Spotify: la cola, qué suena, aleatorio, repetir y Me gusta |
+| «¿qué clima hace?», «¿va a llover hoy?» | El clima de tu ciudad |
+| «recuerda que mi talla es la M», «olvida lo de la talla» | Datos que el modelo de IA tendrá presentes al responderte |
+| «¿qué tengo programado?», «cancela el recordatorio de la pizza» | Lo que hay en la agenda |
+| «toma una captura», «pantallazo» | Captura toda la pantalla |
+| «bloquea el equipo» | Bloquea la sesión |
+
+### Cómo entiende
+
+Cocuyo no compara tu frase con una lista: busca **conceptos**. Cada acción tiene su familia de palabras («pausa», «para», «detén», «quita»…), reconoce los verbos con sus pronombres pegados («pónmela», «súbanle», «bajá») y compara las palabras **por cómo suenan**, así que aguanta lo que la transcripción tuerza: «bolumen», «espotifai», «pauza», «la siguente». Lo que digas antes («oye», «por favor», «puedes…») no estorba.
+
+Con las canciones hace lo mismo del otro lado: de lo que Spotify devuelve, elige lo que de verdad se llama como lo que dijiste.
+
+Sigue sin ser un modelo adivinando. Si en la frase no hay ningún concepto que conozca, lo dice y no hace nada; si no hablas, tampoco inventa. Todo esto son tablas dentro del programa: no usa red, no ocupa memoria aparte y resuelve una frase en menos de un milisegundo.
+
+## Para más tarde: avisos, horas y rutinas
+
+Lo que se programa es una orden de las de siempre, o un aviso. Se dice (o se escribe en la casilla de tareas de la pestaña **Hoy**) con la hora delante o detrás: «en 10 minutos…», «a las 6…», «mañana a las 8…», «el viernes a las 10 de la noche…», «todos los días a las 8…», «de lunes a viernes…», «al encender la PC…». En **Hoy** ves todo lo apuntado y lo quitas con un clic.
+
+Cuando llega la hora, la orden pasa por el mismo sitio que si la acabaras de decir, así que puedes programar cualquier cosa que Cocuyo sepa hacer, incluidos tus scripts. Un aviso suena y se dice en voz alta aunque no estés mirando. Si el equipo estaba apagado, lo de una sola vez se cumple al volver (hasta 12 horas tarde); una rutina diaria espera al día siguiente.
+
+Sin nada apuntado no corre nada: un solo hilo duerme hasta la próxima hora.
+
+## Tu propio modelo de IA (opcional)
+
+Cocuyo entiende las órdenes solo, sin IA, y eso no cambia. En **Ajustes → IA** puedes conectarle un modelo tuyo para tres cosas:
+
+- **Entender lo que la tabla no entiende**: frases raras, nombres mal transcritos, otro idioma.
+- **Responder preguntas**: «¿cuánto es 15 por 12?», «¿cómo se dice gato en inglés?».
+- **Rodear y preguntar**: mantén `Ctrl` + `Shift`, rodea algo en pantalla y pregunta en voz alta mientras lo rodeas.
+
+| Servicio | Costo | Qué necesitas |
+|---|---|---|
+| Ollama, llama.cpp, LM Studio | Gratis, en tu equipo | Tenerlo abierto con un modelo descargado. Sin clave; nada sale de tu PC |
+| Gemini | Plan gratis | Una clave de Google AI Studio |
+| Groq | Plan gratis | Una clave de Groq |
+| OpenAI, DeepSeek, Anthropic | De pago | La clave de tu cuenta |
+| Cualquier otro con el formato de OpenAI | Según el servicio | Su dirección, un modelo y, si la pide, su clave |
+
+De fábrica viene elegido Gemini con sus dos modelos de plan gratis; solo falta tu clave. Eliges el servicio, pegas tu clave (**Conseguir clave** abre la página donde se crea) y tocas el campo **Modelo** para elegir de la lista que el propio servicio ofrece. **Probar** le manda una frase torcida y te muestra qué entendió. La clave se guarda cifrada con tu cuenta de Windows.
+
+Tres ajustes más, apagados de fábrica: **Escuchar con el modelo** le manda tu voz en vez del texto transcrito (entiende mejor los nombres y responde antes; el audio sale de tu equipo), **Pulir los dictados** quita titubeos y pone la puntuación, y en **Cómo quieres que te hable** le das una personalidad. Lo que le pidas recordar se guarda en `memoria.txt`, junto a tus ajustes.
+
+### Hecho para los planes gratis
+
+- **Varios modelos se turnan.** Si eliges más de uno, las consultas se reparten y cada modelo gasta de su propio cupo. Gemini viene con sus dos Flash-Lite, que en octubre de 2026 daban unas 500 consultas gratis al día cada uno: unas 1000 entre los dos. Google cambia esos números a menudo y no los publica en su documentación: los tuyos están en Google AI Studio.
+- **Al que llega a su límite se le deja descansar** (un minuto, luego diez, luego una hora) y la consulta pasa al siguiente. Sin ninguno libre, Cocuyo sigue con lo que entiende solo.
+- **Se pregunta lo menos posible.** De fábrica, solo cuando Cocuyo no reconoce la frase. Aunque elijas «Siempre», «pausa» o «súbele» no se consultan: no hay nada que corregir en ellas. Y la misma frase no se pregunta dos veces.
+- **Hay un tope diario por modelo** (480 de fábrica), un poco por debajo del cupo gratis: el modelo que lo alcanza descansa hasta mañana, y pasado el 60 % del cupo del día Cocuyo solo pregunta lo que no entiende.
+- **Lo ya preguntado se guarda en disco**: la misma orden no vuelve a costar, ni mañana.
+- **Ves lo que llevas gastado hoy** en la propia sección («Hoy: 120 de 960 consultas»).
+
+### Una voz que suena a persona
+
+En **Ajustes → Voz → Voz al responder** eliges con qué voz habla Cocuyo:
+
+| Voz | Dónde corre | Para qué equipo |
+|---|---|---|
+| Windows | En tu equipo | Cualquiera. Suena a robot, pero no pesa nada |
+| Piper (Davefx, Claude, Ald, Daniela) | En tu equipo, sin internet | Cualquiera. Unos 65–115 MB por voz; una frase nueva tarda 2–4 s en un equipo modesto |
+| Kokoro (Dora, Alex, Santa) | En tu equipo, sin internet | Solo equipos rápidos: es la más natural, pero en uno modesto una frase larga tarda más de 20 s |
+| Las de Windows (Pablo, Laura, Helena…) | En tu equipo | Cualquiera. Ya vienen con Windows y hablan al instante |
+| El Loquendero (solo en español) | En tu equipo | La voz de los videos de 2015: la de Loquendo si la tienes instalada (Cocuyo no la trae: es de pago); si no, Pablo más grave |
+| Gemini (Kore, Puck, Charon) | En Google, con tu clave | El plan gratis solo da unas 10 frases nuevas al día por modelo |
+
+Las voces locales usan [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) y se descargan de sus publicaciones oficiales al elegirlas, comprobadas con SHA-256. Con cualquiera, cada frase se prepara una vez y se guarda: «En pausa.» o «Siguiente.» salen después al instante.
+
+Cocuyo habla siempre que le haces una pregunta (lo que responde la IA, el clima, qué suena, qué tienes programado) y en los recordatorios. Las confirmaciones de órdenes solo las dice con un juego a pantalla completa delante, donde no se ve la isla.
+
+## Tus scripts, por voz
+
+**Ajustes → IA → Abrir carpeta** abre tu carpeta de scripts. Cada archivo que pongas ahí es una orden nueva:
+
+- Vale PowerShell (`.ps1`), Python (`.py`), por lotes (`.bat`, `.cmd`) y Bash (`.sh`).
+- Se llama como el archivo: `copia de seguridad.ps1` se ejecuta con «ejecuta copia de seguridad». Sin IA.
+- La primera línea de comentario cuenta para qué sirve. Con un modelo conectado, basta decir algo que encaje con ella.
+- Lo que digas después del nombre le llega como primer argumento y en la variable `COCUYO_DATO`; la frase entera, en `COCUYO_FRASE`.
+- Lo último que el script escriba es lo que Cocuyo te responde.
+
+```powershell
+# Dice qué hora es.
+"Son las " + (Get-Date -Format "h:mm") + "."
+```
+
+Cocuyo solo ejecuta lo que hay en esa carpeta, y lo dicho siempre llega como dato, nunca como código.
+
+### La galería
+
+**Ajustes → IA → Galería** es como un workshop: scripts que comparte la gente, cada uno con el nombre y la foto de quien lo subió, y un botón para instalarlo. Ya trae unos cuantos: ordenar la carpeta de Descargas, limpiar temporales, medir el ping, cerrar lo que no responde, buscar un archivo, modo foco, el dólar de hoy, chistes malos…
+
+Para subir el tuyo, **Subir el mío**: eliges uno de tus scripts y se abre GitHub con todo ya escrito. Hace falta entrar con tu cuenta de GitHub, y es a propósito: así cada script tiene dueño con nombre y foto, y nadie sube cosas raras a escondidas. Entran después de revisarlos. Las reglas están en [`galeria/`](galeria/LEEME.md).
+
+## Tú
+
+En **Ajustes → Tú** le dices cómo te llamas, tu ciudad y cómo quieres que te hable, y ves lo que recuerda de ti. Lo que le pidas recordar («recuerda que mi talla es la M») se guarda en `memoria.txt`, junto a tus ajustes: caben 300 datos, y a la IA solo le llegan los que vienen a cuento de lo que preguntas.
+
+## Instalar
+
+Abre `Cocuyo.exe`. La primera vez, la isla baja y te ofrece instalarse: se copia a tu usuario, crea su acceso directo en el menú Inicio y queda en "Agregar o quitar programas". No pide permisos de administrador. Si prefieres usarla tal cual, elige **Usar sin instalar**.
+
+Cocuyo necesita WebView2, que ya viene con Windows 11 y con casi todos los Windows 10. Si tu equipo no lo tiene, usa el instalador clásico (`Cocuyo_x64-setup.exe`), que lo descarga.
+
+### Se actualiza sola
+
+Cuando publico una versión nueva, Cocuyo la baja de las [publicaciones de este repo](https://github.com/Tkyoxx/Cocuyo/releases), comprueba que el archivo es el que GitHub dice que es, se cambia y vuelve a abrirse. Mira al arrancar y cada seis horas, y nunca lo hace con un juego o un video a pantalla completa delante. Si la descarga falla, se queda con la que tenía. Se apaga en **Ajustes → Isla → Actualizarse sola**; ahí mismo está **Buscar ahora**.
+
+## Música
+
+- **Lo que suena** se le pregunta a Windows: funciona con Spotify, el navegador o cualquier reproductor, sin cuentas. Pausar, seguir, siguiente y anterior van por ahí.
+- **El volumen** de las órdenes es el de Spotify, no el del equipo. Con Spotify conectado mueve el control de la propia app, suene donde suene; sin conectar (o sin Premium) baja a Spotify en el mezclador de Windows, sin tocar las demás apps.
+- **Elegir una canción, un artista, un género, una lista o algo al azar** necesita la API de Spotify y una cuenta Premium. En **Ajustes → Spotify → Conectar**, Cocuyo inicia sesión con el Client ID de tu app de Spotify y guarda su sesión cifrada en tu equipo. Si usas [Mis Notas](https://github.com/Tkyoxx/mis-notas), toma el Client ID que ya configuraste ahí; si no, pégalo en Ajustes (la dirección de retorno de tu app de Spotify debe ser `http://127.0.0.1:5173/`).
+- Sin sesión propia, si Mis Notas está abierta y conectada, Cocuyo usa la de ella. Sin ninguna de las dos, «pon X» abre la búsqueda en Spotify.
+
+## Primera vez
+
+1. Abre el menú (clic en la isla) y ve a **Ajustes**.
+2. En **Voz local**, pulsa **Descargar**. Son 406 MB, una sola vez.
+3. Mantén `Ctrl` + `Win`, di algo y suelta.
+
+## La isla
+
+- Haz clic en ella, o gira la rueda hacia abajo encima, para abrir el menú.
+- Si arriba taparía una ventana (las pestañas de tu navegador), se pasa sola al borde derecho.
+- Con un juego o un video a pantalla completa, se esconde.
+- Para salir o repetir la guía, usa el ícono junto al reloj.
+
+El menú trae: controles de volumen y reproductor (con la barra de la canción arrastrable), reloj y tareas, estado del equipo con lo que más memoria ocupa, red (prueba de velocidad y servidores DNS), historial del portapapeles con texto e imágenes, lanzador de apps, fondos de pantalla, energía y ajustes.
+
+## Idiomas
+
+Español, inglés y portugués. Se elige en **Ajustes → Voz → Idioma** (o al instalar) y cambia cuatro cosas: la interfaz, lo que Cocuyo responde, las órdenes que entiende («play…», «toca…») y la guía que se le da a la transcripción para que no escriba en otro idioma.
+
+### Dictar en otro idioma
+
+En **Ajustes → Voz → Escribir el dictado en** eliges español, inglés o portugués: hablas en tu idioma y queda escrito en el otro. Necesita tu modelo de IA.
+
+## Con el mando
+
+En **Ajustes → Juegos → Hablarle desde el mando** (apagado de fábrica) eliges una combinación: L3 + R3, Select + Start o el botón PS. O la tuya: pulsa **Otros botones**, mantén en el mando los que quieras (gatillos incluidos) y suéltalos. Mantenla, habla y suelta: es lo mismo que el atajo de dar una orden, sin soltar el mando. Vale para los mandos de Xbox (360, One, Series) y para los DualShock 4 y DualSense de PlayStation, por cable o por Bluetooth. Los de Xbox vibran una vez al empezar a escucharte y dos al terminar.
+
+## En los juegos
+
+- Con un juego a pantalla completa **exclusiva**, Cocuyo no muestra ninguna ventana: Windows mandaría el juego al escritorio. Ahí avisa con un tono al empezar a escucharte y otro al terminar, y dice la respuesta en voz alta.
+- **Dibujar el aviso dentro del juego** (Ajustes → Juegos, apagado de fábrica) carga una pequeña librería en el juego, la de [`overlay/`](overlay/), que pinta ahí la misma píldora y los mismos subtítulos. Direct3D 11, 64 bits. No intenta saltarse ningún anti-trampas: un juego protegido puede negarse a cargarla, cerrarse o sancionar la cuenta, así que no la actives en esos.
+- El lazo (`Ctrl` + `Shift`) no se arma con un juego delante: son teclas que ahí se mantienen todo el rato.
+
+## Fondos animados
+
+En la pestaña **Fondos**, los videos y GIF de tu carpeta se ponen como fondo animado, detrás de los íconos del escritorio.
+
+- Los videos no usan navegador: los decodifica la tarjeta gráfica y van directo al escritorio, sin sonido.
+- Si el video es más grande que tu pantalla (un 4K en un monitor 1080p) o va a 60 cuadros por segundo, Cocuyo prepara una sola vez una copia a la medida y usa esa. Se ve igual y cuesta la cuarta parte. Tu archivo no se toca.
+- Con más de un monitor, arriba salen **Todos**, **Monitor 1**, **Monitor 2**…: eliges en cuál va el fondo, y cada uno puede tener el suyo (también los fondos fijos). Si dos monitores comparten video, se decodifica una sola vez.
+- Se pausan solos cuando no se ven: una ventana maximizada o a pantalla completa delante, la sesión bloqueada, la pantalla apagada o el equipo con batería. Va por monitor: si tapas uno, el otro sigue. En pausa no gastan nada.
+- Los GIF, y los videos con un códec que Windows no trae, se muestran con una página mínima.
+- **Buscar fondos** abre [Wallsflow](https://wallsflow.com) en tu navegador. Descarga ahí el que te guste: Cocuyo lo ve llegar a tu carpeta de descargas, lo guarda con tus fondos y lo pone. La descarga la haces tú; Cocuyo no recorre la página ni baja nada por su cuenta, porque la página no lo permite a los programas. Los fondos son de sus autores y son para uso personal.
+
+## Hecho para equipos modestos
+
+- La interfaz entera pesa 70 KB: TypeScript puro, sin frameworks.
+- En reposo no ejecuta nada: 0 % de CPU, sin temporizadores y con el micrófono cerrado.
+- El modelo de voz solo ocupa memoria mientras transcribe una frase.
+- Una sola ventana. Fuera de la isla, los clics pasan directo a tus apps.
+
+## Compilar
+
+Necesitas Node.js 20 o más nuevo, Rust y las Build Tools de Visual Studio (C++).
+
+```bash
+npm install
+```
+
+```bash
+npm run tauri dev
+```
+
+| Comando | Qué hace |
+|---|---|
+| `npm run tauri dev` | Abre la app con recarga en vivo |
+| `npm run dev` | Solo la interfaz, en `http://localhost:1420` |
+| `npm run tauri build` | Crea el instalador |
+| `cargo test --manifest-path src-tauri/Cargo.toml` | Pruebas del núcleo |
+
+## Cómo está hecho
+
+- `src/` — interfaz: isla, menú y sus páginas, lazo, selección, subtítulos, guía y un motor de resortes propio.
+- `src-tauri/` — núcleo en Rust: atajos, micrófono, voz, órdenes, capturas, apps, estado del equipo, bandeja, el reproductor de fondos animados (`player.rs`), el conector de modelos de IA (`ai.rs`) y los scripts por voz (`scripts.rs`).
+- `src-tauri/installer/` — el aspecto del instalador clásico: `dark.nsh` (colores y animación), `make-art.py` (dibuja las imágenes) y `make-template.py` (aplica los cambios de Cocuyo a la plantilla de Tauri; se vuelve a ejecutar al actualizar Tauri).
+- `overlay/` — la librería que pinta el aviso dentro de los juegos.
+- `galeria/` — los scripts de la galería y su índice.
+- `.github/` — el formulario para subir scripts, el bot que los publica y el que compila cada versión.
+
+La voz usa [whisper.cpp](https://github.com/ggml-org/whisper.cpp) con el modelo Parakeet TDT 0.6b v3. Los dos se descargan de sus repositorios oficiales y se comprueban con SHA-256 antes de usarse.
+
+## Privacidad
+
+- El atajo global usa un hook de teclado de Windows. Solo distingue `Ctrl`, `Shift`, `Alt` y `Win`; no guarda ni envía ninguna tecla. Está en [`src-tauri/src/hotkeys.rs`](src-tauri/src/hotkeys.rs).
+- El micrófono solo se abre mientras mantienes un atajo de voz, y el audio se transcribe y se borra en tu equipo.
+- El historial del portapapeles vive en memoria y desaparece al cerrar la app. Lo que un gestor de contraseñas marca como privado no se guarda.
+- El clima de la pestaña Hoy viene de Open-Meteo, y la primera vez tu ciudad se averigua por tu conexión (ipwho.is): los dos son gratis y sin cuenta, y solo se consultan al abrir la pestaña o al preguntar por el clima.
+- La app solo se conecta cuando tú lo pides: la descarga de la voz, la prueba de velocidad, Spotify si lo conectas y, si activas un modelo de IA, la frase de cada orden que se le consulta y los nombres y descripciones de tus scripts (a tu equipo si es local, o al proveedor que elegiste). Los dictados no se le envían. Las órdenes de buscar abren tu navegador o Spotify, como si lo hicieras a mano.
+
+## Licencia
+
+MIT

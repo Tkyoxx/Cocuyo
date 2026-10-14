@@ -1,0 +1,42 @@
+name: Subir un script a la galería
+description: Comparte un script para que cualquiera lo instale desde Cocuyo. Sale con tu nombre y tu foto de GitHub.
+title: "Script: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Si llegaste aquí desde Cocuyo, ya viene todo lleno: revisa y dale a **Submit new issue**.
+        Cuando se apruebe, un bot lo mete en la galería a tu nombre.
+  - type: input
+    id: archivo
+    attributes:
+      label: Nombre del archivo
+      description: Es lo que se dice para ejecutarlo. `apaga la pantalla.ps1` se lanza con «ejecuta apaga la pantalla».
+      placeholder: apaga la pantalla.ps1
+    validations:
+      required: true
+  - type: input
+    id: que-hace
+    attributes:
+      label: Qué hace
+      description: Una frase. Es lo que se ve en la galería.
+      placeholder: Apaga el monitor; vuelve al mover el mouse.
+    validations:
+      required: true
+  - type: textarea
+    id: codigo
+    attributes:
+      label: El script
+      description: Pégalo completo. Lo último que escriba es lo que Cocuyo responde.
+      render: text
+    validations:
+      required: true
+  - type: checkboxes
+    id: reglas
+    attributes:
+      label: Antes de mandarlo
+      options:
+        - label: No borra archivos, no apaga el equipo ni toca el registro sin que el nombre lo deje clarísimo.
+          required: true
+        - label: No manda datos de nadie a ningún lado ni descarga y ejecuta otra cosa.
+          required: true
