@@ -2207,7 +2207,13 @@ input.range:active::-webkit-slider-thumb {
   visibility: hidden;
 }
 .card:has(> #s-ext-shop:not([hidden])) {
+  align-self: stretch;
   background: none;
+}
+.ssec:has(#s-ext-shop:not([hidden])) {
+  grid-template-rows: 100%;
+  overflow: hidden;
+  mask-image: none;
 }
 .card:has(> #s-ext-shop:not([hidden])) > .ext-list {
   visibility: hidden;
