@@ -2,24 +2,31 @@ name: Publicar versión
 
 # Al subir una etiqueta v1.2.3 se compila en Windows y se publica con el instalador
 # y el Cocuyo.exe suelto. De ese exe es de donde se actualizan solas las copias instaladas.
+# Si el repo tiene el secreto SIGNPATH_API_TOKEN, el exe y el instalador salen firmados por
+# SignPath Foundation (cada firma la aprueba el dueño en signpath.io). Sin el secreto, salen sin firmar.
 on:
   push:
     tags: ["v*"]
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   windows:
     runs-on: windows-latest
+    env:
+      FIRMAR: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Que la etiqueta diga lo mismo que la app
+        id: version
         shell: pwsh
         run: |
           $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
           if ("v$version" -ne $env:GITHUB_REF_NAME) { throw "La etiqueta es $env:GITHUB_REF_NAME pero tauri.conf.json dice $version." }
+          "numero=$version" >> $env:GITHUB_OUTPUT
 
       - uses: actions/setup-node@v4
         with:
@@ -36,19 +43,95 @@ jobs:
 
       - run: npm ci
 
-      - run: npx tauri build
+      - run: npx tauri build --no-bundle
+
+      - name: Subir el exe para firmarlo
+        id: exe-sin-firmar
+        if: env.FIRMAR == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cocuyo-exe-sin-firmar
+          path: src-tauri/target/release/cocuyo.exe
+          if-no-files-found: error
+
+      - name: Firmar el exe
+        if: env.FIRMAR == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'Cocuyo' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG || 'release-signing' }}
+          artifact-configuration-slug: exe
+          github-artifact-id: ${{ steps.exe-sin-firmar.outputs.artifact-id }}
+          parameters: |
+            version: "${{ steps.version.outputs.numero }}"
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: firmado/exe
+
+      - name: Poner el exe firmado
+        if: env.FIRMAR == 'true'
+        shell: pwsh
+        run: Copy-Item firmado/exe/cocuyo.exe src-tauri/target/release/cocuyo.exe -Force
+
+      - run: npx tauri bundle
+
+      - name: Buscar el instalador
+        id: instalador
+        shell: pwsh
+        run: |
+          $instalador = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          "ruta=$($instalador.FullName)" >> $env:GITHUB_OUTPUT
+          "nombre=$($instalador.Name)" >> $env:GITHUB_OUTPUT
+
+      - name: Subir el instalador para firmarlo
+        id: instalador-sin-firmar
+        if: env.FIRMAR == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cocuyo-instalador-sin-firmar
+          path: ${{ steps.instalador.outputs.ruta }}
+          if-no-files-found: error
+
+      - name: Firmar el instalador
+        if: env.FIRMAR == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'Cocuyo' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG || 'release-signing' }}
+          artifact-configuration-slug: instalador
+          github-artifact-id: ${{ steps.instalador-sin-firmar.outputs.artifact-id }}
+          parameters: |
+            version: "${{ steps.version.outputs.numero }}"
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: firmado/instalador
+
+      - name: Poner el instalador firmado
+        if: env.FIRMAR == 'true'
+        shell: pwsh
+        run: Copy-Item "firmado/instalador/${{ steps.instalador.outputs.nombre }}" "${{ steps.instalador.outputs.ruta }}" -Force
 
       - name: Publicar
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          INSTALADOR: ${{ steps.instalador.outputs.ruta }}
         run: |
           Copy-Item src-tauri/target/release/cocuyo.exe Cocuyo.exe
-          $instalador = (Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1).FullName
+          if ($env:FIRMAR -eq 'true') {
+            foreach ($archivo in @("Cocuyo.exe", $env:INSTALADOR)) {
+              $firma = Get-AuthenticodeSignature $archivo
+              if ($firma.Status -ne 'Valid') { throw "$archivo no quedó firmado: $($firma.StatusMessage)" }
+            }
+          }
           gh release view $env:GITHUB_REF_NAME *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $env:GITHUB_REF_NAME Cocuyo.exe $instalador --clobber
+            gh release upload $env:GITHUB_REF_NAME Cocuyo.exe $env:INSTALADOR --clobber
           } else {
-            gh release create $env:GITHUB_REF_NAME Cocuyo.exe $instalador --title "Cocuyo $($env:GITHUB_REF_NAME.TrimStart('v'))" --generate-notes
+            gh release create $env:GITHUB_REF_NAME Cocuyo.exe $env:INSTALADOR --title "Cocuyo $($env:GITHUB_REF_NAME.TrimStart('v'))" --generate-notes
           }
           if ($LASTEXITCODE -ne 0) { exit 1 }

@@ -267,8 +267,10 @@ Cuando publico una versión nueva, Cocuyo la baja de las [publicaciones de este 
 
 ## Primera vez
 
-1. Abre el menú (clic en la isla) y ve a **Ajustes**.
-2. En **Voz local**, pulsa **Descargar**. Son 406 MB, una sola vez.
+La primera vez la isla te lleva de la mano en cinco pasos: dictar, rodear algo, darle una orden de práctica, elegir cómo piensa (solo en tu PC, o con Gemini gratis y tu clave, con lo que sale de tu PC dicho claro) y dónde bajar la voz local. Después:
+
+1. Abre el menú (clic en la isla) y ve a **Ajustes → Voz**.
+2. En **Voz local**, pulsa **Descargar**. Son 424 MB, una sola vez.
 3. Mantén `Ctrl` + `Win`, di algo y suelta.
 
 ## La isla
@@ -364,11 +366,26 @@ La voz usa [whisper.cpp](https://github.com/ggml-org/whisper.cpp) con el modelo 
 
 ## Privacidad
 
+No hay cuentas ni telemetría. Esto es todo lo que sale de tu PC, y cuándo:
+
+- **Sin IA, tu voz y tus capturas no salen de tu PC.** El micrófono solo se abre mientras mantienes un atajo de voz, y el audio se transcribe y se borra en tu equipo.
+- **Con IA** (Ajustes → IA, apagada de fábrica), lo que le digas va al proveedor que elegiste: como texto, o como audio si activas **Escuchar con el modelo** o el modo en vivo. También le llegan las capturas que le pidas mirar, lo que el agente lea de tu pantalla o tu portapapeles cuando le pides algo que lo necesita, lo que suena mientras tomas apuntes, los dictados si activas **Pulir los dictados** y los nombres y descripciones de tus scripts. Si el modelo corre en tu PC (Ollama, llama.cpp, LM Studio), no sale nada. En el plan gratis de Gemini, Google puede usar lo que le mandas para mejorar sus productos. Ajustes → IA te lo recuerda siempre.
+- **Actualizaciones:** al arrancar y cada seis horas, Cocuyo le pregunta a GitHub si hay una versión nueva. No manda nada tuyo. Se apaga en **Ajustes → Isla → Actualizarse sola**.
+- **El clima** de la pestaña Hoy viene de Open-Meteo, y si no escribiste tu ciudad, la primera vez se averigua por tu conexión (ipwho.is). Los dos son gratis y sin cuenta, y solo se consultan al abrir la pestaña o al preguntar por el clima. Para que no se use ipwho.is, escribe tu ciudad en **Ajustes → Tú**.
+- **Lo demás, solo cuando tú lo pides:** la descarga de la voz y de las voces que suenan a persona, la prueba de velocidad, Spotify si lo conectas, las galerías de scripts y extensiones. Las órdenes de buscar abren tu navegador o Spotify, como si lo hicieras a mano.
 - El atajo global usa un hook de teclado de Windows. Solo distingue `Ctrl`, `Shift`, `Alt` y `Win`; no guarda ni envía ninguna tecla. Está en [`src-tauri/src/hotkeys.rs`](src-tauri/src/hotkeys.rs).
-- El micrófono solo se abre mientras mantienes un atajo de voz, y el audio se transcribe y se borra en tu equipo.
 - El historial del portapapeles vive en memoria y desaparece al cerrar la app. Lo que un gestor de contraseñas marca como privado no se guarda.
-- El clima de la pestaña Hoy viene de Open-Meteo, y la primera vez tu ciudad se averigua por tu conexión (ipwho.is): los dos son gratis y sin cuenta, y solo se consultan al abrir la pestaña o al preguntar por el clima.
-- La app solo se conecta cuando tú lo pides: la descarga de la voz, la prueba de velocidad, Spotify si lo conectas y, si activas un modelo de IA, la frase de cada orden que se le consulta y los nombres y descripciones de tus scripts (a tu equipo si es local, o al proveedor que elegiste). Los dictados no se le envían. Las órdenes de buscar abren tu navegador o Spotify, como si lo hicieras a mano.
+- Las extensiones dicen si usan internet antes de instalarlas. Las de la galería se revisan antes de entrar; las que instales por tu cuenta son responsabilidad de quien las hizo.
+
+## Code signing policy
+
+Las publicaciones de Cocuyo se firman con el programa gratuito de SignPath para proyectos libres. Solo se firma lo que GitHub Actions compila de este repo con [`version.yml`](.github/workflows/version.yml), y cada firma la aprueba a mano un aprobador. Si un `Cocuyo.exe` no trae la firma de «SignPath Foundation», no salió de aquí o es de antes de la firma.
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+
+- Autores y revisores: [@Tkyoxx](https://github.com/Tkyoxx)
+- Aprobadores: [@Tkyoxx](https://github.com/Tkyoxx)
+- Privacidad: [arriba](#privacidad). This program will not transfer any information to other networked systems unless specifically requested by the user, except for the update check described there, which can be turned off.
 
 ## Licencia
 
