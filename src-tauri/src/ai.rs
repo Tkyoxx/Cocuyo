@@ -383,7 +383,7 @@ fn with_usage<T>(app: &AppHandle, change: impl FnOnce(&mut Vec<(String, u32)>) -
     change(&mut usage.1)
 }
 
-fn count(app: &AppHandle, model: &str) {
+pub(crate) fn count(app: &AppHandle, model: &str) {
     with_usage(app, |counts| match counts.iter_mut().find(|(name, _)| name == model) {
         Some((_, used)) => *used += 1,
         None => counts.push((model.to_string(), 1)),

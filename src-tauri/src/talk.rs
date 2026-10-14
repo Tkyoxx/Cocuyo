@@ -256,10 +256,18 @@ struct Live {
 static LIVE: Mutex<Option<Arc<Live>>> = Mutex::new(None);
 static MODEL: Mutex<String> = Mutex::new(String::new());
 static ANSWERING: AtomicBool = AtomicBool::new(false);
+static RESTING: Mutex<Option<Instant>> = Mutex::new(None);
+const REST: Duration = Duration::from_secs(60 * 60);
+
+fn out_of_quota(why: &str) -> bool {
+    let why = why.to_lowercase();
+    ["429", "quota", "exhausted", "cuota", "rate limit"].iter().any(|sign| why.contains(sign))
+}
 
 pub fn wanted(app: &AppHandle) -> bool {
     let config = crate::settings::load(app);
-    config.ai_live && crate::ai::mode(app).is_some() && config.ai_url.contains("googleapis.com") && config.ai_format != "anthropic"
+    let resting = RESTING.lock().unwrap().is_some_and(|since| since.elapsed() < REST);
+    !resting && config.ai_live && crate::ai::mode(app).is_some() && config.ai_url.contains("googleapis.com") && config.ai_format != "anthropic"
 }
 
 fn model(app: &AppHandle) -> Result<String, String> {
@@ -282,6 +290,16 @@ fn model(app: &AppHandle) -> Result<String, String> {
 }
 
 fn connect(app: &AppHandle) -> Result<Arc<Live>, String> {
+    let opened = open_live(app);
+    if let Err(why) = &opened {
+        if out_of_quota(why) {
+            *RESTING.lock().unwrap() = Some(Instant::now());
+        }
+    }
+    opened
+}
+
+fn open_live(app: &AppHandle) -> Result<Arc<Live>, String> {
     {
         let mut live = LIVE.lock().unwrap();
         if let Some(open) = live.as_ref().filter(|live| !live.dead.load(Ordering::Relaxed) && live.since.elapsed() < STALE_AFTER) {
@@ -314,6 +332,7 @@ fn connect(app: &AppHandle) -> Result<Arc<Live>, String> {
     if first.get("setupComplete").is_none() {
         return Err(format!("Gemini Live no arrancó: {}", first.to_string().chars().take(300).collect::<String>()));
     }
+    crate::ai::count(app, &model);
     if cfg!(debug_assertions) {
         eprintln!("[vivo] conectado a {model} en {:?}", started.elapsed());
     }
@@ -566,6 +585,13 @@ mod tests {
         let mut up = Resampler::new(24_000.0, 48_000.0);
         let total: usize = (0..4).map(|_| up.feed(&vec![0.2; 6_000]).len()).sum();
         assert!((47_990..=48_000).contains(&total), "{total}");
+    }
+
+    #[test]
+    fn an_empty_quota_is_recognized() {
+        assert!(out_of_quota("Gemini Live no aceptó la conexión (429). Resource has been exhausted"));
+        assert!(out_of_quota("Google cerró la conversación: You exceeded your current quota"));
+        assert!(!out_of_quota("No hay conexión con Google."));
     }
 
     #[test]
