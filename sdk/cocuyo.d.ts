@@ -62,6 +62,12 @@ export interface Cocuyo {
   al<E extends keyof Eventos>(evento: E, fn: (dato: Eventos[E]) => void): () => void;
   al(evento: string, fn: (dato: unknown) => void): () => void;
   flotante(el: HTMLElement): () => void;
+  herramienta(herramienta: {
+    nombre: string;
+    descripcion: string;
+    parametros?: Record<string, unknown>;
+    hacer(args: Record<string, unknown>): unknown | Promise<unknown>;
+  }): () => void;
   ejecutar(script: string, dato?: string): Promise<string>;
   invocar<T = unknown>(comando: string, args?: Record<string, unknown>): Promise<T>;
   ajustes(): Promise<Record<string, unknown>>;

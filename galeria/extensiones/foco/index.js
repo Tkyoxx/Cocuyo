@@ -1,7 +1,7 @@
 // foco: un pomodoro que vive en la isla. 25 de trabajo, 5 de descanso, y por voz
 
 export default function (cocuyo) {
-  const WORK = cocuyo.leer("trabajo", 25) * 60;
+  let WORK = cocuyo.leer("trabajo", 25) * 60;
   const REST = cocuyo.leer("descanso", 5) * 60;
   let left = WORK;
   let resting = false;
@@ -115,4 +115,26 @@ export default function (cocuyo) {
     cocuyo.decir("Foco en pausa.");
   });
   cocuyo.orden(["cuanto falta del foco", "cuanto le queda al foco"], () => cocuyo.decir(`Quedan ${clock(left)} de ${resting ? "descanso" : "trabajo"}.`));
+
+  cocuyo.herramienta({
+    nombre: "empezar",
+    descripcion: "Empieza un pomodoro en la extensión Foco. Si la persona dice cuántos minutos, pásalos.",
+    parametros: { type: "object", properties: { minutos: { type: "number", description: "Minutos de trabajo" } } },
+    hacer({ minutos }) {
+      if (Number(minutos) > 0) {
+        pause();
+        resting = false;
+        WORK = Math.min(180, Math.round(Number(minutos))) * 60;
+        left = WORK;
+      }
+      start();
+      return `Foco en marcha: ${clock(left)} de trabajo.`;
+    },
+  });
+  cocuyo.herramienta({
+    nombre: "estado",
+    descripcion: "Dice cómo va el pomodoro de la extensión Foco: si corre, cuánto falta y cuántas vueltas van hoy.",
+    hacer: () => `${timer ? "Corriendo" : "En pausa"}; quedan ${clock(left)} de ${resting ? "descanso" : "trabajo"}; ${done.vueltas} vueltas hoy.`,
+  });
+  cocuyo.herramienta({ nombre: "pausar", descripcion: "Pausa el pomodoro de la extensión Foco.", hacer: () => (pause(), "Foco en pausa.") });
 }

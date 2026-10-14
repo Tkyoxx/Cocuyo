@@ -1,0 +1,8 @@
+{
+  "nombre": "Pulso",
+  "descripcion": "Un widget en el escritorio con el procesador y la memoria en vivo. Un clic y abre Equipo.",
+  "autor": "Tkyoxx",
+  "version": "1.0",
+  "tipo": "extension",
+  "codigo": "index.js"
+}

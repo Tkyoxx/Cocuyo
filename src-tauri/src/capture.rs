@@ -303,6 +303,13 @@ pub async fn capture_commit(app: AppHandle, x: f64, y: f64, w: f64, h: f64) -> C
     result
 }
 
+pub fn screen_text() -> Result<String, String> {
+    use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
+    let (w, h) = unsafe { (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)) };
+    let frame = grab(0, 0, w, h).ok_or("No pude mirar la pantalla.")?;
+    crate::ocr::read(&frame.bgra, frame.w, frame.h)
+}
+
 pub fn asked_about() -> Option<Vec<u8>> {
     ASKED_ABOUT.lock().unwrap().take()
 }

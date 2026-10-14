@@ -1,0 +1,8 @@
+{
+  "nombre": "Reloj mundial",
+  "descripcion": "Una pestaña con la hora de varias ciudades, de día o de noche. Y Jarvis la sabe consultar.",
+  "autor": "Tkyoxx",
+  "version": "1.0",
+  "tipo": "extension",
+  "codigo": "index.js"
+}

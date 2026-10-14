@@ -1,5 +1,35 @@
 [
   {
+    "name": "se cayo",
+    "about": "Mira si se cayó Discord, GitHub, Epic Games y compañía. Dile cuál, o mira todos.",
+    "file": "se cayo.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "wikipedia",
+    "about": "Busca algo en Wikipedia y te lo resume con foto: «ejecuta wikipedia agujero negro».",
+    "file": "wikipedia.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "noticias",
+    "about": "Los titulares de hoy en BBC Mundo, en una tarjeta.",
+    "file": "noticias.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "ruleta",
+    "about": "Gira una ruleta entre lo que le digas: «ejecuta ruleta pizza, sushi o tacos».",
+    "file": "ruleta.ps1",
+    "author": "Tkyoxx"
+  },
+  {
+    "name": "pc a dieta",
+    "about": "Revisa qué le sobra al PC: memoria, temporales y papelera, y te deja limpiar con un botón.",
+    "file": "pc a dieta.ps1",
+    "author": "Tkyoxx"
+  },
+  {
     "name": "adivina el numero",
     "about": "Piensa un número del 1 al 20 y te deja adivinarlo, conversando.",
     "file": "adivina el numero.ps1",

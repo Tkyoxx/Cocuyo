@@ -50,6 +50,27 @@ function sendOrders() {
   }, 50);
 }
 
+const tools = new Map<string, { descripcion: string; parametros: unknown; hacer: (args: Record<string, unknown>) => unknown }>();
+let sendingTools = 0;
+
+function sendTools() {
+  clearTimeout(sendingTools);
+  sendingTools = window.setTimeout(() => {
+    void call("extension_tools", { tools: [...tools].map(([nombre, tool]) => ({ nombre, descripcion: tool.descripcion, parametros: tool.parametros })) });
+  }, 50);
+}
+
+on<{ call: number; nombre: string; args: Record<string, unknown> }>("agent-tool", async (asked) => {
+  const tool = tools.get(asked.nombre);
+  try {
+    if (!tool) throw new Error("esa herramienta ya no existe");
+    const result = await tool.hacer(asked.args ?? {});
+    await call("extension_tool_done", { call: asked.call, ok: true, result: typeof result === "string" ? result : JSON.stringify(result ?? "Hecho.") });
+  } catch (error) {
+    await call("extension_tool_done", { call: asked.call, ok: false, result: String(error instanceof Error ? error.message : error) });
+  }
+});
+
 on<{ id: string; texto: string }>("extension-command", (heard) => {
   try {
     orders.get(heard.id)?.fn(heard.texto);
@@ -124,6 +145,19 @@ function api(deps: Deps, extension: { id: string; nombre: string }) {
       };
     },
     flotante: (el: HTMLElement) => deps.float(el),
+    herramienta: (herramienta: { nombre: string; descripcion: string; parametros?: unknown; hacer: (args: Record<string, unknown>) => unknown }) => {
+      const nombre = `${extension.id}_${herramienta.nombre}`.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 58);
+      tools.set(nombre, {
+        descripcion: herramienta.descripcion,
+        parametros: herramienta.parametros ?? { type: "object", properties: {} },
+        hacer: herramienta.hacer,
+      });
+      sendTools();
+      return () => {
+        tools.delete(nombre);
+        sendTools();
+      };
+    },
     ejecutar: (script: string, dato = "") => call<string>("script_run", { name: script, data: dato }),
     invocar: <T>(comando: string, args?: Record<string, unknown>) => call<T>(comando, args),
     ajustes: (): Promise<Settings> => getSettings(),

@@ -1,11 +1,38 @@
 [
   {
+    "id": "pulso",
+    "nombre": "Pulso",
+    "descripcion": "Un widget en el escritorio con el procesador y la memoria en vivo.",
+    "autor": "Tkyoxx",
+    "tipo": "extension",
+    "archivos": [
+      "manifest.json",
+      "index.js"
+    ],
+    "vista": ""
+  },
+  {
+    "id": "reloj-mundial",
+    "nombre": "Reloj mundial",
+    "descripcion": "La hora de varias ciudades en una pestaña. Jarvis también la consulta.",
+    "autor": "Tkyoxx",
+    "tipo": "extension",
+    "archivos": [
+      "manifest.json",
+      "index.js"
+    ],
+    "vista": ""
+  },
+  {
     "id": "cocuyos",
     "nombre": "Cocuyos",
     "descripcion": "Luciérnagas que revolotean alrededor de la isla al ritmo de tu voz.",
     "autor": "Tkyoxx",
     "tipo": "extension",
-    "archivos": ["manifest.json", "index.js"],
+    "archivos": [
+      "manifest.json",
+      "index.js"
+    ],
     "vista": ""
   },
   {
@@ -14,7 +41,10 @@
     "descripcion": "Pestaña Pomodoro: 25 de trabajo, 5 de descanso. Di «empieza el foco».",
     "autor": "Tkyoxx",
     "tipo": "extension",
-    "archivos": ["manifest.json", "index.js"],
+    "archivos": [
+      "manifest.json",
+      "index.js"
+    ],
     "vista": ""
   },
   {
@@ -23,7 +53,10 @@
     "descripcion": "La isla con un borde de aurora boreal que respira.",
     "autor": "Tkyoxx",
     "tipo": "tema",
-    "archivos": ["manifest.json", "estilo.css"],
+    "archivos": [
+      "manifest.json",
+      "estilo.css"
+    ],
     "vista": ""
   },
   {
@@ -32,7 +65,10 @@
     "descripcion": "Azul noche y lila. Para los que programan a las 3 a. m.",
     "autor": "Tkyoxx",
     "tipo": "tema",
-    "archivos": ["manifest.json", "estilo.css"],
+    "archivos": [
+      "manifest.json",
+      "estilo.css"
+    ],
     "vista": ""
   },
   {
@@ -41,7 +77,10 @@
     "descripcion": "Cyberpunk: magenta, cian y letra de terminal.",
     "autor": "Tkyoxx",
     "tipo": "tema",
-    "archivos": ["manifest.json", "estilo.css"],
+    "archivos": [
+      "manifest.json",
+      "estilo.css"
+    ],
     "vista": ""
   }
 ]

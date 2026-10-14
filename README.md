@@ -32,6 +32,7 @@ La voz se entiende <b>en tu equipo</b>: sin cuenta, sin suscripción y sin manda
 - Fondos animados que no se comen el PC, uno distinto por monitor.
 - La barra de tareas a tu gusto: transparente, acrílico o centrada, también en Windows 11.
 - Scripts por voz y una galería donde la gente comparte los suyos.
+- Modo agente con MCP: tu propio Jarvis, que encadena herramientas por voz.
 - Se actualiza sola, y si tienes un modelo de IA (Gemini tiene plan gratis), entiende todavía mejor.
 
 <br>
@@ -222,6 +223,10 @@ Los scripts ya no solo responden con texto: pueden mostrar **tarjetas** con imag
 Y como Spicetify con Spotify, la isla se deja cambiar entera: **temas** (un CSS que le cambia colores, bordes y letras) y **extensiones** (un poco de JavaScript que añade pestañas al menú, efectos alrededor de la isla, widgets en el escritorio u órdenes de voz propias). Vienen de ejemplo un Pomodoro con su pestaña, unas luciérnagas que siguen tu voz y tres temas. Se activan en **Ajustes → Extensiones**.
 
 Todo explicado, con ejemplos, en [`sdk/`](sdk/README.md).
+
+### Jarvis: el modo agente y MCP
+
+Con **Ajustes → Jarvis → Modo agente**, Cocuyo piensa en pasos y usa herramientas: sus propias órdenes, tus scripts, lo que copiaste, lo que hay en pantalla, las extensiones y cualquier **servidor MCP** (los mismos de Claude Desktop: archivos, GitHub, el navegador, tu casa…). Le dices «Jarvis, qué hora es en Tokio y ponme un pomodoro de 40 minutos», y lo resuelve solo y te contesta. Cómo conectarlo y cómo darle herramientas nuevas, en [`sdk/`](sdk/README.md#jarvis-el-modo-agente).
 
 ### La galería
 

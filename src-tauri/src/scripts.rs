@@ -480,6 +480,20 @@ pub fn run(app: &AppHandle, script: &Script, data: &str, spoken: &str, answer: O
     result
 }
 
+pub fn show_card(app: &AppHandle, from: &str, card: &Value) {
+    let _ = app.emit_to(crate::overlay::LABEL, "script-card", card_from(from, card));
+}
+
+pub fn run_named(app: &AppHandle, name: &str, data: &str) -> Result<String, String> {
+    let scripts = list(app);
+    let script = scripts
+        .iter()
+        .find(|script| script.name.eq_ignore_ascii_case(name.trim()))
+        .or_else(|| pick(&scripts, name.trim()).map(|(script, _)| script))
+        .ok_or_else(|| format!("No tengo ningún script llamado «{}».", name.trim()))?;
+    run(app, script, data, &format!("ejecuta {} {data}", script.name), None)
+}
+
 pub fn answered(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
     let (path, at) = ASKED.lock().unwrap().take()?;
     if at.elapsed() > ASK_FOR {
@@ -516,13 +530,7 @@ pub async fn script_action(app: AppHandle, action: Action) -> Result<String, Str
 
 #[tauri::command]
 pub async fn script_run(app: AppHandle, name: String, data: String) -> Result<String, String> {
-    let scripts = list(&app);
-    let script = scripts
-        .iter()
-        .find(|script| script.name.eq_ignore_ascii_case(name.trim()))
-        .or_else(|| pick(&scripts, name.trim()).map(|(script, _)| script))
-        .ok_or_else(|| format!("No tengo ningún script llamado «{}».", name.trim()))?;
-    run(&app, script, &data, &format!("ejecuta {} {data}", script.name), None)
+    run_named(&app, &name, &data)
 }
 
 #[tauri::command]

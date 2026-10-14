@@ -240,6 +240,8 @@
     extensions_list: [
       { id: "cocuyos", nombre: "Cocuyos", descripcion: "Luciérnagas alrededor de la isla al ritmo de tu voz.", autor: "Tkyoxx", version: "1.0", tipo: "extension", estilo: null, codigo: `${location.origin}/galeria/extensiones/cocuyos/index.js`, vista: null, activa: true },
       { id: "foco", nombre: "Foco", descripcion: "Pestaña Pomodoro: di «empieza el foco».", autor: "Tkyoxx", version: "1.0", tipo: "extension", estilo: null, codigo: `${location.origin}/galeria/extensiones/foco/index.js`, vista: null, activa: true },
+      { id: "pulso", nombre: "Pulso", descripcion: "El procesador y la memoria en vivo, en el escritorio.", autor: "Tkyoxx", version: "1.0", tipo: "extension", estilo: null, codigo: `${location.origin}/galeria/extensiones/pulso/index.js`, vista: null, activa: true },
+      { id: "reloj-mundial", nombre: "Reloj mundial", descripcion: "La hora de varias ciudades.", autor: "Tkyoxx", version: "1.0", tipo: "extension", estilo: null, codigo: `${location.origin}/galeria/extensiones/reloj-mundial/index.js`, vista: null, activa: true },
       { id: "aurora", nombre: "Aurora", descripcion: "La isla con un borde de aurora boreal que respira.", autor: "Tkyoxx", version: "1.0", tipo: "tema", estilo: `${location.origin}/galeria/extensiones/aurora/estilo.css`, codigo: null, vista: null, activa: new URLSearchParams(location.search).has("aurora") },
       { id: "neon", nombre: "Neón", descripcion: "Cyberpunk: magenta, cian y letra de terminal.", autor: "Tkyoxx", version: "1.0", tipo: "tema", estilo: `${location.origin}/galeria/extensiones/neon/estilo.css`, codigo: null, vista: null, activa: new URLSearchParams(location.search).has("neon") },
     ],
@@ -251,6 +253,9 @@
       { id: "neon", nombre: "Neón", descripcion: "Cyberpunk: magenta, cian y letra de terminal.", autor: "Tkyoxx", tipo: "tema", vista: "", have: true },
     ],
     extension_commands: null,
+    extension_tools: null,
+    mcp_status: [{ name: "archivos", ok: true, tools: 14, error: null }, { name: "github", ok: true, tools: 26, error: null }, { name: "navegador", ok: true, tools: 21, error: null }, { name: "casa", ok: false, tools: 0, error: "no arrancó «hass-mcp»" }],
+    mcp_reload: () => data.mcp_status,
     script_action: "",
     say_aloud: null,
     lasso_ask: { question: "¿Qué es esta planta?", answer: "Es una monstera. Le gusta la luz indirecta y regarla cuando la tierra está seca." },

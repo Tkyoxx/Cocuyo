@@ -217,6 +217,76 @@ Ejemplos completos: [`foco`](../galeria/extensiones/foco/index.js) (una pestaña
 
 ---
 
+## Jarvis: el modo agente
+
+Con **Ajustes → Jarvis → Modo agente**, Cocuyo deja de traducir frases a órdenes y pasa a **pensar en pasos**: lee lo que pides, elige herramientas, las usa, mira el resultado y sigue hasta terminar (hasta 8 pasos). Al final te contesta en voz alta. Lo que Cocuyo entiende solo sigue yendo por el camino rápido; para ir directo al agente, empieza con «Jarvis…».
+
+> «Jarvis, qué hora es en Tokio y ponme un pomodoro de 40 minutos» → usa la herramienta del Reloj mundial, la de Foco, arma una tarjeta y te responde. Probado con Gemini, 14 segundos.
+
+Usa el modelo de la sección IA. Hace falta uno con formato OpenAI y que sepa usar herramientas: Gemini (viene listo), Groq, OpenAI, DeepSeek, Ollama o LM Studio con un modelo que las soporte. Cada paso gasta una consulta.
+
+### Las herramientas que trae
+
+| Herramienta | Qué hace |
+|---|---|
+| `cocuyo_orden` | Cualquier orden de Cocuyo: música, apps, volumen, recordatorios, clima, notas… |
+| `cocuyo_script` | Tus scripts, con su descripción para que el agente sepa cuál usar |
+| `cocuyo_tarjeta` | Muestra el resultado en una tarjeta |
+| `cocuyo_portapapeles` | Lee lo que copiaste |
+| `cocuyo_pantalla` | Lee el texto que se ve en pantalla |
+| `cocuyo_recordar` | Guarda algo en la memoria |
+
+### Servidores MCP
+
+Cocuyo habla MCP (Model Context Protocol), así que puede usar los mismos servidores que Claude Desktop. Se configuran en `%APPDATA%\io.github.tkyoxx.cocuyo\mcp.json` (botón **Editar mcp.json** en Ajustes → Jarvis), con el mismo formato:
+
+```json
+{
+  "mcpServers": {
+    "archivos": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\Users\\yo\\Documents"] },
+    "navegador": { "command": "npx", "args": ["-y", "@playwright/mcp@latest"] },
+    "github": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-github"], "env": { "GITHUB_PERSONAL_ACCESS_TOKEN": "..." } }
+  }
+}
+```
+
+- Con `"disabled": true` un servidor se queda apagado sin borrarlo.
+- Los servidores arrancan la primera vez que se usan y se cierran al salir de Cocuyo. Los que fallan se reintentan al minuto.
+- En Ajustes → Jarvis se ve cuáles conectaron y cuántas herramientas trae cada uno.
+- Las claves que pongas en `env` quedan en ese archivo, en tu PC. No se mandan a ningún lado, salvo al propio servidor que las usa.
+
+Hay servidores MCP para casi todo: archivos, GitHub, el navegador, bases de datos, Notion, Slack, Home Assistant, Spotify, Obsidian… Un buen sitio para buscarlos es el [registro oficial](https://github.com/modelcontextprotocol/servers).
+
+### Herramientas desde una extensión
+
+Una extensión puede darle herramientas propias al agente:
+
+```js
+export default function (cocuyo) {
+  cocuyo.herramienta({
+    nombre: "hora_en",
+    descripcion: "Dice la hora actual en una ciudad.",
+    parametros: { type: "object", properties: { ciudad: { type: "string" } }, required: ["ciudad"] },
+    hacer: ({ ciudad }) => `En ${ciudad} son las …`,
+  });
+}
+```
+
+`parametros` es un JSON Schema; `hacer` puede ser `async` y lo que devuelva es lo que lee el agente. Así una extensión se vuelve parte del cerebro de Cocuyo: [`foco`](../galeria/extensiones/foco/index.js) y [`reloj-mundial`](../galeria/extensiones/reloj-mundial/index.js) lo hacen.
+
+### Armar tu Jarvis
+
+Las piezas se juntan:
+
+- **Scripts** para lo que toca tu PC.
+- **Extensiones** para la interfaz y las herramientas en tiempo real.
+- **MCP** para el mundo de afuera.
+- **El agente** para encadenarlo todo por voz.
+
+Por ejemplo, «Jarvis, lee el error que tengo en pantalla, búscalo en GitHub y déjame la solución en una nota»: `cocuyo_pantalla`, luego el servidor de GitHub y luego `cocuyo_orden` («anota …»).
+
+---
+
 ## Publicar
 
 - **Scripts:** desde la isla, **Ajustes → IA → Galería → Subir el mío**. Se abre GitHub con todo escrito; sale a tu nombre cuando se aprueba.

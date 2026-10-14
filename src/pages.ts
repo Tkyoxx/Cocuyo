@@ -1029,6 +1029,7 @@ const SECTIONS: [string, string][] = [
   ["capturas", "Capturas"],
   ["musica", "Música"],
   ["ia", "IA"],
+  ["jarvis", "Jarvis"],
   ["extensiones", "Extensiones"],
   ["atajos", "Atajos"],
 ];
@@ -1047,6 +1048,7 @@ class SettingsPage implements Page {
   private open(section: string) {
     this.section = section;
     if (section === "extensiones") void this.paintExtensions();
+    if (section === "jarvis") void this.paintMcp();
     for (const node of this.el.querySelectorAll<HTMLElement>("[data-sec]")) node.classList.toggle("on", node.dataset.sec === section);
   }
 
@@ -1196,6 +1198,18 @@ class SettingsPage implements Page {
            </div>`,
         ) +
         section(
+          "jarvis",
+          `<div class="card">
+             <label class="srow"><div><b>Modo agente</b><small>Cocuyo piensa en pasos y usa herramientas: sus propias órdenes, tus scripts, lo que copiaste, lo que hay en pantalla y los servidores MCP que conectes. Gasta más consultas del modelo.</small></div><input type="checkbox" class="switch" id="s-agent"></label>
+             <div class="srow slim"><div><b>Cómo se le habla</b><small>Lo que Cocuyo no entienda solo se lo pasa al agente. Para ir directo, empieza con «Jarvis…»: «Jarvis, resume lo que copié y guárdalo en una nota».</small></div></div>
+             <div class="srow slim"><div><b>Necesita</b><small id="s-agent-need">Un modelo de IA conectado en la sección IA, con formato OpenAI (Gemini viene listo).</small></div></div>
+           </div>
+           <div class="card">
+             <div class="srow slim"><div><b>Servidores MCP</b><small id="s-mcp-sum">Los mismos que usa Claude Desktop: archivos, GitHub, el navegador, tu casa…</small></div><button class="ghost pick" id="s-mcp-open">Editar mcp.json</button><button class="ghost" id="s-mcp-reload">Reconectar</button></div>
+             <div class="mcp-list" id="s-mcp-list"></div>
+           </div>`,
+        ) +
+        section(
           "extensiones",
           `<div class="card">
              <label class="srow"><div><b>Extensiones y temas</b><small>Cambian cómo se ve la isla o le añaden cosas nuevas, como Spicetify con Spotify. Apagado, Cocuyo arranca tal cual viene.</small></div><input type="checkbox" class="switch" id="s-ext-on"></label>
@@ -1239,7 +1253,7 @@ class SettingsPage implements Page {
     for (const button of el.querySelectorAll<HTMLElement>("#s-lang button")) {
       button.addEventListener("click", () => this.save({ language: button.dataset.value as Settings["language"] }));
     }
-    const toggle = (sel: string, key: "hideOnFullscreen" | "askWhere" | "copyToClipboard" | "autostart" | "cueFullscreen" | "speakFullscreen" | "gameOverlay" | "aiOn" | "aiDictation" | "aiHear" | "padOn" | "checkUpdates" | "barCenter" | "barSolidMax" | "extensionsOn") => {
+    const toggle = (sel: string, key: "hideOnFullscreen" | "askWhere" | "copyToClipboard" | "autostart" | "cueFullscreen" | "speakFullscreen" | "gameOverlay" | "aiOn" | "aiDictation" | "aiHear" | "padOn" | "checkUpdates" | "barCenter" | "barSolidMax" | "extensionsOn" | "aiAgent") => {
       const input = q<HTMLInputElement>(sel);
       input.addEventListener("change", () => {
         const change: Partial<Settings> = {};
@@ -1376,6 +1390,9 @@ class SettingsPage implements Page {
     });
     q("#s-gallery").addEventListener("click", () => void this.openGallery());
     toggle("#s-ext-on", "extensionsOn");
+    toggle("#s-agent", "aiAgent");
+    q("#s-mcp-open").addEventListener("click", () => void call("mcp_open").catch((error) => this.note(String(error))));
+    q("#s-mcp-reload").addEventListener("click", () => void this.paintMcp(true));
     q("#s-ext-on").addEventListener("change", () => reloadInto("extensiones"));
     q("#s-ext-open").addEventListener("click", () => void call("extensions_open"));
     q("#s-ext-docs").addEventListener("click", () => void call("script_action", { action: { abrir: "https://github.com/Tkyoxx/Cocuyo/tree/main/sdk" } }).catch(() => {}));
@@ -1673,6 +1690,23 @@ class SettingsPage implements Page {
     }
   }
 
+  private async paintMcp(again = false) {
+    const sum = this.el.querySelector("#s-mcp-sum")!;
+    const list = this.el.querySelector("#s-mcp-list")!;
+    sum.textContent = "Conectando…";
+    const servers = await call<{ name: string; ok: boolean; tools: number; error: string | null }[]>(again ? "mcp_reload" : "mcp_status", undefined, []);
+    const ok = servers.filter((server) => server.ok);
+    sum.textContent = servers.length
+      ? `${ok.length} de ${servers.length} conectados, ${ok.reduce((all, server) => all + server.tools, 0)} herramientas.`
+      : "Ninguno todavía. En mcp.json hay ejemplos listos: quítales el «disabled».";
+    list.innerHTML = servers
+      .map(
+        (server) =>
+          `<div class="mcp ${server.ok ? "ok" : "bad"}"><i></i><div><b>${esc(server.name)}</b><small>${server.ok ? `${server.tools} herramientas` : esc(server.error ?? "Sin conectar")}</small></div></div>`,
+      )
+      .join("");
+  }
+
   private async paintExtensions() {
     const list = await call<ExtensionInfo[]>("extensions_list", undefined, []);
     const on = this.settings?.extensionsOn ?? true;
@@ -1867,6 +1901,12 @@ class SettingsPage implements Page {
     void this.paintVoices();
     q<HTMLInputElement>("#s-pad").checked = s.padOn;
     q<HTMLInputElement>("#s-ext-on").checked = s.extensionsOn;
+    q<HTMLInputElement>("#s-agent").checked = s.aiAgent;
+    q("#s-agent-need").textContent = !s.aiOn
+      ? "Primero enciende un modelo de IA en la sección IA (Gemini viene listo)."
+      : s.aiFormat === "anthropic"
+        ? "Tu servicio usa el formato de Anthropic: el modo agente necesita uno con formato OpenAI (Gemini, Groq, Ollama…)."
+        : "Listo: usa el modelo de la sección IA.";
     const barStyle = q("#s-bar-style");
     [...barStyle.querySelectorAll<HTMLElement>("button")].forEach((button, i) => {
       const active = button.dataset.value === s.barStyle;

@@ -6,6 +6,7 @@ mod apps;
 mod capture;
 mod clip;
 mod cue;
+mod agent;
 mod dialogs;
 mod extensions;
 mod gamelayer;
@@ -15,6 +16,7 @@ mod inject;
 mod install;
 mod intent;
 mod live;
+mod mcp;
 mod media;
 mod mic;
 mod net;
@@ -233,6 +235,11 @@ pub fn run() {
             extensions::extensions_gallery,
             extensions::extension_install,
             extensions::extension_commands,
+            mcp::mcp_status,
+            agent::extension_tools,
+            agent::extension_tool_done,
+            mcp::mcp_open,
+            mcp::mcp_reload,
             install::install_state,
             install::install_run,
             install::install_relaunch,
@@ -264,6 +271,7 @@ pub fn run() {
         .run(|_app, event| {
             if let tauri::RunEvent::Exit = event {
                 taskbar::restore();
+                mcp::shutdown();
             }
         });
 }

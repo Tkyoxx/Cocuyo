@@ -147,6 +147,7 @@ export interface Settings {
   padButtons: number;
   dictationInto: string;
   extensionsOn: boolean;
+  aiAgent: boolean;
   extensions: string[];
   checkUpdates: boolean;
   aiDaily: number;
@@ -245,6 +246,7 @@ const DEFAULTS: Settings = {
   padButtons: 0,
   dictationInto: "",
   extensionsOn: true,
+  aiAgent: false,
   extensions: [],
   checkUpdates: true,
   aiDaily: 480,

@@ -343,6 +343,7 @@ fn refusal(status: u16, reply: &Value, model: &str) -> String {
         401 | 403 => "El servicio rechazó la clave.".to_string(),
         404 => format!("El servicio no conoce el modelo «{model}» o esa dirección."),
         429 => format!("«{model}» llegó al límite de su plan. Lo dejo descansar."),
+        500..=599 => format!("El servicio de «{model}» está saturado ahora mismo. Prueba en un rato."),
         _ if why.is_empty() => format!("El servicio respondió con el error {status}."),
         _ => format!("El servicio respondió: {}", why.chars().take(160).collect::<String>()),
     }
@@ -465,12 +466,75 @@ fn chat_up_to(app: &AppHandle, system: &str, said: &str, extra: Extra, room: u32
             return Ok(text_of(&reply));
         }
         last_error = Some(refusal(status, &reply, model));
+        if status >= 500 {
+            continue;
+        }
         if status != 429 {
             break;
         }
         rest(model);
     }
     Err(last_error.unwrap_or_else(|| "Hoy ya se usó el cupo de los modelos; hasta mañana sigo con lo que entiendo solo.".into()))
+}
+
+pub fn chat_tools(app: &AppHandle, messages: &[Value], tools: &[Value]) -> Result<Value, String> {
+    let config = settings::load(app);
+    if config.ai_format == "anthropic" {
+        return Err("El modo agente necesita un servicio con formato OpenAI: Gemini, Groq, Ollama, LM Studio, OpenAI o DeepSeek.".into());
+    }
+    let key = key(app);
+    let headers = headers(false, key.as_deref());
+    let url = endpoint(&config.ai_url, "/chat/completions");
+    let brisk = url.contains("googleapis.com") && !NO_EFFORT.load(Ordering::Relaxed);
+    let all = models(&config.ai_model);
+    let first = TURN.fetch_add(1, Ordering::Relaxed);
+    let mut last_error = None;
+    for model in (0..all.len()).map(|step| &all[(first + step) % all.len()]).filter(|model| !resting(model) && !spent(app, model)) {
+        let mut body = json!({ "model": model, "messages": messages, "temperature": 0.2, "max_tokens": 1500, "stream": false });
+        if !tools.is_empty() {
+            body["tools"] = json!(tools);
+            body["tool_choice"] = json!("auto");
+        }
+        if brisk {
+            body["reasoning_effort"] = json!("low");
+        }
+        let (mut status, mut reply) = send(&url, &headers, Some(&body))?;
+        count(app, model);
+        if status == 400 && brisk {
+            NO_EFFORT.store(true, Ordering::Relaxed);
+            body.as_object_mut().map(|body| body.remove("reasoning_effort"));
+            (status, reply) = send(&url, &headers, Some(&body))?;
+            count(app, model);
+        }
+        if (200..300).contains(&status) {
+            RESTING.lock().unwrap().retain(|(name, _, _)| name != model);
+            let message = reply["choices"][0]["message"].clone();
+            if message.is_null() {
+                last_error = Some("El modelo respondió algo vacío.".to_string());
+                continue;
+            }
+            return Ok(message);
+        }
+        last_error = Some(refusal(status, &reply, model));
+        if status >= 500 {
+            std::thread::sleep(Duration::from_millis(1500));
+            let (again, retried) = send(&url, &headers, Some(&body))?;
+            count(app, model);
+            if (200..300).contains(&again) && !retried["choices"][0]["message"].is_null() {
+                return Ok(retried["choices"][0]["message"].clone());
+            }
+            continue;
+        }
+        if status != 429 {
+            break;
+        }
+        rest(model);
+    }
+    Err(last_error.unwrap_or_else(|| "Hoy ya se usó el cupo de los modelos; hasta mañana sigo con lo que entiendo solo.".into()))
+}
+
+pub fn agent_context(app: &AppHandle, said: &str) -> String {
+    format!("{}{}", about_the_person(app, said).replace("Al usar «responde», habla así", "Habla así"), recent())
 }
 
 pub fn hear(app: &AppHandle, wav: &[u8], dictation: bool, scripts: &[Script]) -> Result<(String, String), String> {
@@ -861,7 +925,8 @@ mod tests {
     fn a_refusal_is_explained_in_plain_words() {
         assert!(refusal(429, &Value::Null, "x").contains("llegó al límite"));
         assert_eq!(refusal(401, &Value::Null, "x"), "El servicio rechazó la clave.");
-        assert_eq!(refusal(500, &json!({ "error": { "message": "boom" } }), "x"), "El servicio respondió: boom");
+        assert_eq!(refusal(418, &json!({ "error": { "message": "boom" } }), "x"), "El servicio respondió: boom");
+        assert!(refusal(503, &Value::Null, "x").contains("saturado"));
     }
 
     #[test]
