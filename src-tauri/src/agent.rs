@@ -142,6 +142,7 @@ enum Doer {
     Screen,
     Remember,
     Window,
+    Minutes,
     Message,
     Look,
     Hands,
@@ -186,6 +187,13 @@ fn toolbox(app: &AppHandle) -> (Vec<Value>, HashMap<String, Doer>) {
         ));
         doers.insert("cocuyo_script".to_string(), Doer::Script);
     }
+    tools.push(function(
+        "cocuyo_apuntes",
+        "Toma apuntes de una clase, reunión o llamada: escucha lo que suena en el PC y el micrófono, lo transcribe y al terminar guarda un \
+         resumen con puntos clave y pendientes. «empezar» cuando la persona lo pida; «terminar» cuando diga que ya acabó.",
+        object(json!({ "accion": { "type": "string", "enum": ["empezar", "terminar"] } }), &["accion"]),
+    ));
+    doers.insert("cocuyo_apuntes".to_string(), Doer::Minutes);
     tools.push(function("cocuyo_portapapeles", "Lee el texto que la persona tiene copiado.", object(json!({}), &[])));
     doers.insert("cocuyo_portapapeles".to_string(), Doer::Clipboard);
     tools.push(function("cocuyo_pantalla", "Lee todo el texto que se ve en la pantalla.", object(json!({}), &[])));
@@ -347,6 +355,7 @@ fn act(app: &AppHandle, doer: &Doer, args: &Value) -> Result<Done, String> {
         Doer::Screen => crate::capture::screen_text().map(Done::from),
         Doer::Remember => crate::ai::memorize(app, &text(args, "dato")).map(|()| String::from("Guardado.").into()),
         Doer::Window => crate::pc::open(app, &text(args, "app")).map(Done::from),
+        Doer::Minutes => if text(args, "accion") == "terminar" { crate::minutes::finish(app) } else { crate::minutes::start(app) }.map(Done::from),
         Doer::Message => send_message(app, &text(args, "app"), &text(args, "para"), &text(args, "texto")).map(Done::from),
         Doer::Look => crate::pc::look(args.get("imagen").and_then(Value::as_bool).unwrap_or(false)).map(|(text, image)| Done { text, image }),
         Doer::Hands => hands(app, args),
@@ -369,6 +378,7 @@ fn label(name: &str, args: &Value) -> String {
         "cocuyo_recordar" => "Guardando en la memoria".into(),
         "cocuyo_ventana" => format!("Abriendo {}", text(args, "app")),
         "cocuyo_mensaje" => format!("Escribiéndole a {}", text(args, "para")),
+        "cocuyo_apuntes" => if text(args, "accion") == "terminar" { "Cerrando los apuntes".into() } else { "Empezando los apuntes".into() },
         "cocuyo_mirar" => "Mirando la ventana".into(),
         "cocuyo_hacer" => {
             let actions = args.get("acciones").and_then(Value::as_array).map_or(0, Vec::len);

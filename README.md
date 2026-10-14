@@ -27,7 +27,9 @@ La voz se entiende <b>en tu equipo</b>: sin cuenta, sin suscripción y sin manda
 
 - Dictas en cualquier app y queda escrito, con la puntuación puesta.
 - Le das órdenes como te salgan: «pon algo de salsa», «ábreme Discord», «recuérdame en 20 minutos sacar la ropa».
-- Conversación en vivo con Gemini: te va escuchando mientras hablas y contesta con voz al instante (Charon, Puck, Kore…), y mientras tanto usa sus herramientas.
+- Conversación en vivo con Gemini: te va escuchando mientras hablas y contesta con voz al instante (Charon, Puck, Kore…), y mientras tanto usa sus herramientas. Si le preguntas «¿qué hago aquí?», mira tu pantalla; si lo interrumpes, se calla y te escucha.
+- Aprende de lo que hablan: después de una charla guarda solo lo que vale la pena recordar (quién es tu hermano, en qué andas) y lo usa la próxima vez.
+- Toma apuntes de clases, reuniones y llamadas: «toma apuntes», y escucha lo que suena en el PC y tu micrófono; al decir «termina los apuntes» te deja el resumen, los puntos clave y los pendientes.
 - Rodeas algo de la pantalla con el mouse y le preguntas qué es.
 - Spotify, volumen, clima, tareas, agenda y rutinas, todo desde la misma isla.
 - Fondos animados que no se comen el PC, uno distinto por monitor.
@@ -162,6 +164,10 @@ Cocuyo entiende las órdenes solo, sin IA, y eso no cambia. En **Ajustes → IA*
 - **Responder preguntas**: «¿cuánto es 15 por 12?», «¿cómo se dice gato en inglés?».
 - **Rodear y preguntar**: mantén `Ctrl` + `Shift`, rodea algo en pantalla y pregunta en voz alta mientras lo rodeas.
 - **Conversación en vivo** (Ajustes → Voz, solo con Gemini): mientras mantienes el atajo, tu voz va llegando a Gemini Live por una conexión abierta, así que al soltar ya te entendió y empieza a contestar con voz en un par de segundos. Recuerda lo que van hablando y usa las mismas herramientas que el modo agente. Si no hay conexión, Cocuyo sigue por el camino de siempre con lo que grabó.
+  - Rodear y preguntar también va en vivo: lo que rodeas le llega como imagen mientras hablas.
+  - Si le preguntas por algo que estás viendo («¿qué error es este?», «¿cómo paso este nivel?»), toma una captura y la mira.
+  - Si lo interrumpes con el atajo, se calla y te escucha sin perder el hilo.
+- **Apuntes** (también funciona sin la conversación en vivo): «toma apuntes» escucha lo que suena en el PC y tu micrófono con el modelo de transcripción en vivo de Gemini, y lo va guardando en `Documentos\Cocuyo\Apuntes`. «Termina los apuntes» le pone encima un resumen con puntos clave y pendientes. Avísales a los demás que los estás grabando.
 
 | Servicio | Costo | Qué necesitas |
 |---|---|---|

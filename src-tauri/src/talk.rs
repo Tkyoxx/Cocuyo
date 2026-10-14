@@ -20,8 +20,9 @@ const OUT_RATE: f64 = 24_000.0;
 const CHUNK: usize = 1_600;
 const PATIENCE: Duration = Duration::from_secs(90);
 const STALE_AFTER: Duration = Duration::from_secs(8 * 60);
+const LOOK: &str = "cocuyo_ver_pantalla";
 
-struct Socket {
+pub(crate) struct Socket {
     session: *mut c_void,
     connect: *mut c_void,
     socket: *mut c_void,
@@ -32,7 +33,7 @@ unsafe impl Send for Socket {}
 unsafe impl Sync for Socket {}
 
 impl Socket {
-    fn open(key: &str) -> Result<Socket, String> {
+    pub(crate) fn open(key: &str) -> Result<Socket, String> {
         unsafe {
             let session = WinHttpOpen(w!("Cocuyo"), WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, PCWSTR::null(), PCWSTR::null(), 0);
             if session.is_null() {
@@ -82,14 +83,14 @@ impl Socket {
         }
     }
 
-    fn send(&self, message: &Value) -> Result<(), String> {
+    pub(crate) fn send(&self, message: &Value) -> Result<(), String> {
         let text = message.to_string();
         let _turn = self.sending.lock().unwrap();
         let code = unsafe { WinHttpWebSocketSend(self.socket, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE, Some(text.as_bytes())) };
         if code == 0 { Ok(()) } else { Err(format!("se cortó la conexión ({code})")) }
     }
 
-    fn receive(&self) -> Result<Value, String> {
+    pub(crate) fn receive(&self) -> Result<Value, String> {
         let mut whole = Vec::new();
         let mut chunk = vec![0u8; 64 * 1024];
         loop {
@@ -118,7 +119,7 @@ impl Socket {
 }
 
 impl Socket {
-    fn shut(&self) {
+    pub(crate) fn shut(&self) {
         unsafe {
             let _ = WinHttpWebSocketShutdown(self.socket, 1000, None, 0);
         }
@@ -209,18 +210,18 @@ pub fn hush() {
     QUEUE.lock().unwrap().clear();
 }
 
-struct Resampler {
+pub(crate) struct Resampler {
     step: f64,
     pos: f64,
     pending: Vec<f32>,
 }
 
 impl Resampler {
-    fn new(from: f64, to: f64) -> Self {
+    pub(crate) fn new(from: f64, to: f64) -> Self {
         Resampler { step: from / to, pos: 0.0, pending: Vec::new() }
     }
 
-    fn feed(&mut self, samples: &[f32]) -> Vec<f32> {
+    pub(crate) fn feed(&mut self, samples: &[f32]) -> Vec<f32> {
         self.pending.extend_from_slice(samples);
         let mut out = Vec::with_capacity((samples.len() as f64 / self.step) as usize + 2);
         while self.pos + 1.0 < self.pending.len() as f64 {
@@ -248,7 +249,7 @@ fn play(pcm: &[u8], to_speaker: &mut Option<Resampler>) {
     QUEUE.lock().unwrap().extend(out);
 }
 
-fn pcm16(samples: &[f32]) -> Vec<u8> {
+pub(crate) fn pcm16(samples: &[f32]) -> Vec<u8> {
     samples.iter().flat_map(|s| ((s.clamp(-1.0, 1.0) * 32767.0) as i16).to_le_bytes()).collect()
 }
 
@@ -270,8 +271,11 @@ pub fn try_model(model: &str, think: &str) {
     forget();
 }
 static ANSWERING: AtomicBool = AtomicBool::new(false);
+static GENERATION: AtomicU32 = AtomicU32::new(0);
+static LEFTOVER: AtomicBool = AtomicBool::new(false);
+static CIRCLED: Mutex<Option<Vec<u8>>> = Mutex::new(None);
 static RESTING: Mutex<Option<Instant>> = Mutex::new(None);
-const REST: Duration = Duration::from_secs(60 * 60);
+const REST: Duration = Duration::from_secs(5 * 60);
 
 fn out_of_quota(why: &str) -> bool {
     let why = why.to_lowercase();
@@ -329,7 +333,12 @@ fn open_live(app: &AppHandle) -> Result<Arc<Live>, String> {
     let socket = Arc::new(Socket::open(&key)?);
     let voice = crate::settings::load(app).live_voice;
     let voice = if voice.trim().is_empty() { "Charon".to_string() } else { voice };
-    let tools = crate::agent::declarations(app);
+    let mut tools = crate::agent::declarations(app);
+    tools.push(json!({
+        "name": LOOK,
+        "description": "Mira la pantalla de la persona (una captura de lo que ve ahora). Úsala cuando pregunte por algo que está viendo: «¿qué hago aquí?», \
+                        «¿qué dice esto?», «¿cómo paso este nivel?», «¿qué error es este?».",
+    }));
     let mut setup = json!({ "setup": {
         "model": format!("models/{model}"),
         "generationConfig": { "responseModalities": ["AUDIO"], "speechConfig": { "voiceConfig": { "prebuiltVoiceConfig": { "voiceName": voice } } } },
@@ -395,8 +404,7 @@ fn note(app: &AppHandle, line: &str) {
     let model = MODEL.lock().unwrap().clone();
     lines.push(format!("{:02}:{:02}:{:02} {model} · {line}", now.wHour, now.wMinute, now.wSecond));
     let keep = lines.len().saturating_sub(200);
-    let _ = std::fs::write(path, lines[keep..].join("
-"));
+    let _ = std::fs::write(path, lines[keep..].join("\n"));
 }
 
 pub fn forget() {
@@ -416,29 +424,44 @@ fn forget_this(live: &Arc<Live>) {
 struct Turn {
     ended: Arc<AtomicBool>,
     cancelled: Arc<AtomicBool>,
+    picture: Option<std::sync::mpsc::Sender<Option<Vec<u8>>>>,
     result: Receiver<Result<(String, String), String>>,
 }
 
 static TURN: Mutex<Option<Turn>> = Mutex::new(None);
 
 pub fn begin(app: &AppHandle) {
+    start(app, false);
+}
+
+pub fn begin_lasso(app: &AppHandle) -> bool {
+    start(app, true)
+}
+
+fn start(app: &AppHandle, with_picture: bool) -> bool {
     if !wanted(app) {
-        return;
+        return false;
     }
+    CIRCLED.lock().unwrap().take();
     hush();
-    if ANSWERING.load(Ordering::Relaxed) {
-        forget();
-    }
+    GENERATION.fetch_add(1, Ordering::Relaxed);
     let taps = crate::mic::tap();
     let ended = Arc::new(AtomicBool::new(false));
     let cancelled = Arc::new(AtomicBool::new(false));
     let (done, result) = channel();
-    *TURN.lock().unwrap() = Some(Turn { ended: ended.clone(), cancelled: cancelled.clone(), result });
+    let (picture, framed) = if with_picture {
+        let (send, wait) = channel();
+        (Some(send), Some(wait))
+    } else {
+        (None, None)
+    };
+    *TURN.lock().unwrap() = Some(Turn { ended: ended.clone(), cancelled: cancelled.clone(), picture, result });
     let app = app.clone();
     std::thread::spawn(wake_speaker);
+    crate::ai::maybe_distill(&app);
     std::thread::spawn(move || {
         let outcome = connect(&app).and_then(|live| {
-            let outcome = talk(&app, &live, taps, &ended, &cancelled);
+            let outcome = talk(&app, &live, taps, &ended, &cancelled, framed);
             if outcome.is_err() {
                 forget_this(&live);
             }
@@ -449,9 +472,21 @@ pub fn begin(app: &AppHandle) {
         }
         let _ = done.send(outcome);
     });
+    true
 }
 
-fn talk(app: &AppHandle, live: &Arc<Live>, taps: Receiver<(u32, Vec<f32>)>, ended: &AtomicBool, cancelled: &AtomicBool) -> Result<(String, String), String> {
+fn picture(png: &[u8]) -> Value {
+    json!({ "realtimeInput": { "video": { "data": crate::ai::base64(png), "mimeType": "image/png" } } })
+}
+
+fn talk(
+    app: &AppHandle,
+    live: &Arc<Live>,
+    taps: Receiver<(u32, Vec<f32>)>,
+    ended: &AtomicBool,
+    cancelled: &AtomicBool,
+    framed: Option<Receiver<Option<Vec<u8>>>>,
+) -> Result<(String, String), String> {
     live.socket.send(&json!({ "realtimeInput": { "activityStart": {} } }))?;
     let mut to_model: Option<Resampler> = None;
     let mut ready = Vec::new();
@@ -473,11 +508,18 @@ fn talk(app: &AppHandle, live: &Arc<Live>, taps: Receiver<(u32, Vec<f32>)>, ende
     if cancelled.load(Ordering::Relaxed) {
         return Err("cancelado".into());
     }
-    let events = live.events.lock().unwrap();
-    while events.try_recv().is_ok() {}
     if !ready.is_empty() {
         live.socket.send(&json!({ "realtimeInput": { "audio": { "data": crate::ai::base64(&pcm16(&ready)), "mimeType": "audio/pcm;rate=16000" } } }))?;
     }
+    if let Some(framed) = framed {
+        if let Ok(Some(png)) = framed.recv_timeout(Duration::from_secs(6)) {
+            live.socket.send(&picture(&png))?;
+            *CIRCLED.lock().unwrap() = Some(png);
+            live.socket.send(&json!({ "realtimeInput": { "text": "(La persona rodeó una parte de su pantalla mientras hablaba: mírala con cocuyo_ver_pantalla antes de responder.)" } }))?;
+        }
+    }
+    let events = live.events.lock().unwrap();
+    while events.try_recv().is_ok() {}
     live.socket.send(&json!({ "realtimeInput": { "activityEnd": {} } }))?;
     answer(app, live, &events, Instant::now())
 }
@@ -492,39 +534,62 @@ fn answer(app: &AppHandle, live: &Live, events: &Receiver<Value>, asked: Instant
 }
 
 fn listen(app: &AppHandle, live: &Live, events: &Receiver<Value>, asked: Instant) -> Result<(String, String), String> {
+    let mine = GENERATION.load(Ordering::Relaxed);
     let mut said = String::new();
     let mut reply = String::new();
     let mut to_speaker = None;
     let mut first_sound = None;
     let mut used = Vec::new();
     let mut owed = false;
+    let mut heard_anything = false;
     loop {
-        let message = events.recv_timeout(PATIENCE).map_err(|_| "Gemini se quedó callado.".to_string())?;
+        let cut = GENERATION.load(Ordering::Relaxed) != mine;
+        let message = match events.recv_timeout(if cut { Duration::from_millis(1500) } else { PATIENCE }) {
+            Ok(message) => message,
+            Err(_) if cut => {
+                LEFTOVER.store(true, Ordering::Relaxed);
+                return Ok((said.trim().to_string(), reply.trim().to_string()));
+            }
+            Err(_) => return Err("Gemini se quedó callado.".to_string()),
+        };
         if let Some(why) = message.get("cerrada").and_then(Value::as_str) {
             return Err(why.to_string());
         }
         if let Some(content) = message.get("serverContent") {
+            if content["turnComplete"].as_bool() == Some(true) && !heard_anything && LEFTOVER.swap(false, Ordering::Relaxed) {
+                continue;
+            }
             if let Some(text) = content["inputTranscription"]["text"].as_str() {
+                heard_anything = true;
                 said.push_str(text);
-                if reply.is_empty() {
+                if reply.is_empty() && !cut {
                     let _ = app.emit_to(crate::overlay::LABEL, "live-text", json!({ "who": "you", "text": said.trim() }));
                 }
             }
             if let Some(text) = content["outputTranscription"]["text"].as_str() {
+                heard_anything = true;
                 reply.push_str(text);
-                let _ = app.emit_to(crate::overlay::LABEL, "live-text", json!({ "who": "app", "text": reply.trim() }));
+                if !cut {
+                    let _ = app.emit_to(crate::overlay::LABEL, "live-text", json!({ "who": "app", "text": reply.trim() }));
+                }
             }
             for part in content["modelTurn"]["parts"].as_array().into_iter().flatten() {
+                heard_anything = true;
                 owed = false;
                 if let Some(data) = part["inlineData"]["data"].as_str() {
-                    first_sound.get_or_insert_with(|| asked.elapsed());
-                    play(&crate::ai::unbase64(data), &mut to_speaker);
+                    if !cut {
+                        first_sound.get_or_insert_with(|| asked.elapsed());
+                        play(&crate::ai::unbase64(data), &mut to_speaker);
+                    }
                 }
             }
             if content["interrupted"].as_bool() == Some(true) {
                 hush();
+                if cut {
+                    owed = false;
+                }
             }
-            if content["turnComplete"].as_bool() == Some(true) && !owed {
+            if content["turnComplete"].as_bool() == Some(true) && (!owed || cut) {
                 if cfg!(debug_assertions) {
                     eprintln!("[vivo] primera voz a los {first_sound:?}, todo en {:?}", asked.elapsed());
                 }
@@ -534,20 +599,64 @@ fn listen(app: &AppHandle, live: &Live, events: &Receiver<Value>, asked: Instant
             }
         }
         if let Some(calls) = message["toolCall"]["functionCalls"].as_array() {
+            heard_anything = true;
             let mut responses = Vec::new();
             for call in calls {
                 let name = call["name"].as_str().unwrap_or("");
                 let args = call.get("args").cloned().unwrap_or_else(|| json!({}));
                 let started = Instant::now();
-                let result = crate::agent::call_tool(app, name, &args);
+                let shot = if name == LOOK { CIRCLED.lock().unwrap().take().or_else(crate::capture::screen_png) } else { None };
+                let result = if name == LOOK {
+                    if shot.is_some() { "Aquí está la captura de su pantalla tal como la ve ahora: mírala y respóndele.".to_string() } else { "ERROR: no pude capturar la pantalla.".to_string() }
+                } else {
+                    crate::agent::call_tool(app, name, &args)
+                };
                 used.push(format!("{name} ({} ms)", started.elapsed().as_millis()));
                 if cfg!(debug_assertions) {
                     eprintln!("[vivo] {name} {args} -> {}", result.chars().take(200).collect::<String>().replace('\n', " | "));
                 }
-                responses.push(json!({ "id": call["id"], "name": name, "response": { "result": result } }));
+                let mut response = json!({ "id": call["id"], "name": name, "response": { "result": result } });
+                if let Some(png) = &shot {
+                    response["parts"] = json!([{ "inlineData": { "mimeType": "image/png", "data": crate::ai::base64(png) } }]);
+                }
+                responses.push(response);
             }
             live.socket.send(&json!({ "toolResponse": { "functionResponses": responses } }))?;
             owed = true;
+        }
+    }
+}
+
+pub fn lasso_end(cancelled: bool) {
+    let turn = TURN.lock().unwrap();
+    if let Some(turn) = turn.as_ref() {
+        if cancelled {
+            turn.cancelled.store(true, Ordering::Relaxed);
+            if let Some(picture) = &turn.picture {
+                let _ = picture.send(None);
+            }
+        }
+        turn.ended.store(true, Ordering::Relaxed);
+    }
+    drop(turn);
+    crate::mic::untap();
+}
+
+pub fn lasso_answer(png: Option<Vec<u8>>) -> Ended {
+    let Some(turn) = TURN.lock().unwrap().take() else { return Ended::NotLive };
+    if let Some(picture) = &turn.picture {
+        let _ = picture.send(png);
+    }
+    wait_for(turn)
+}
+
+fn wait_for(turn: Turn) -> Ended {
+    match turn.result.recv_timeout(PATIENCE + Duration::from_secs(10)) {
+        Ok(Ok((said, reply))) => Ended::Spoke(said, reply),
+        Ok(Err(why)) => Ended::Failed(why),
+        Err(_) => {
+            forget();
+            Ended::Failed("Gemini se quedó callado.".into())
         }
     }
 }
@@ -572,14 +681,34 @@ pub fn finish(cancelled: bool) -> Ended {
         hush();
         return Ended::Failed("cancelado".into());
     }
-    match turn.result.recv_timeout(PATIENCE + Duration::from_secs(10)) {
-        Ok(Ok((said, reply))) => Ended::Spoke(said, reply),
-        Ok(Err(why)) => Ended::Failed(why),
-        Err(_) => {
-            forget();
-            Ended::Failed("Gemini se quedó callado.".into())
+    wait_for(turn)
+}
+
+#[cfg(debug_assertions)]
+pub fn probe_lasso(app: &AppHandle, wav: &std::path::Path) -> Result<(String, String), String> {
+    let bytes = std::fs::read(wav).map_err(|e| e.to_string())?;
+    let rate = u32::from_le_bytes([bytes[24], bytes[25], bytes[26], bytes[27]]);
+    let samples: Vec<f32> = bytes[44..].chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32768.0).collect();
+    let png = match std::env::var("COCUYO_DEMO_LAZO_PNG") {
+        Ok(file) => std::fs::read(file).map_err(|e| e.to_string())?,
+        Err(_) => crate::capture::screen_png().ok_or("sin captura")?,
+    };
+    let (feed, taps) = channel();
+    let (framed_send, framed) = channel();
+    let _ = framed_send.send(Some(png));
+    let live = connect(app)?;
+    wake_speaker();
+    std::thread::spawn(move || {
+        for piece in samples.chunks(rate as usize / 50) {
+            let _ = feed.send((rate, piece.to_vec()));
+            std::thread::sleep(Duration::from_millis(20));
         }
+    });
+    let heard = talk(app, &live, taps, &AtomicBool::new(false), &AtomicBool::new(false), Some(framed));
+    while !QUEUE.lock().unwrap().is_empty() {
+        std::thread::sleep(Duration::from_millis(100));
     }
+    heard
 }
 
 #[cfg(debug_assertions)]
@@ -597,7 +726,7 @@ pub fn probe_audio(app: &AppHandle, wav: &std::path::Path) -> Result<(String, St
             std::thread::sleep(Duration::from_millis(20));
         }
     });
-    let heard = talk(app, &live, taps, &ended, &AtomicBool::new(false));
+    let heard = talk(app, &live, taps, &ended, &AtomicBool::new(false), None);
     if cfg!(debug_assertions) {
         eprintln!("[vivo] desde que empezó a hablar: {:?}", started.elapsed());
     }

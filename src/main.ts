@@ -205,12 +205,16 @@ onChord(async (e) => {
   pill.show();
   pill.think();
   try {
-    const asked = await call<{ question: string; answer: string } | null>("lasso_ask");
+    const asked = await call<{ question: string; answer: string; live: boolean } | null>("lasso_ask");
     if (!asked) {
       pill.cancel();
       return announce(saved);
     }
     pill.done();
+    if (asked.live) {
+      if (asked.answer) caption.stream("app", asked.answer, readingTime(asked.answer));
+      return;
+    }
     caption.say("you", asked.question, 1600);
     setTimeout(() => caption.say("app", asked.answer, readingTime(asked.answer)), 1300);
   } catch (error) {

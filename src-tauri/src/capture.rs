@@ -303,6 +303,19 @@ pub async fn capture_commit(app: AppHandle, x: f64, y: f64, w: f64, h: f64) -> C
     result
 }
 
+pub fn screen_png() -> Option<Vec<u8>> {
+    use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTOPRIMARY};
+    unsafe {
+        let monitor = MonitorFromWindow(GetForegroundWindow(), MONITOR_DEFAULTTOPRIMARY);
+        let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+        if !GetMonitorInfoW(monitor, &mut info).as_bool() {
+            return None;
+        }
+        let r = info.rcMonitor;
+        png_of(r.left, r.top, r.right - r.left, r.bottom - r.top)
+    }
+}
+
 pub fn pixels(x: i32, y: i32, w: i32, h: i32) -> Option<(Vec<u8>, i32, i32)> {
     grab(x, y, w, h).map(|frame| (frame.bgra, frame.w, frame.h))
 }

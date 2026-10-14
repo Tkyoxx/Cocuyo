@@ -17,6 +17,7 @@ mod install;
 mod intent;
 mod live;
 mod mcp;
+mod minutes;
 mod media;
 mod mic;
 mod net;
@@ -75,13 +76,28 @@ fn demo(app: tauri::AppHandle) {
                 let (model, think) = choice.split_once('|').unwrap_or((choice, ""));
                 talk::try_model(model, think);
                 eprintln!("[vivo] probando {model} pensando «{think}»");
+            } else if step == "memoria-prueba" {
+                let charla = [
+                    ("oye, ¿me recuerdas a qué hora es el partido de mi hermano Mateo?".to_string(), "No lo tengo anotado, ¿a qué hora es?".to_string()),
+                    ("a las 4, él juega de portero en el equipo del colegio".to_string(), "Listo, a las 4. ¡Que tape mucho!".to_string()),
+                    ("y pon algo de salsa que ando cocinando".to_string(), "Sonando salsa.".to_string()),
+                    ("es que los domingos siempre hago el almuerzo para mi mamá".to_string(), "Qué buen plan. ¡Buen provecho!".to_string()),
+                ];
+                eprintln!("[memoria] {:?}", ai::learned(&app, &charla));
             } else if step == "vivo-modelos" {
                 eprintln!("[vivo] modelos: {:?}", ai::live_models(&app));
+            } else if let Some(wav) = step.strip_prefix("apuntes-oir=") {
+                eprintln!("[apuntes] {:?}", minutes::probe(&app, std::path::Path::new(wav)));
+            } else if let Some(wav) = step.strip_prefix("vivo-lazo=") {
+                eprintln!("[vivo] lazo {:?}", talk::probe_lasso(&app, std::path::Path::new(wav)));
+                talk::forget();
             } else if let Some(wav) = step.strip_prefix("vivo-oir=") {
                 eprintln!("[vivo] {:?}", talk::probe_audio(&app, std::path::Path::new(wav)));
+                talk::forget();
             } else if let Some(text) = step.strip_prefix("vivo=") {
                 let started = std::time::Instant::now();
                 eprintln!("[vivo] {:?} en {:?}", talk::probe(&app, text), started.elapsed());
+                talk::forget();
             } else if step == "ia" {
                 let started = std::time::Instant::now();
                 let order = ai::rewrite(&app, "oye ponme la de beibi dol de dominic faik porfa", &scripts::list(&app));

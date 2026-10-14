@@ -412,6 +412,9 @@ fn url_encode(text: &str) -> String {
 }
 
 fn first_things(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
+    if let Some(done) = crate::minutes::spoken(app, spoken) {
+        return Some(done);
+    }
     if let Some(done) = crate::ocr::spoken(spoken).or_else(|| crate::system::slow_spoken(spoken)).or_else(|| edit_selection(app, spoken)) {
         return Some(done);
     }
@@ -742,7 +745,19 @@ struct Heard {
     live: bool,
 }
 
+static LASSO_LIVE: AtomicBool = AtomicBool::new(false);
+static LASSO_HEARD: std::sync::Mutex<Option<mic::Recording>> = std::sync::Mutex::new(None);
+
 pub fn lasso_listen(app: &AppHandle) -> bool {
+    *QUESTION.lock().unwrap() = None;
+    if !PRACTICE.load(Ordering::Relaxed) && crate::talk::wanted(app) {
+        mic::start();
+        LASSO_LIVE.store(crate::talk::begin_lasso(app), Ordering::Relaxed);
+        if LASSO_LIVE.load(Ordering::Relaxed) {
+            return true;
+        }
+        let _ = mic::stop();
+    }
     let ready = !PRACTICE.load(Ordering::Relaxed) && dir(app).map(|d| installed_in(&d)).unwrap_or(false);
     if ready {
         mic::start();
@@ -753,6 +768,16 @@ pub fn lasso_listen(app: &AppHandle) -> bool {
 }
 
 pub fn lasso_heard(app: &AppHandle, cancelled: bool) -> bool {
+    if LASSO_LIVE.load(Ordering::Relaxed) {
+        let recording = mic::stop();
+        crate::talk::lasso_end(cancelled);
+        if cancelled {
+            LASSO_LIVE.store(false, Ordering::Relaxed);
+            return false;
+        }
+        *LASSO_HEARD.lock().unwrap() = recording.ok();
+        return true;
+    }
     if !LASSO_LISTENING.swap(false, Ordering::Relaxed) {
         return false;
     }
@@ -766,7 +791,7 @@ pub fn lasso_heard(app: &AppHandle, cancelled: bool) -> bool {
 }
 
 pub fn question_pending() -> bool {
-    QUESTION.lock().unwrap().is_some()
+    QUESTION.lock().unwrap().is_some() || LASSO_LIVE.load(Ordering::Relaxed)
 }
 
 static LASSO_LISTENING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -776,16 +801,34 @@ static QUESTION: std::sync::Mutex<Option<std::thread::JoinHandle<Option<String>>
 pub struct Asked {
     question: String,
     answer: String,
+    live: bool,
 }
 
 #[tauri::command]
 pub async fn lasso_ask(app: AppHandle) -> Result<Option<Asked>, String> {
+    if LASSO_LIVE.swap(false, Ordering::Relaxed) {
+        let image = crate::capture::asked_about();
+        let recording = LASSO_HEARD.lock().unwrap().take();
+        match crate::talk::lasso_answer(image.clone()) {
+            crate::talk::Ended::Spoke(question, answer) => {
+                crate::ai::talked(&question, &answer);
+                return Ok(Some(Asked { question, answer, live: true }));
+            }
+            _ => {
+                let question = recording.and_then(|r| transcribe(&app, r).ok().flatten()).ok_or("No te escuché.")?;
+                let image = image.ok_or("No quedó imagen de lo que rodeaste.")?;
+                let answer = crate::ai::see(&app, &question, &image).map_err(|why| crate::i18n::tr(&why))?;
+                crate::ai::talked(&question, &answer);
+                return Ok(Some(Asked { question, answer: crate::i18n::tr(&answer), live: false }));
+            }
+        }
+    }
     let Some(listening) = QUESTION.lock().unwrap().take() else { return Ok(None) };
     let image = crate::capture::asked_about();
     let Some(question) = listening.join().ok().flatten() else { return Ok(None) };
     if crate::ocr::wants(&question) {
         let copied = image.as_deref().ok_or("No quedó imagen de lo que rodeaste.".to_string()).and_then(crate::ocr::copy_from_png);
-        return copied.map(|answer| Some(Asked { question, answer: crate::i18n::tr(&answer) })).map_err(|why| crate::i18n::tr(&why));
+        return copied.map(|answer| Some(Asked { question, answer: crate::i18n::tr(&answer), live: false })).map_err(|why| crate::i18n::tr(&why));
     }
     if crate::ai::mode(&app).is_none() {
         return Ok(None);
@@ -799,7 +842,7 @@ pub async fn lasso_ask(app: AppHandle) -> Result<Option<Asked>, String> {
             crate::ai::talked(&question, &answer);
             crate::cue::play(crate::cue::Cue::Done);
             crate::cue::answer(&answer);
-            Ok(Some(Asked { question, answer }))
+            Ok(Some(Asked { question, answer, live: false }))
         }
         Err(why) => {
             crate::cue::play(crate::cue::Cue::Fail);
@@ -823,6 +866,7 @@ fn hear_with_ai(app: &AppHandle, recording: &mic::Recording, dictation: bool) ->
 
 pub fn finish(app: &AppHandle, chord: Chord, cancelled: bool) {
     let recording = mic::stop();
+    crate::ai::maybe_distill(app);
     if chord == Chord::Command {
         match crate::talk::finish(cancelled || PRACTICE.load(Ordering::Relaxed)) {
             crate::talk::Ended::Spoke(said, reply) => {

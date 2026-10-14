@@ -258,6 +258,9 @@ Cuidados que trae de fábrica:
 | `cocuyo_ventana` | Abre una app (o trae la que ya está abierta) y devuelve sus elementos numerados |
 | `cocuyo_mirar` | Vuelve a mirar la ventana; con `imagen` también manda una captura |
 | `cocuyo_hacer` | Clics, escribir, teclas, esperar y rueda, en tanda, con `confirmar` y `destino` para lo irreversible |
+| `cocuyo_mensaje` | La vía rápida para mandar un mensaje por WhatsApp, Discord o Telegram, con permiso antes de enviar |
+| `cocuyo_apuntes` | Empieza o termina los apuntes de una clase o reunión |
+| `cocuyo_ver_pantalla` | Solo en la conversación en vivo: una captura de lo que ves, para preguntarle por ello |
 
 ### Servidores MCP
 

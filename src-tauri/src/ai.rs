@@ -126,6 +126,70 @@ pub fn talked(said: &str, answer: &str) {
     talk.push((Instant::now(), said.trim().to_string(), answer.trim().chars().take(400).collect()));
 }
 
+static DISTILLED: Mutex<Option<Instant>> = Mutex::new(None);
+const QUIET_FOR: Duration = Duration::from_secs(3 * 60);
+
+pub fn maybe_distill(app: &AppHandle) {
+    let pending: Vec<(String, String)> = {
+        let talk = TALK.lock().unwrap();
+        let Some((last, _, _)) = talk.last() else { return };
+        if last.elapsed() < QUIET_FOR {
+            return;
+        }
+        let mut distilled = DISTILLED.lock().unwrap();
+        let since = *distilled;
+        *distilled = Some(*last);
+        talk.iter().filter(|(when, _, _)| since.is_none_or(|since| *when > since)).map(|(_, said, answer)| (said.clone(), answer.clone())).collect()
+    };
+    if pending.len() < 2 || mode(app).is_none() {
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let _ = distill(&app, &pending);
+    });
+}
+
+fn plain_fact(text: &str) -> String {
+    crate::intent::normalize(text)
+}
+
+fn distill(app: &AppHandle, pending: &[(String, String)]) -> Result<(), String> {
+    for fact in learned(app, pending)? {
+        memorize(app, &fact)?;
+    }
+    Ok(())
+}
+
+pub fn learned(app: &AppHandle, pending: &[(String, String)]) -> Result<Vec<String>, String> {
+    let known = memory(app);
+    let chat_text: String = pending.iter().map(|(said, answer)| format!("Persona: {said}\nCocuyo: {answer}\n")).collect();
+    let system = format!(
+        "Lees una charla entre una persona y Cocuyo, su asistente de voz. Saca SOLO datos duraderos sobre la persona que valga la pena \
+         recordar durante meses: gustos, nombres de gente cercana y quiénes son, sus proyectos, su trabajo o estudios, rutinas, metas, cosas que \
+         dijo que no le gustan. Nada pasajero (lo que preguntó hoy, el clima, una canción que pidió una vez) y nada que no haya dicho de verdad.\n\
+         Responde con 0 a 3 líneas, una por dato, cortas y en tercera persona («Su hermana se llama Laura»), o solo: nada\n\
+         Ya se sabe esto, no lo repitas:\n{}",
+        known.iter().rev().take(40).map(|fact| format!("- {fact}")).collect::<Vec<_>>().join("\n")
+    );
+    let reply = chat(app, &system, &chat_text, Extra::None)?;
+    let reply = reply.split("</think>").last().unwrap_or("");
+    let known_plain: Vec<String> = known.iter().map(|fact| plain_fact(fact)).collect();
+    let mut found = Vec::new();
+    for line in reply.lines() {
+        let fact = line.trim().trim_start_matches(['-', '*', '•', ' ']).trim().trim_end_matches('.').to_string();
+        let plain = plain_fact(&fact);
+        if plain.is_empty() || plain == "nada" || fact.chars().count() > 160 || fact.chars().count() < 6 {
+            continue;
+        }
+        if known_plain.iter().any(|old| old.contains(&plain) || plain.contains(old.as_str())) {
+            continue;
+        }
+        found.push(fact);
+    }
+    Ok(found)
+}
+
 pub fn asking() -> bool {
     let talk = TALK.lock().unwrap();
     talk.last().is_some_and(|(when, _, answer)| when.elapsed() < ANSWER_WITHIN && answer.trim_end().ends_with('?'))
@@ -689,6 +753,10 @@ fn chats(id: &str) -> bool {
 }
 
 pub fn live_models(app: &AppHandle) -> Result<Vec<String>, String> {
+    Ok(bidi_models(app)?.into_iter().filter(|name| !["tts", "transcribe", "translate", "robotics"].iter().any(|job| name.contains(job))).collect())
+}
+
+pub fn bidi_models(app: &AppHandle) -> Result<Vec<String>, String> {
     let key = key(app).ok_or("Falta la clave de Gemini.")?;
     let (status, reply) = send("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000", &[format!("x-goog-api-key: {key}")], None)?;
     if !(200..300).contains(&status) {
@@ -701,7 +769,6 @@ pub fn live_models(app: &AppHandle) -> Result<Vec<String>, String> {
         .filter(|model| model["supportedGenerationMethods"].as_array().is_some_and(|ways| ways.iter().any(|way| way == "bidiGenerateContent")))
         .filter_map(|model| model["name"].as_str())
         .map(|name| name.trim_start_matches("models/").to_string())
-        .filter(|name| !["tts", "transcribe", "translate", "robotics"].iter().any(|job| name.contains(job)))
         .collect())
 }
 
@@ -807,6 +874,21 @@ pub fn see(app: &AppHandle, question: &str, png: &[u8]) -> Result<String, String
         return Err("El modelo no respondió nada. Puede que no sepa mirar imágenes: prueba con otro.".into());
     }
     Ok(answer)
+}
+
+pub fn summarize_minutes(app: &AppHandle, transcript: &str) -> Result<String, String> {
+    let system = "Te paso la transcripción automática de una clase, reunión o llamada; puede traer errores de oído y frases cortadas. \
+                  Escribe, en el idioma en que se habló y en Markdown simple:\n\
+                  ## Resumen: tres a cinco frases con lo importante.\n\
+                  ## Puntos clave: viñetas cortas con ideas, datos, fechas y nombres que valga la pena guardar.\n\
+                  ## Pendientes: lo que alguien quedó en hacer, con quién y para cuándo si se dijo. Si no hay, no pongas esta parte.\n\
+                  No inventes nada que no esté en la transcripción.";
+    let reply = chat_up_to(app, system, transcript, Extra::None, 1600)?;
+    let reply = reply.split("</think>").last().unwrap_or("").trim().to_string();
+    if reply.is_empty() {
+        return Err("El modelo no devolvió nada.".into());
+    }
+    Ok(reply)
 }
 
 pub fn polish(app: &AppHandle, dictated: &str) -> Option<String> {
