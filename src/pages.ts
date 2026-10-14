@@ -1978,13 +1978,13 @@ class SettingsPage implements Page {
     paintPreview(this.el, s.barStyle, s.barOpacity, s.barCenter);
     q<HTMLInputElement>("#s-bar-center").checked = s.barCenter;
     q<HTMLInputElement>("#s-bar-solid").checked = s.barSolidMax;
-    void call<{ autohide: boolean; windows11: boolean; rival: string | null; deep: boolean | null } | null>("taskbar_state", undefined, null).then((bar) => {
+    void call<{ autohide: boolean; windows11: boolean; rival: string | null; deep: boolean | null; hidden: number | null; fault: number | null } | null>("taskbar_state", undefined, null).then((bar) => {
       if (!bar) return;
       q<HTMLInputElement>("#s-bar-hide").checked = bar.autohide;
-      q("#s-bar-help").textContent =
-        bar.deep === false
-          ? "Windows no dejó quitarle a la barra su fondo: se verá con el efecto de Windows encima."
-          : "Se aplica al instante, en todas tus barras.";
+      const stuck = bar.deep === false || (bar.deep === true && s.barStyle !== "normal" && bar.hidden === 0);
+      q("#s-bar-help").textContent = stuck
+        ? `Windows no dejó quitarle a la barra su fondo: se verá con el efecto de Windows encima.${bar.fault ? ` (0x${bar.fault.toString(16).padStart(8, "0")})` : ""}`
+        : "Se aplica al instante, en todas tus barras.";
       q("#s-bar-rival-row").hidden = !bar.rival;
       if (bar.rival) q("#s-bar-rival").textContent = `Tienes ${bar.rival} abierto. Si los dos tocan la barra se pelean.`;
     });

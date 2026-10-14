@@ -12,7 +12,7 @@ use windows::Win32::Foundation::{CloseHandle, ERROR_NOT_FOUND, HWND, LPARAM, REC
 use windows::Win32::Graphics::Gdi::{MonitorFromWindow, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED};
 use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
-use windows::Win32::System::Registry::{RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, REG_DWORD, RRF_RT_REG_SZ};
+use windows::Win32::System::Registry::{RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, REG_DWORD, RRF_RT_REG_DWORD, RRF_RT_REG_SZ};
 use windows::Win32::System::Threading::{GetCurrentProcessId, GetCurrentThreadId, OpenEventW, SetEvent, EVENT_MODIFY_STATE};
 use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, SetWinEventHook, TreeScope_Children, UnhookWinEvent, HWINEVENTHOOK};
 use windows::Win32::UI::Shell::{SHAppBarMessage, ABM_GETSTATE, ABM_SETSTATE, ABS_AUTOHIDE, APPBARDATA};
@@ -187,15 +187,31 @@ pub(crate) fn inject(process: u32, dll: &Path, data: &str) -> Result<(), String>
     }
 }
 
-fn set_hidden(hide: bool) {
-    let value: u32 = u32::from(hide);
+fn write_number(name: PCWSTR, value: u32) {
     unsafe {
-        let _ = RegSetKeyValueW(HKEY_CURRENT_USER, w!("Software\\Cocuyo"), w!("BarraSinFondo"), REG_DWORD.0, Some((&value as *const u32).cast()), 4);
+        let _ = RegSetKeyValueW(HKEY_CURRENT_USER, w!("Software\\Cocuyo"), name, REG_DWORD.0, Some((&value as *const u32).cast()), 4);
+    }
+}
+
+fn read_number(name: PCWSTR) -> Option<u32> {
+    let (mut value, mut size) = (0u32, 4u32);
+    unsafe { RegGetValueW(HKEY_CURRENT_USER, w!("Software\\Cocuyo"), name, RRF_RT_REG_DWORD, None, Some((&mut value as *mut u32).cast()), Some(&mut size)) }
+        .is_ok()
+        .then_some(value)
+}
+
+fn poke_layer() {
+    unsafe {
         if let Ok(event) = OpenEventW(EVENT_MODIFY_STATE, false, w!("Local\\CocuyoBarra")) {
             let _ = SetEvent(event);
             let _ = CloseHandle(event);
         }
     }
+}
+
+fn set_hidden(hide: bool) {
+    write_number(w!("BarraSinFondo"), u32::from(hide));
+    poke_layer();
 }
 
 fn deep(want: bool) {
@@ -208,9 +224,13 @@ fn deep(want: bool) {
     if deep.hidden != Some(want) {
         set_hidden(want);
         deep.hidden = Some(want);
+    } else if want {
+        poke_layer();
     }
     if want && explorer != 0 && deep.explorer != explorer {
         deep.explorer = explorer;
+        write_number(w!("BarraOcultos"), u32::MAX);
+        write_number(w!("BarraFallo"), 0);
         deep.done = Some(layer_path().ok_or_else(|| "no se pudo guardar la librería".to_string()).and_then(|dll| inject(explorer, &dll, "")).is_ok());
     }
 }
@@ -509,6 +529,8 @@ pub struct BarState {
     windows11: bool,
     rival: Option<String>,
     deep: Option<bool>,
+    hidden: Option<u32>,
+    fault: Option<u32>,
 }
 
 const RIVALS: [&str; 6] = ["TaskbarX", "TranslucentTB", "RoundedTB", "StartAllBack", "StartIsBack", "ExplorerPatcher"];
@@ -527,7 +549,13 @@ fn rival() -> Option<String> {
 pub fn taskbar_state() -> BarState {
     let mut data = bar_data();
     let state = unsafe { SHAppBarMessage(ABM_GETSTATE, &mut data) } as u32;
-    BarState { autohide: state & ABS_AUTOHIDE != 0, windows11: windows11(), rival: rival(), deep: DEEP.lock().ok().and_then(|deep| deep.done) }
+    let deep = DEEP.lock().ok().and_then(|deep| deep.done);
+    let (hidden, fault) = if deep == Some(true) {
+        (read_number(w!("BarraOcultos")).filter(|n| *n != u32::MAX), read_number(w!("BarraFallo")).filter(|n| *n != 0))
+    } else {
+        (None, None)
+    };
+    BarState { autohide: state & ABS_AUTOHIDE != 0, windows11: windows11(), rival: rival(), deep, hidden, fault }
 }
 
 #[tauri::command]

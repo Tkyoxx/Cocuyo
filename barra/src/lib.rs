@@ -4,13 +4,16 @@
 
 use std::collections::HashSet;
 use std::ffi::c_void;
+use std::io::Write;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 
-use windows::core::{implement, interface, w, IUnknown, IUnknown_Vtbl, Interface, Ref, BOOL, BSTR, GUID, HRESULT};
+use windows::core::{implement, interface, w, IInspectable, IUnknown, IUnknown_Vtbl, Interface, Ref, BOOL, BSTR, GUID, HRESULT};
+use windows::UI::Core::{CoreDispatcher, CoreDispatcherPriority, DispatchedHandler};
 use windows::Win32::Foundation::{CLASS_E_CLASSNOTAVAILABLE, CLASS_E_NOAGGREGATION, E_FAIL, E_POINTER, HANDLE, RECT, S_FALSE, S_OK};
 use windows::Win32::System::Com::{CoInitializeEx, CoTaskMemFree, IClassFactory, IClassFactory_Impl, COINIT_MULTITHREADED};
 use windows::Win32::System::Ole::{IObjectWithSite, IObjectWithSite_Impl};
-use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD};
+use windows::Win32::System::Registry::{RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_DWORD, RRF_RT_REG_DWORD};
 use windows::Win32::System::Threading::{CreateEventW, SetEvent, WaitForMultipleObjects, INFINITE};
 
 pub const CLSID: GUID = GUID::from_u128(0x6f3c1a52_8e0d_4c1b_9a37_c0c0a1b2c3d4);
@@ -108,6 +111,28 @@ static TREE: Mutex<Option<Tree>> = Mutex::new(None);
 static LINK: Mutex<Option<Shared<(IVisualTreeService, IVisualTreeServiceCallback)>>> = Mutex::new(None);
 static NUDGE: Mutex<Option<Shared<HANDLE>>> = Mutex::new(None);
 static OPACITY: Mutex<Option<(u32, u64)>> = Mutex::new(None);
+static DISPATCHER: Mutex<Option<Shared<CoreDispatcher>>> = Mutex::new(None);
+static LINES: AtomicU32 = AtomicU32::new(0);
+
+fn log_path() -> Option<std::path::PathBuf> {
+    Some(std::path::PathBuf::from(std::env::var_os("LOCALAPPDATA")?).join("io.github.tkyoxx.cocuyo").join("barra").join("registro.txt"))
+}
+
+fn note(line: &str) {
+    if LINES.fetch_add(1, Ordering::Relaxed) > 400 {
+        return;
+    }
+    let Some(path) = log_path() else { return };
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file, "{line}");
+    }
+}
+
+fn report(name: windows::core::PCWSTR, value: u32) {
+    unsafe {
+        let _ = RegSetKeyValueW(HKEY_CURRENT_USER, w!("Software\\Cocuyo"), name, REG_DWORD.0, Some((&value as *const u32).cast()), 4);
+    }
+}
 
 fn text(raw: *const u16) -> String {
     if raw.is_null() {
@@ -195,6 +220,23 @@ unsafe fn opacity(service: &IVisualTreeService, target: u64) -> Option<(u32, u64
 }
 
 fn apply() {
+    let dispatcher = DISPATCHER.lock().ok().and_then(|dispatcher| dispatcher.as_ref().map(|d| d.0.clone()));
+    match dispatcher {
+        Some(dispatcher) if !dispatcher.HasThreadAccess().unwrap_or(false) => {
+            let handler = DispatchedHandler::new(|| {
+                apply_here();
+                Ok(())
+            });
+            if let Err(error) = dispatcher.RunAsync(CoreDispatcherPriority::Normal, &handler) {
+                note(&format!("no se pudo pasar al hilo de la barra: {error}"));
+                apply_here();
+            }
+        }
+        _ => apply_here(),
+    }
+}
+
+fn apply_here() {
     let Some((service, targets, probe)) = (|| {
         let link = LINK.lock().ok()?;
         let service = link.as_ref()?.0 .0.clone();
@@ -205,12 +247,25 @@ fn apply() {
         return;
     };
     let hide = wanted_hidden(probe);
-    for target in targets {
+    let (mut done, mut fault) = (0u32, 0u32);
+    for target in &targets {
         unsafe {
-            let Some((index, zero)) = opacity(&service, target) else { return };
-            let _ = if hide { service.SetProperty(target, zero, index) } else { service.ClearProperty(target, index) };
+            let Some((index, zero)) = opacity(&service, *target) else {
+                note("no encontré la propiedad Opacity del fondo");
+                fault = 1;
+                break;
+            };
+            let result = if hide { service.SetProperty(*target, zero, index) } else { service.ClearProperty(*target, index) };
+            if result.is_ok() {
+                done += 1;
+            } else {
+                fault = result.0 as u32;
+            }
         }
     }
+    note(&format!("{} {} de {} piezas del fondo{}", if hide { "escondí" } else { "devolví" }, done, targets.len(), if fault != 0 { format!(" (fallo 0x{fault:08x})") } else { String::new() }));
+    report(w!("BarraOcultos"), if hide { done } else { 0 });
+    report(w!("BarraFallo"), fault);
 }
 
 fn start_worker() {
@@ -261,10 +316,16 @@ impl IVisualTreeServiceCallback_Impl for Watcher_Impl {
             found = kind == *probe && tree.targets.len() < 2000;
         } else if kind == "Taskbar.TaskbarBackground" {
             tree.inside.insert(element.handle);
+            note("encontré Taskbar.TaskbarBackground");
         } else if tree.inside.contains(&relation.parent) {
             tree.inside.insert(element.handle);
             let name = text(element.name);
             found = name == "BackgroundFill" || name == "BackgroundStroke";
+            if !name.is_empty() {
+                note(&format!("  dentro: {name} ({kind})"));
+            }
+        } else if kind.starts_with("Taskbar.") && LINES.load(Ordering::Relaxed) < 120 {
+            note(&format!("visto: {kind} «{}»", text(element.name)));
         }
         if found && !tree.targets.contains(&element.handle) {
             tree.targets.push(element.handle);
@@ -286,8 +347,19 @@ impl IObjectWithSite_Impl for Tap_Impl {
             *mine = Some(site.clone());
         }
         let service: IVisualTreeService = site.cast()?;
+        LINES.store(0, Ordering::Relaxed);
+        if let Some(path) = log_path() {
+            let _ = std::fs::write(path, format!("cocuyo-barra dentro del explorador (proceso {})\n", std::process::id()));
+        }
         let mut probe = None;
         if let Ok(diagnostics) = site.cast::<IXamlDiagnostics>() {
+            let mut raw: *mut c_void = std::ptr::null_mut();
+            let got = unsafe { diagnostics.GetDispatcher(&mut raw) };
+            let dispatcher = (got.is_ok() && !raw.is_null()).then(|| unsafe { IInspectable::from_raw(raw) }).and_then(|inspectable| inspectable.cast::<CoreDispatcher>().ok());
+            note(if dispatcher.is_some() { "tengo el hilo de la barra" } else { "sin el hilo de la barra: toco el fondo desde afuera" });
+            if let Ok(mut mine) = DISPATCHER.lock() {
+                *mine = dispatcher.map(Shared);
+            }
             let mut raw: *const u16 = std::ptr::null();
             if unsafe { diagnostics.GetInitializationData(&mut raw) }.is_ok() && !raw.is_null() {
                 let data = text(raw);
@@ -315,7 +387,8 @@ impl IObjectWithSite_Impl for Tap_Impl {
                 if let Ok(mut link) = LINK.lock() {
                     *link = Some(Shared((work.0.clone(), callback.clone())));
                 }
-                let _ = work.0.AdviseVisualTreeChange(callback.as_raw());
+                let advised = work.0.AdviseVisualTreeChange(callback.as_raw());
+                note(&format!("mirando el árbol de la barra: {advised:?}"));
             }
             nudge();
         });
