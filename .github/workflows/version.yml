@@ -128,10 +128,11 @@ jobs:
               if ($firma.Status -ne 'Valid') { throw "$archivo no quedó firmado: $($firma.StatusMessage)" }
             }
           }
-          gh release view $env:GITHUB_REF_NAME *> $null
-          if ($LASTEXITCODE -eq 0) {
+          for ($intento = 1; $intento -le 4; $intento++) {
             gh release upload $env:GITHUB_REF_NAME Cocuyo.exe $env:INSTALADOR --clobber
-          } else {
+            if ($LASTEXITCODE -eq 0) { exit 0 }
             gh release create $env:GITHUB_REF_NAME Cocuyo.exe $env:INSTALADOR --title "Cocuyo $($env:GITHUB_REF_NAME.TrimStart('v'))" --generate-notes
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            Start-Sleep -Seconds (20 * $intento)
           }
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          exit 1
