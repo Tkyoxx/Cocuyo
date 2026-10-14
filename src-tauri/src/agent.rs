@@ -429,10 +429,17 @@ fn plain_schema(schema: &Value) -> Option<Value> {
     Some(Value::Object(out))
 }
 
+const HANDS: [&str; 3] = ["cocuyo_ventana", "cocuyo_mirar", "cocuyo_hacer"];
+
 pub fn declarations(app: &AppHandle) -> Vec<Value> {
+    if cfg!(debug_assertions) && std::env::var("COCUYO_DEMO_MANOS_QUIETAS").is_ok() {
+        return Vec::new();
+    }
     let (tools, _) = toolbox(app);
-    tools
+    let hands = tools.iter().any(|tool| tool["function"]["name"] == "cocuyo_hacer");
+    let mut found: Vec<Value> = tools
         .iter()
+        .filter(|tool| !HANDS.contains(&tool["function"]["name"].as_str().unwrap_or("")))
         .filter_map(|tool| {
             let function = &tool["function"];
             let mut declaration = json!({ "name": function["name"], "description": function["description"] });
@@ -441,10 +448,25 @@ pub fn declarations(app: &AppHandle) -> Vec<Value> {
             }
             Some(declaration)
         })
-        .collect()
+        .collect();
+    if hands {
+        found.push(json!({
+            "name": "cocuyo_encargo",
+            "description": "Le pasa al agente una tarea que necesita usar apps del PC con el mouse y el teclado (llenar algo, cambiar un ajuste de una app, \
+                            buscar dentro de un programa). SOLO si la persona lo pidió claro y explícito; nunca por una frase que no entendiste bien.",
+            "parameters": { "type": "object", "properties": { "tarea": { "type": "string", "description": "La tarea completa, con todos los datos" } }, "required": ["tarea"] }
+        }));
+    }
+    found
 }
 
 pub fn call_tool(app: &AppHandle, name: &str, args: &Value) -> String {
+    if name == "cocuyo_encargo" {
+        return match run(app, &text(args, "tarea")) {
+            Ok((answer, _)) => answer,
+            Err(why) => format!("ERROR: {why}"),
+        };
+    }
     let (_, doers) = toolbox(app);
     progress(app, &label(name, args), false);
     let result = match doers.get(name) {
@@ -461,13 +483,20 @@ pub fn call_tool(app: &AppHandle, name: &str, args: &Value) -> String {
 
 pub fn voice_prompt(app: &AppHandle) -> String {
     crate::pc::begin();
-    let hands = crate::settings::load(app).agent_hands;
-    let mut text = prompt(app, "", hands);
+    let mut text = prompt(app, "", false);
     text.push_str(
         "\n\nEstás hablando en voz alta, en una conversación en vivo: contesta como en una charla, corto (una o dos frases), sin leer listas ni \
          enlaces. Para cualquier cosa en el PC usa las herramientas (música, apps, volumen, recordatorios, notas: cocuyo_orden; mensajes: \
-         cocuyo_mensaje) y no digas que hiciste algo sin haber llamado a la herramienta. Mientras una herramienta trabaja, no rellenes.",
+         cocuyo_mensaje) y no digas que hiciste algo sin haber llamado a la herramienta. Mientras una herramienta trabaja, no rellenes.\n\
+         Cada herramienta hace esperar a la persona: las preguntas de charla, cultura general o datos contéstalas tú directo. Si es algo muy \
+         actual que no sabes, dilo en vez de abrir el navegador, salvo que te pida buscarlo. Si no entendiste bien lo que dijo, pregúntale en \
+         vez de hacer algo: nunca actúes en el PC por una frase dudosa.",
     );
+    text.push_str(match crate::cue::language().0 {
+        "en" => "\nThe person speaks English.",
+        "pt" => "\nA pessoa fala português.",
+        _ => "\nLa persona habla en español (de Latinoamérica): entiéndela y contéstale en español.",
+    });
     text
 }
 

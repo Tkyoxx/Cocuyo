@@ -71,6 +71,10 @@ fn demo(app: tauri::AppHandle) {
                 let heard = voice::transcribe_file(&app, std::path::Path::new(wav));
                 let pasted = heard.as_ref().map(|text| inject::paste(text));
                 eprintln!("[voz] dictado {heard:?} -> {pasted:?}");
+            } else if let Some(choice) = step.strip_prefix("vivo-modelo=") {
+                let (model, think) = choice.split_once('|').unwrap_or((choice, ""));
+                talk::try_model(model, think);
+                eprintln!("[vivo] probando {model} pensando «{think}»");
             } else if step == "vivo-modelos" {
                 eprintln!("[vivo] modelos: {:?}", ai::live_models(&app));
             } else if let Some(wav) = step.strip_prefix("vivo-oir=") {

@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde_json::{json, Value};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use windows::core::{w, HSTRING, PCWSTR};
 use windows::Win32::Networking::WinHttp::*;
 
@@ -100,7 +100,13 @@ impl Socket {
                 return Err(format!("se cortó la conexión ({code})"));
             }
             if kind == WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE {
-                let reason = String::from_utf8_lossy(&chunk[..read as usize]).to_string();
+                let mut status = 0u16;
+                let mut why = [0u8; 256];
+                let mut used = 0u32;
+                unsafe {
+                    let _ = WinHttpWebSocketQueryCloseStatus(self.socket, &mut status, Some(why.as_mut_ptr().cast()), why.len() as u32, &mut used);
+                }
+                let reason = format!("{status} {}", String::from_utf8_lossy(&why[..used as usize]));
                 return Err(if reason.trim().is_empty() { "Google cerró la conversación".into() } else { format!("Google cerró la conversación: {}", reason.trim()) });
             }
             whole.extend_from_slice(&chunk[..read as usize]);
@@ -255,6 +261,13 @@ struct Live {
 
 static LIVE: Mutex<Option<Arc<Live>>> = Mutex::new(None);
 static MODEL: Mutex<String> = Mutex::new(String::new());
+static THINK: Mutex<String> = Mutex::new(String::new());
+
+pub fn try_model(model: &str, think: &str) {
+    *MODEL.lock().unwrap() = model.to_string();
+    *THINK.lock().unwrap() = think.to_string();
+    forget();
+}
 static ANSWERING: AtomicBool = AtomicBool::new(false);
 static RESTING: Mutex<Option<Instant>> = Mutex::new(None);
 const REST: Duration = Duration::from_secs(60 * 60);
@@ -324,6 +337,11 @@ fn open_live(app: &AppHandle) -> Result<Arc<Live>, String> {
         "inputAudioTranscription": {},
         "outputAudioTranscription": {}
     } });
+    match THINK.lock().unwrap().as_str() {
+        "" => {}
+        "0" => setup["setup"]["generationConfig"]["thinkingConfig"] = json!({ "thinkingBudget": 0 }),
+        level => setup["setup"]["generationConfig"]["thinkingConfig"] = json!({ "thinkingLevel": level }),
+    }
     if !tools.is_empty() {
         setup["setup"]["tools"] = json!([{ "functionDeclarations": tools }]);
     }
@@ -333,6 +351,7 @@ fn open_live(app: &AppHandle) -> Result<Arc<Live>, String> {
         return Err(format!("Gemini Live no arrancó: {}", first.to_string().chars().take(300).collect::<String>()));
     }
     crate::ai::count(app, &model);
+    note(app, &format!("conectado en {} ms", started.elapsed().as_millis()));
     if cfg!(debug_assertions) {
         eprintln!("[vivo] conectado a {model} en {:?}", started.elapsed());
     }
@@ -365,6 +384,18 @@ fn open_live(app: &AppHandle) -> Result<Arc<Live>, String> {
     let live = Arc::new(Live { socket, events: Mutex::new(events), since: Instant::now(), dead });
     *LIVE.lock().unwrap() = Some(live.clone());
     Ok(live)
+}
+
+fn note(app: &AppHandle, line: &str) {
+    let Ok(dir) = app.path().app_config_dir() else { return };
+    let path = dir.join("vivo.log");
+    let mut lines: Vec<String> = std::fs::read_to_string(&path).unwrap_or_default().lines().map(str::to_string).collect();
+    let now = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
+    let model = MODEL.lock().unwrap().clone();
+    lines.push(format!("{:02}:{:02}:{:02} {model} · {line}", now.wHour, now.wMinute, now.wSecond));
+    let keep = lines.len().saturating_sub(200);
+    let _ = std::fs::write(path, lines[keep..].join("
+"));
 }
 
 pub fn forget() {
@@ -403,6 +434,7 @@ pub fn begin(app: &AppHandle) {
     let (done, result) = channel();
     *TURN.lock().unwrap() = Some(Turn { ended: ended.clone(), cancelled: cancelled.clone(), result });
     let app = app.clone();
+    std::thread::spawn(wake_speaker);
     std::thread::spawn(move || {
         let outcome = connect(&app).and_then(|live| {
             let outcome = talk(&app, &live, taps, &ended, &cancelled);
@@ -411,6 +443,9 @@ pub fn begin(app: &AppHandle) {
             }
             outcome
         });
+        if let Err(why) = &outcome {
+            note(&app, &format!("falló: {why}"));
+        }
         let _ = done.send(outcome);
     });
 }
@@ -460,6 +495,7 @@ fn listen(app: &AppHandle, live: &Live, events: &Receiver<Value>, asked: Instant
     let mut reply = String::new();
     let mut to_speaker = None;
     let mut first_sound = None;
+    let mut used = Vec::new();
     let mut owed = false;
     loop {
         let message = events.recv_timeout(PATIENCE).map_err(|_| "Gemini se quedó callado.".to_string())?;
@@ -487,6 +523,8 @@ fn listen(app: &AppHandle, live: &Live, events: &Receiver<Value>, asked: Instant
                 if cfg!(debug_assertions) {
                     eprintln!("[vivo] primera voz a los {first_sound:?}, todo en {:?}", asked.elapsed());
                 }
+                let ms = |at: Option<Duration>| at.map_or("-".to_string(), |at| at.as_millis().to_string());
+                note(app, &format!("voz {} ms · fin {} ms · herramientas: {}", ms(first_sound), asked.elapsed().as_millis(), if used.is_empty() { "ninguna".to_string() } else { used.join(", ") }));
                 return Ok((said.trim().to_string(), reply.trim().to_string()));
             }
         }
@@ -495,7 +533,9 @@ fn listen(app: &AppHandle, live: &Live, events: &Receiver<Value>, asked: Instant
             for call in calls {
                 let name = call["name"].as_str().unwrap_or("");
                 let args = call.get("args").cloned().unwrap_or_else(|| json!({}));
+                let started = Instant::now();
                 let result = crate::agent::call_tool(app, name, &args);
+                used.push(format!("{name} ({} ms)", started.elapsed().as_millis()));
                 if cfg!(debug_assertions) {
                     eprintln!("[vivo] {name} {args} -> {}", result.chars().take(200).collect::<String>().replace('\n', " | "));
                 }
@@ -562,9 +602,10 @@ pub fn probe_audio(app: &AppHandle, wav: &std::path::Path) -> Result<(String, St
 }
 
 pub fn probe(app: &AppHandle, text: &str) -> Result<(String, String), String> {
-    let started = Instant::now();
     let live = connect(app)?;
+    wake_speaker();
     let events = live.events.lock().unwrap();
+    let started = Instant::now();
     live.socket.send(&json!({ "clientContent": { "turns": [{ "role": "user", "parts": [{ "text": text }] }], "turnComplete": true } }))?;
     let heard = answer(app, &live, &events, started);
     while !QUEUE.lock().unwrap().is_empty() {
