@@ -210,6 +210,7 @@ pub fn run() {
             update::update_done,
             taskbar::taskbar_state,
             taskbar::taskbar_autohide,
+            taskbar::taskbar_close_rival,
             scripts::gallery_publish,
             scripts::gallery_list,
             scripts::gallery_install,

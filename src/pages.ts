@@ -783,6 +783,14 @@ const ANIMATED = /\.(mp4|webm|mkv|mov|gif)$/i;
 let walls: string[] = [];
 let wallIndex = 0;
 /** El número junto al deslizador de la barra, y su relleno. */
+function paintPreview(el: HTMLElement, style: Settings["barStyle"], opacity: number, center: boolean) {
+  const box = el.querySelector<HTMLElement>("#s-bar-preview")!;
+  box.style.setProperty("--bp-a", String(style === "normal" ? 0.96 : opacity / 100));
+  box.style.setProperty("--bp-blur", style === "blur" ? "6px" : style === "acrylic" ? "10px" : "0px");
+  box.style.setProperty("--bp-sat", style === "acrylic" ? "1.8" : "1");
+  box.classList.toggle("center", center);
+}
+
 function paintAmount(el: HTMLElement, value: number) {
   el.querySelector("#s-bar-amount-text")!.textContent = value === 0 ? "Nada: se ve todo lo de atrás" : `${value} %`;
   el.querySelector<HTMLElement>("#s-bar-amount")!.style.setProperty("--p", `${value}%`);
@@ -1075,6 +1083,7 @@ class SettingsPage implements Page {
         section(
           "barra",
           `<div class="card">
+             <div class="bar-preview" id="s-bar-preview" aria-hidden="true"><div class="bp-bar"><span class="bp-start"></span><span class="bp-icons"><i></i><i></i><i></i><i></i><i></i></span><span class="bp-clock"></span></div></div>
              <div class="srow stack">
                <div><b>Cómo se ve la barra de tareas</b><small id="s-bar-help">Se aplica al instante, en todas tus barras.</small></div>
                <div class="segmented" id="s-bar-style"><span class="thumb"></span><button data-value="normal">Normal</button><button data-value="clear">Transparente</button><button data-value="blur">Desenfoque</button><button data-value="acrylic">Acrílico</button></div>
@@ -1088,7 +1097,7 @@ class SettingsPage implements Page {
              <label class="srow"><div><b>Centrar los íconos</b><small>Se deslizan al centro y se acomodan solos cuando abres o cierras algo.</small></div><input type="checkbox" class="switch" id="s-bar-center"></label>
              <label class="srow"><div><b>Normal si hay una ventana maximizada</b><small>Con el escritorio a la vista, como la elegiste; con algo ocupando la pantalla, la de siempre.</small></div><input type="checkbox" class="switch" id="s-bar-solid"></label>
              <label class="srow"><div><b>Esconderla sola</b><small>Aparece al llevar el mouse abajo. Es el ajuste de Windows de siempre.</small></div><input type="checkbox" class="switch" id="s-bar-hide"></label>
-             <small class="warn" id="s-bar-rival" hidden></small>
+             <div class="srow slim" id="s-bar-rival-row" hidden><small class="warn" id="s-bar-rival"></small><button class="ghost" id="s-bar-rival-close">Cerrarlo</button></div>
            </div>`,
         ) +
         section(
@@ -1285,8 +1294,14 @@ class SettingsPage implements Page {
     let sending = 0;
     amount.addEventListener("input", () => {
       paintAmount(this.el, Number(amount.value));
+      if (this.settings) paintPreview(this.el, this.settings.barStyle, Number(amount.value), this.settings.barCenter);
       window.clearTimeout(sending);
       sending = window.setTimeout(() => void this.save({ barOpacity: Number(amount.value) }), 90);
+    });
+    q("#s-bar-rival-close").addEventListener("click", async () => {
+      const closed = await call<string | null>("taskbar_close_rival", undefined, null);
+      if (closed) this.note(`${closed} cerrado. Ahora la barra la maneja Cocuyo.`);
+      await this.paint();
     });
     q<HTMLInputElement>("#s-bar-hide").addEventListener("change", (e) => {
       void call("taskbar_autohide", { on: (e.target as HTMLInputElement).checked });
@@ -1755,17 +1770,18 @@ class SettingsPage implements Page {
     q("#s-bar-amount-row").classList.toggle("off", s.barStyle === "normal");
     q<HTMLInputElement>("#s-bar-amount").value = String(s.barOpacity);
     paintAmount(this.el, s.barOpacity);
+    paintPreview(this.el, s.barStyle, s.barOpacity, s.barCenter);
     q<HTMLInputElement>("#s-bar-center").checked = s.barCenter;
     q<HTMLInputElement>("#s-bar-solid").checked = s.barSolidMax;
-    void call<{ autohide: boolean; windows11: boolean; rival: string | null } | null>("taskbar_state", undefined, null).then((bar) => {
+    void call<{ autohide: boolean; windows11: boolean; rival: string | null; deep: boolean | null } | null>("taskbar_state", undefined, null).then((bar) => {
       if (!bar) return;
       q<HTMLInputElement>("#s-bar-hide").checked = bar.autohide;
-      q("#s-bar-help").textContent = bar.windows11
-        ? "En Windows 11, centrar usa el ajuste del propio Windows, y la transparencia puede notarse poco: esa barra la pinta Windows a su manera."
-        : "Se aplica al instante, en todas tus barras.";
-      const rival = q("#s-bar-rival");
-      rival.hidden = !bar.rival;
-      if (bar.rival) rival.textContent = `Tienes ${bar.rival} abierto. Si los dos tocan la barra se pelean: usa uno solo.`;
+      q("#s-bar-help").textContent =
+        bar.deep === false
+          ? "Windows no dejó quitarle a la barra su fondo: se verá con el efecto de Windows encima."
+          : "Se aplica al instante, en todas tus barras.";
+      q("#s-bar-rival-row").hidden = !bar.rival;
+      if (bar.rival) q("#s-bar-rival").textContent = `Tienes ${bar.rival} abierto. Si los dos tocan la barra se pelean.`;
     });
     q<HTMLInputElement>("#s-updates").checked = s.checkUpdates;
     void call<string>("version", undefined, "").then((version) => (q("#s-version").textContent = `Cocuyo ${version}`));

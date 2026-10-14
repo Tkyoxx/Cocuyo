@@ -43,13 +43,15 @@ pub fn check() -> Option<Update> {
         .creation_flags(CREATE_NO_WINDOW)
         .output()
         .ok()?;
-    read(&serde_json::from_slice(&output.stdout).ok()?, current())
+    let own = || std::env::current_exe().ok().and_then(|exe| voice::sha256_of(&exe));
+    read(&serde_json::from_slice(&output.stdout).ok()?, current(), own)
 }
 
-fn read(release: &Value, ours: &str) -> Option<Update> {
+fn read(release: &Value, ours: &str, own: impl FnOnce() -> Option<String>) -> Option<Update> {
     let version = release["tag_name"].as_str()?.trim_start_matches(['v', 'V']).to_string();
     let plain = !version.is_empty() && version.len() <= 20 && version.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-');
-    if !plain || !newer(&version, ours) {
+    let same = !newer(&version, ours) && !newer(ours, &version);
+    if !plain || !(newer(&version, ours) || same) {
         return None;
     }
     let (url, sha256) = release["assets"].as_array()?.iter().find_map(|asset| {
@@ -58,6 +60,9 @@ fn read(release: &Value, ours: &str) -> Option<Update> {
         let ours = url.starts_with(DOWNLOADS) && url.ends_with(PORTABLE) && !url.contains("..");
         (ours && sha256.len() == 64 && sha256.chars().all(|c| c.is_ascii_hexdigit())).then(|| (url.to_string(), sha256.to_lowercase()))
     })?;
+    if same && own().is_none_or(|mine| mine.eq_ignore_ascii_case(&sha256)) {
+        return None;
+    }
     let notes: String = release["body"].as_str().unwrap_or("").chars().take(600).collect();
     Some(Update { version, notes: notes.trim().to_string(), url, sha256 })
 }
@@ -197,17 +202,21 @@ mod tests {
                 { "browser_download_url": "https://github.com/Tkyoxx/Cocuyo/releases/download/v0.2.0/Cocuyo.exe", "digest": format!("sha256:{}", SHA.to_uppercase()) }
             ]
         });
-        let update = read(&release, "0.1.0").unwrap();
+        let update = read(&release, "0.1.0", || None).unwrap();
         assert_eq!((update.version.as_str(), update.notes.as_str(), update.sha256.as_str()), ("0.2.0", "Mando, voces y clima.", SHA));
         assert!(update.url.ends_with("/v0.2.0/Cocuyo.exe"));
-        assert!(read(&release, "0.2.0").is_none());
+        assert!(read(&release, "0.2.0", || Some(SHA.into())).is_none());
 
+        let fixed = read(&release, "0.2.0", || Some("otro".into())).unwrap();
+        assert_eq!(fixed.version, "0.2.0");
+        assert!(read(&release, "0.2.0", || None).is_none());
+        assert!(read(&release, "0.3.0", || Some("otro".into())).is_none());
         let elsewhere = serde_json::json!({ "tag_name": "v9.0.0", "assets": [{ "browser_download_url": "https://ejemplo.com/Cocuyo.exe", "digest": format!("sha256:{SHA}") }] });
-        assert!(read(&elsewhere, "0.1.0").is_none());
+        assert!(read(&elsewhere, "0.1.0", || None).is_none());
         let unsigned = serde_json::json!({ "tag_name": "v9.0.0", "assets": [{ "browser_download_url": "https://github.com/Tkyoxx/Cocuyo/releases/download/v9.0.0/Cocuyo.exe" }] });
-        assert!(read(&unsigned, "0.1.0").is_none());
+        assert!(read(&unsigned, "0.1.0", || None).is_none());
         let odd = serde_json::json!({ "tag_name": "v9 --uninstall", "assets": [{ "browser_download_url": "https://github.com/Tkyoxx/Cocuyo/releases/download/v9/Cocuyo.exe", "digest": format!("sha256:{SHA}") }] });
-        assert!(read(&odd, "0.1.0").is_none());
+        assert!(read(&odd, "0.1.0", || None).is_none());
     }
 
     #[test]

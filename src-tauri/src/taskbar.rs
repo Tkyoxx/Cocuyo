@@ -1,17 +1,19 @@
 // la barra de tareas a tu gusto. todo por eventos: si no cambia nada, este hilo ni se despierta
 
 use std::cell::Cell;
+use std::os::windows::process::CommandExt;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use windows::core::{s, w, BOOL};
-use windows::Win32::Foundation::{HWND, LPARAM, RECT, WPARAM};
+use windows::core::{s, w, BOOL, GUID, HRESULT, HSTRING, PCWSTR};
+use windows::Win32::Foundation::{CloseHandle, ERROR_NOT_FOUND, HWND, LPARAM, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{MonitorFromWindow, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED};
-use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
+use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress, LoadLibraryW};
 use windows::Win32::System::Registry::{RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, REG_DWORD, RRF_RT_REG_SZ};
-use windows::Win32::System::Threading::{GetCurrentProcessId, GetCurrentThreadId};
+use windows::Win32::System::Threading::{GetCurrentProcessId, GetCurrentThreadId, OpenEventW, SetEvent, EVENT_MODIFY_STATE};
 use windows::Win32::UI::Accessibility::{CUIAutomation, IUIAutomation, SetWinEventHook, TreeScope_Children, UnhookWinEvent, HWINEVENTHOOK};
 use windows::Win32::UI::Shell::{SHAppBarMessage, ABM_GETSTATE, ABM_SETSTATE, ABS_AUTOHIDE, APPBARDATA};
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -62,6 +64,16 @@ impl Look {
 }
 
 static LOOK: Mutex<Option<Look>> = Mutex::new(None);
+static DEEP: Mutex<Deep> = Mutex::new(Deep { explorer: 0, done: None, hidden: None });
+static LAYER: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../barra/target/release/cocuyo_barra.dll"));
+const TAP: GUID = GUID::from_u128(0x6f3c1a52_8e0d_4c1b_9a37_c0c0a1b2c3d4);
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+struct Deep {
+    explorer: u32,
+    done: Option<bool>,
+    hidden: Option<bool>,
+}
 static THREAD: Mutex<Option<u32>> = Mutex::new(None);
 
 thread_local! {
@@ -139,6 +151,68 @@ fn build() -> u32 {
 pub fn windows11() -> bool {
     static ELEVEN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ELEVEN.get_or_init(|| build() >= 22000)
+}
+
+fn layer_path() -> Option<PathBuf> {
+    let hash = LAYER.iter().fold(0xcbf29ce484222325u64, |hash, byte| (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3));
+    let dir = PathBuf::from(std::env::var_os("LOCALAPPDATA")?).join("io.github.tkyoxx.cocuyo").join("barra");
+    std::fs::create_dir_all(&dir).ok()?;
+    let path = dir.join(format!("cocuyo_barra-{:08x}.dll", hash as u32));
+    if std::fs::metadata(&path).map(|m| m.len()).ok() != Some(LAYER.len() as u64) {
+        std::fs::write(&path, LAYER).ok()?;
+    }
+    Some(path)
+}
+
+type Initialize = unsafe extern "system" fn(PCWSTR, u32, PCWSTR, PCWSTR, GUID, PCWSTR) -> HRESULT;
+
+pub(crate) fn inject(process: u32, dll: &Path, data: &str) -> Result<(), String> {
+    unsafe {
+        let xaml = LoadLibraryW(w!("Windows.UI.Xaml.dll")).map_err(|e| e.to_string())?;
+        let found = GetProcAddress(xaml, s!("InitializeXamlDiagnosticsEx")).ok_or("Este Windows no trae el diagnóstico de XAML.")?;
+        let initialize: Initialize = std::mem::transmute(found);
+        let (path, data) = (HSTRING::from(dll.as_os_str()), HSTRING::from(data));
+        let mut last = HRESULT(0);
+        for n in 1..=64 {
+            let endpoint = HSTRING::from(format!("VisualDiagConnection{n}"));
+            last = initialize(PCWSTR(endpoint.as_ptr()), process, w!(""), PCWSTR(path.as_ptr()), TAP, PCWSTR(data.as_ptr()));
+            if last.is_ok() {
+                return Ok(());
+            }
+            if last != HRESULT::from_win32(ERROR_NOT_FOUND.0) {
+                break;
+            }
+        }
+        Err(format!("{last:?}"))
+    }
+}
+
+fn set_hidden(hide: bool) {
+    let value: u32 = u32::from(hide);
+    unsafe {
+        let _ = RegSetKeyValueW(HKEY_CURRENT_USER, w!("Software\\Cocuyo"), w!("BarraSinFondo"), REG_DWORD.0, Some((&value as *const u32).cast()), 4);
+        if let Ok(event) = OpenEventW(EVENT_MODIFY_STATE, false, w!("Local\\CocuyoBarra")) {
+            let _ = SetEvent(event);
+            let _ = CloseHandle(event);
+        }
+    }
+}
+
+fn deep(want: bool) {
+    let Ok(mut deep) = DEEP.lock() else { return };
+    let explorer = bars().first().map_or(0, |bar| {
+        let mut process = 0;
+        unsafe { GetWindowThreadProcessId(*bar, Some(&mut process)) };
+        process
+    });
+    if deep.hidden != Some(want) {
+        set_hidden(want);
+        deep.hidden = Some(want);
+    }
+    if want && explorer != 0 && deep.explorer != explorer {
+        deep.explorer = explorer;
+        deep.done = Some(layer_path().ok_or_else(|| "no se pudo guardar la librería".to_string()).and_then(|dll| inject(explorer, &dll, "")).is_ok());
+    }
 }
 
 fn bars() -> Vec<HWND> {
@@ -342,8 +416,12 @@ fn run(ready: std::sync::mpsc::Sender<u32>) {
                 set_alignment(look.center);
             }
             painted.retain(|bar, _| IsWindow(Some(HWND(*bar as _))).as_bool());
+            let main_plain = look.solid_when_max && bars().first().is_some_and(|bar| maximized_on(*bar));
+            if eleven {
+                deep(look.style != Style::Normal && !main_plain);
+            }
             for bar in bars() {
-                let plain = look.solid_when_max && maximized_on(bar);
+                let plain = if eleven { main_plain } else { look.solid_when_max && maximized_on(bar) };
                 let style = if plain { Style::Normal } else { look.style };
                 let before = painted.get(&(bar.0 as isize)).copied();
                 if style != Style::Normal {
@@ -398,6 +476,12 @@ pub fn restore() {
     }
     unsafe {
         let centered = shown.is_some_and(|look| look.center);
+        if windows11() {
+            set_hidden(false);
+            if let Ok(mut deep) = DEEP.lock() {
+                deep.hidden = Some(false);
+            }
+        }
         for bar in bars() {
             if shown.is_some_and(|look| look.style != Style::Normal) {
                 paint(bar, Style::Normal, 0);
@@ -424,6 +508,7 @@ pub struct BarState {
     autohide: bool,
     windows11: bool,
     rival: Option<String>,
+    deep: Option<bool>,
 }
 
 const RIVALS: [&str; 6] = ["TaskbarX", "TranslucentTB", "RoundedTB", "StartAllBack", "StartIsBack", "ExplorerPatcher"];
@@ -442,7 +527,22 @@ fn rival() -> Option<String> {
 pub fn taskbar_state() -> BarState {
     let mut data = bar_data();
     let state = unsafe { SHAppBarMessage(ABM_GETSTATE, &mut data) } as u32;
-    BarState { autohide: state & ABS_AUTOHIDE != 0, windows11: windows11(), rival: rival() }
+    BarState { autohide: state & ABS_AUTOHIDE != 0, windows11: windows11(), rival: rival(), deep: DEEP.lock().ok().and_then(|deep| deep.done) }
+}
+
+#[tauri::command]
+pub async fn taskbar_close_rival() -> Option<String> {
+    let found = rival()?;
+    let _ = std::process::Command::new("taskkill.exe")
+        .args(["/IM", &format!("{found}.exe"), "/F"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
+    std::thread::sleep(Duration::from_millis(400));
+    if let Some(look) = *LOOK.lock().unwrap_or_else(|e| e.into_inner()) {
+        LOOK.lock().unwrap_or_else(|e| e.into_inner()).take();
+        configure(look);
+    }
+    Some(found)
 }
 
 #[tauri::command]
@@ -498,6 +598,18 @@ mod tests {
     unsafe fn list_x(bar: HWND) -> i32 {
         let list = task_list(bar).unwrap();
         rect(list).unwrap().left - rect(GetParent(list).unwrap()).unwrap().left
+    }
+
+    #[test]
+    #[ignore]
+    fn capa_xaml_de_verdad() {
+        let process: u32 = std::env::var("COCUYO_PID").unwrap().parse().unwrap();
+        let dir = PathBuf::from(std::env::var("COCUYO_TAP_DIR").unwrap());
+        let dll = dir.join("cocuyo_barra.dll");
+        std::fs::write(&dll, LAYER).unwrap();
+        let started = Instant::now();
+        let done = inject(process, &dll, "prueba:Windows.UI.Xaml.Controls.TextBlock");
+        println!("barra: inyectar -> {done:?} en {:?}", started.elapsed());
     }
 
     #[test]

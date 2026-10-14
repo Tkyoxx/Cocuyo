@@ -202,7 +202,9 @@ En **Ajustes → Barra** la dejas como quieras, sin instalar nada más:
 - **Normal si hay una ventana maximizada**: transparente con el escritorio a la vista, la de siempre cuando algo ocupa la pantalla.
 - **Esconderla sola**, el ajuste de Windows de toda la vida, a un clic.
 
-Funciona por avisos de Windows, sin revisar nada cada tantos milisegundos: si no pasa nada, no gasta nada. Al cerrar Cocuyo, la barra vuelve a como estaba. Si tienes TaskbarX, TranslucentTB o parecidos abiertos, Cocuyo te avisa: dos programas tocando la barra a la vez se pelean. En Windows 11 la transparencia puede notarse poco, porque esa barra la pinta Windows a su manera.
+Funciona por avisos de Windows, sin revisar nada cada tantos milisegundos: si no pasa nada, no gasta nada. Al cerrar Cocuyo, la barra vuelve a como estaba. Si tienes TaskbarX, TranslucentTB o parecidos abiertos, Cocuyo te avisa y te deja cerrarlos ahí mismo: dos programas tocando la barra a la vez se pelean.
+
+En Windows 11 la barra la dibuja Windows con XAML y le pinta su propio fondo encima. Para que la transparencia sea completa, Cocuyo carga en el Explorador una librería pequeña, la de [`barra/`](barra/), por la vía de diagnóstico de XAML que trae Windows (la misma que usan TranslucentTB y Visual Studio), y apaga ese fondo. Al elegir Normal o cerrar Cocuyo, lo devuelve.
 
 ## Fondos animados
 
@@ -247,6 +249,7 @@ npm run tauri dev
 - `src-tauri/` — núcleo en Rust: atajos, micrófono, voz, órdenes, capturas, apps, estado del equipo, bandeja, el reproductor de fondos animados (`player.rs`), el conector de modelos de IA (`ai.rs`) y los scripts por voz (`scripts.rs`).
 - `src-tauri/installer/` — el aspecto del instalador clásico: `dark.nsh` (colores y animación), `make-art.py` (dibuja las imágenes) y `make-template.py` (aplica los cambios de Cocuyo a la plantilla de Tauri; se vuelve a ejecutar al actualizar Tauri).
 - `overlay/` — la librería que pinta el aviso dentro de los juegos.
+- `barra/` — la librería que le quita el fondo a la barra de Windows 11.
 - `galeria/` — los scripts de la galería y su índice.
 - `.github/` — el formulario para subir scripts, el bot que los publica y el que compila cada versión.
 
