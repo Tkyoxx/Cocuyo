@@ -1,0 +1,12 @@
+# el punto de cita de cocuyo en cloudflare. se sube con: npx wrangler deploy (desde esta carpeta)
+name = "cocuyo-remoto"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+
+[[durable_objects.bindings]]
+name = "SALAS"
+class_name = "Sala"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Sala"]

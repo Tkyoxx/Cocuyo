@@ -1,0 +1,21 @@
+{
+  "id": "./",
+  "name": "Cocuyo",
+  "short_name": "Cocuyo",
+  "description": "Tu PC en el bolsillo: háblale a Cocuyo desde donde estés.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "categories": ["utilities", "productivity"],
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "lang": "es",
+  "icons": [
+    { "src": "icono.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "icono-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icono-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icono-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icono-180.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

@@ -490,6 +490,36 @@ pub fn manage(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
     })
 }
 
+pub struct ForPhone {
+    pub at: i64,
+    pub what: String,
+    pub alarm: bool,
+    pub said: String,
+}
+
+pub fn for_phone(spoken: &str) -> Option<ForPhone> {
+    const ALARM: [&str; 8] = ["alarma", "despiertame", "despertador", "levantame", "alarm", "wake me", "desperta", "acorda"];
+    let clean = normalize(spoken);
+    let alarm = ALARM.iter().any(|word| clean.contains(word));
+    let text = if alarm {
+        const SKIP: [&str; 14] = ["oye", "pon", "ponme", "poner", "una", "un", "me", "alarma", "despiertame", "despertador", "levantame", "set", "an", "alarm"];
+        let rest: Vec<&str> = spoken.split_whitespace().skip_while(|word| SKIP.contains(&normalize(word).as_str())).collect();
+        format!("recuérdame {}", rest.join(" "))
+    } else {
+        spoken.to_string()
+    };
+    let now = Now::read();
+    let (when, act, what) = parse(&text, &now)?;
+    if act || matches!(when, When::Startup) {
+        return None;
+    }
+    let said = describe(&when, &now);
+    let at = next_due(&Entry { id: 0, when, act: false, what: String::new(), done: 0 }, &now)?;
+    let what = what.strip_prefix("para ").or_else(|| what.strip_prefix("for ")).unwrap_or(&what).to_string();
+    let what = if what.starts_with("Ya es la hora") || what.starts_with("Se cumplió") { String::new() } else { what };
+    Some(ForPhone { at, what, alarm, said })
+}
+
 pub fn schedule(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
     let (when, act, what) = parse(spoken, &Now::read())?;
     Some(Ok(add(app, when, act, what)))
@@ -609,6 +639,19 @@ pub fn start(app: AppHandle, boot: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn alarms_for_the_phone() {
+        let found = for_phone("ponme una alarma a las 6:30 para el gimnasio").unwrap();
+        assert!(found.alarm);
+        assert_eq!(found.what, "el gimnasio");
+        assert!(found.at > Now::read().unix);
+        let reminder = for_phone("recuérdame en 10 minutos sacar la ropa").unwrap();
+        assert!(!reminder.alarm);
+        assert_eq!(reminder.what, "sacar la ropa");
+        assert!(for_phone("pon música").is_none());
+        assert!(for_phone("despiértame mañana a las 7").is_some());
+    }
 
     fn tuesday_3pm() -> Now {
         Now { unix: 20_000 * DAY + 15 * 3600, second: 15 * 3600, weekday: 1, date: (2026, 10, 13) }

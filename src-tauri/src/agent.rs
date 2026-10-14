@@ -146,6 +146,7 @@ enum Doer {
     Message,
     Look,
     Hands,
+    Phone,
     Extension(String),
     Mcp(String, String),
 }
@@ -204,6 +205,27 @@ fn toolbox(app: &AppHandle) -> (Vec<Value>, HashMap<String, Doer>) {
         object(json!({ "dato": { "type": "string" } }), &["dato"]),
     ));
     doers.insert("cocuyo_recordar".to_string(), Doer::Remember);
+    if crate::remoto::ready(app) {
+        tools.push(function(
+            "cocuyo_celular",
+            "Deja algo en el celular de la persona, como una tarjeta con su botón: buscar, cómo llegar (mapa), abrir un enlace, llamar, un WhatsApp, \
+             una alarma o recordatorio, o un texto para copiar o compartir. Úsalo cuando pida algo «en el celular» o cuando te hable desde el celular \
+             y eso se haga allá.",
+            object(
+                json!({
+                    "tipo": { "type": "string", "enum": ["buscar", "mapa", "abrir", "llamar", "whatsapp", "alarma", "recordatorio", "copiar", "compartir"] },
+                    "texto": { "type": "string", "description": "Lo que se busca, el destino del mapa, el mensaje o el texto" },
+                    "url": { "type": "string", "description": "Para abrir: el enlace completo con https://" },
+                    "numero": { "type": "string", "description": "Para llamar o WhatsApp, con código de país" },
+                    "hora": { "type": "string", "description": "Para alarma o recordatorio: HH:MM en 24 horas" },
+                    "fecha": { "type": "string", "description": "Opcional: AAAA-MM-DD" },
+                    "titulo": { "type": "string", "description": "Opcional: nombre corto de la alarma o el recordatorio" }
+                }),
+                &["tipo"],
+            ),
+        ));
+        doers.insert("cocuyo_celular".to_string(), Doer::Phone);
+    }
     if config.agent_hands {
         tools.push(function(
             "cocuyo_ventana",
@@ -359,6 +381,7 @@ fn act(app: &AppHandle, doer: &Doer, args: &Value) -> Result<Done, String> {
         Doer::Message => send_message(app, &text(args, "app"), &text(args, "para"), &text(args, "texto")).map(Done::from),
         Doer::Look => crate::pc::look(args.get("imagen").and_then(Value::as_bool).unwrap_or(false)).map(|(text, image)| Done { text, image }),
         Doer::Hands => hands(app, args),
+        Doer::Phone => crate::remoto::to_phone(args).map(Done::from),
         Doer::Extension(name) => ask_extension(app, name, args).map(Done::from),
         Doer::Mcp(server, tool) => crate::mcp::call(server, tool, args.clone()).map(Done::from),
     }
@@ -380,6 +403,7 @@ fn label(name: &str, args: &Value) -> String {
         "cocuyo_mensaje" => format!("Escribiéndole a {}", text(args, "para")),
         "cocuyo_apuntes" => if text(args, "accion") == "terminar" { "Cerrando los apuntes".into() } else { "Empezando los apuntes".into() },
         "cocuyo_mirar" => "Mirando la ventana".into(),
+        "cocuyo_celular" => "Dejándolo en el celular".into(),
         "cocuyo_hacer" => {
             let actions = args.get("acciones").and_then(Value::as_array).map_or(0, Vec::len);
             if actions == 1 { "Usando el mouse".into() } else { format!("Usando el mouse ({actions} pasos)") }
@@ -631,6 +655,9 @@ fn prompt(app: &AppHandle, said: &str, with_hands: bool) -> String {
         if !open.is_empty() {
             system.push_str(&format!("\n\nVentanas abiertas ahora: {}.", open.join(", ")));
         }
+    }
+    if crate::remoto::asking() {
+        system.push_str("\n\nLa persona te habla desde su celular, lejos del PC. Lo que se hace en el celular (cómo llegar, alarmas, llamar, abrir algo para leerlo allá) déjalo con cocuyo_celular.");
     }
     system.push_str(&crate::ai::agent_context(app, said));
     system

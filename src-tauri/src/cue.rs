@@ -28,9 +28,9 @@ fn say_natural(_text: &str) -> bool {
 }
 
 #[cfg(not(test))]
-fn say_natural(text: &str) -> bool {
-    let Some((app, voice)) = NATURAL.lock().unwrap().clone().filter(|(_, voice)| !voice.is_empty()) else { return false };
-    let spoken = if voice == "loquendero" {
+fn natural_wav(text: &str) -> Option<Result<std::path::PathBuf, String>> {
+    let (app, voice) = NATURAL.lock().unwrap().clone().filter(|(_, voice)| !voice.is_empty())?;
+    Some(if voice == "loquendero" {
         crate::tts::loquendero(&app, text)
     } else if let Some(id) = voice.strip_prefix("local:") {
         crate::tts::wav(&app, text, id)
@@ -38,7 +38,31 @@ fn say_natural(text: &str) -> bool {
         crate::tts::system_wav(&app, text, name)
     } else {
         crate::ai::voice_wav(&app, text, &voice)
-    };
+    })
+}
+
+#[cfg(test)]
+pub fn wav_of(_text: &str) -> Result<Vec<u8>, String> {
+    Err("sin voz en las pruebas".into())
+}
+
+#[cfg(not(test))]
+pub fn wav_of(text: &str) -> Result<Vec<u8>, String> {
+    let text = crate::i18n::tr(text).replace(['«', '»'], "");
+    if let Some(Ok(file)) = natural_wav(&text) {
+        return std::fs::read(file).map_err(|e| e.to_string());
+    }
+    static TURN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let file = std::env::temp_dir().join(format!("cocuyo-celular-{}.wav", TURN.fetch_add(1, Ordering::Relaxed) % 4));
+    render(&text, &file)?;
+    let wav = std::fs::read(&file).map_err(|e| e.to_string());
+    let _ = std::fs::remove_file(&file);
+    wav
+}
+
+#[cfg(not(test))]
+fn say_natural(text: &str) -> bool {
+    let Some(spoken) = natural_wav(text) else { return false };
     match spoken {
         Ok(file) => unsafe {
             std::thread::sleep(std::time::Duration::from_millis(350));

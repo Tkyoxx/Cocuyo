@@ -3,6 +3,7 @@
 mod agenda;
 mod ai;
 mod apps;
+mod candado;
 mod capture;
 mod clip;
 mod cue;
@@ -28,6 +29,7 @@ mod pad;
 mod pc;
 mod placement;
 mod player;
+mod remoto;
 mod scripts;
 mod settings;
 mod spotify;
@@ -68,6 +70,14 @@ fn demo(app: tauri::AppHandle) {
             } else if let Some(file) = step.strip_prefix("fondo=") {
                 let path = (!file.is_empty()).then(|| std::path::Path::new(file));
                 eprintln!("[fondo] {file:?} -> {:?}", live::choose(&app, path, None));
+            } else if let Some(file) = step.strip_prefix("remoto-codigo=") {
+                let code = remoto::remoto_emparejar(app.clone());
+                eprintln!("[remoto] código {code:?}");
+                if let Ok(code) = code {
+                    let _ = std::fs::write(file, code);
+                }
+            } else if step == "remoto-estado" {
+                eprintln!("[remoto] {}", serde_json::to_string(&remoto::remoto_estado(app.clone())).unwrap_or_default());
             } else if let Some(wav) = step.strip_prefix("dictado=") {
                 let heard = voice::transcribe_file(&app, std::path::Path::new(wav));
                 let pasted = heard.as_ref().map(|text| inject::paste(text));
@@ -287,6 +297,10 @@ pub fn run() {
             install::install_run,
             install::install_relaunch,
             install::install_skip,
+            remoto::remoto_emparejar,
+            remoto::remoto_cancelar,
+            remoto::remoto_estado,
+            remoto::remoto_quitar,
         ])
         .setup(|app| {
             let window = app
@@ -316,6 +330,7 @@ pub fn run() {
                 taskbar::restore();
                 mcp::shutdown();
                 talk::forget();
+                remoto::shutdown();
             }
         });
 }

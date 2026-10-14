@@ -1,0 +1,41 @@
+name: Página del celular
+
+# cada vez que cambia movil/ en main, la pagina del celular sale en GitHub Pages.
+# la cache del celular lleva la huella del commit, asi cada version es otra y nada cambia a escondidas
+on:
+  push:
+    branches: [main]
+    paths: ["movil/**", ".github/workflows/pagina.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pagina
+  cancel-in-progress: true
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.subida.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ponerle la huella a la cache
+        run: |
+          sed -i "s/cocuyo-movil-dev/cocuyo-movil-${GITHUB_SHA::12}/" movil/sw.js
+          grep -q "cocuyo-movil-${GITHUB_SHA::12}" movil/sw.js
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: movil
+
+      - id: subida
+        uses: actions/deploy-pages@v4

@@ -142,6 +142,8 @@ export interface Settings {
   portable: boolean;
   spotifyClientId: string | null;
   city: string;
+  remoteOn: boolean;
+  remoteRelay: string;
   name: string;
   padOn: boolean;
   padCombo: number;
@@ -246,6 +248,8 @@ const DEFAULTS: Settings = {
   portable: false,
   spotifyClientId: null,
   city: "",
+  remoteOn: false,
+  remoteRelay: "",
   name: "",
   padOn: false,
   padCombo: 0,

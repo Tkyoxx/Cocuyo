@@ -365,9 +365,13 @@ fn without_guide(text: &str, phrase: &str) -> String {
 }
 
 fn transcribe(app: &AppHandle, recording: mic::Recording) -> Result<Option<String>, String> {
-    let audio = to_16k(&recording.samples, recording.rate);
+    transcribe_samples(app, to_16k(&recording.samples, recording.rate))
+}
+
+pub fn transcribe_samples(app: &AppHandle, audio: Vec<f32>) -> Result<Option<String>, String> {
     let Some(speech) = trim_silence(&audio) else { return Ok(None) };
-    let wav = dir(app)?.join("frase.wav");
+    static TURN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let wav = dir(app)?.join(format!("frase-{}.wav", TURN.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % 8));
     if let Some(parent) = wav.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }

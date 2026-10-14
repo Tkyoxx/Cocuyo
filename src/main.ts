@@ -321,7 +321,11 @@ onDemo((step) => {
   else if (step === "conectar-spotify") void call("spotify_connect");
   else if (step.startsWith("idioma=")) setLanguage(step.slice(7) as "es" | "en" | "pt");
   else if (step === "derecha" || step === "arriba") island.setPlace(step === "derecha" ? "right" : "top");
-  else {
+  else if (step.startsWith("ajustes=")) {
+    settingsPage.goTo(step.slice(8));
+    menu.show("ajustes");
+    cards.behind = true;
+  } else {
     menu.show(step);
     cards.behind = true;
   }

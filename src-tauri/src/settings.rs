@@ -65,6 +65,8 @@ pub struct Settings {
     pub extensions: Vec<String>,
     pub check_updates: bool,
     pub city: String,
+    pub remote_on: bool,
+    pub remote_relay: String,
     pub capture_region: Hotkey,
     pub capture_window: Hotkey,
     pub capture_screen: Hotkey,
@@ -72,6 +74,7 @@ pub struct Settings {
 
 const AI_URL: &str = "https://generativelanguage.googleapis.com/v1beta/openai";
 const AI_MODELS: &str = "gemini-3.5-flash-lite, gemini-3.1-flash-lite";
+const REMOTE_RELAY: &str = "";
 
 impl Default for Settings {
     fn default() -> Self {
@@ -95,6 +98,8 @@ impl Default for Settings {
             portable: false,
             spotify_client_id: None,
             city: String::new(),
+            remote_on: false,
+            remote_relay: REMOTE_RELAY.into(),
             check_updates: true,
             name: String::new(),
             pad_on: false,
@@ -197,6 +202,7 @@ pub fn apply(app: &AppHandle) {
         center: settings.bar_center,
         solid_when_max: settings.bar_solid_max,
     });
+    crate::remoto::sync(app);
 }
 
 pub fn capture_dir(app: &AppHandle, settings: &Settings) -> Option<PathBuf> {

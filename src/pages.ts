@@ -1053,9 +1053,20 @@ const SECTIONS: [string, string][] = [
   ["musica", "Música"],
   ["ia", "IA"],
   ["agente", "Agente"],
+  ["remoto", "Remoto"],
   ["extensiones", "Extensiones"],
   ["atajos", "Atajos"],
 ];
+
+interface RemoteState {
+  activo: boolean;
+  punto: string;
+  celulares: { id: string; nombre: string; desde: number; conectado: boolean }[];
+  emparejando: string | null;
+  quedan: number;
+}
+
+const REMOTE_PAGE = "tkyoxx.github.io/Cocuyo";
 
 const LIVE_VOICES: [string, string][] = [
   ["Charon", "grave"],
@@ -1083,6 +1094,7 @@ class SettingsPage implements Page {
     this.section = section;
     if (section === "extensiones") void this.paintExtensions();
     if (section === "agente") void this.paintMcp();
+    if (section === "remoto") void this.paintRemote();
     for (const node of this.el.querySelectorAll<HTMLElement>("[data-sec]")) node.classList.toggle("on", node.dataset.sec === section);
     const measure = () => {
       for (const node of this.el.querySelectorAll<HTMLElement>(".ssec.on")) node.classList.toggle("long", node.scrollHeight > node.clientHeight + 4);
@@ -1254,6 +1266,22 @@ class SettingsPage implements Page {
            </div>`,
         ) +
         section(
+          "remoto",
+          `<div class="card">
+             <label class="srow"><div><b>Cocuyo en el celular</b><small>Háblale o escríbele desde tu celular, estés donde estés. Va cifrado de punta a punta: el punto de cita solo pasa paquetes que no puede abrir.</small></div><input type="checkbox" class="switch" id="s-remote"></label>
+             <div class="srow stack">
+               <div><b>Punto de cita</b><small>El servidor que junta tu celular con tu PC. Si montas el tuyo, pon aquí su dirección.</small></div>
+               <input id="s-remote-relay" placeholder="wss://…" spellcheck="false" />
+             </div>
+             <div class="srow slim"><div><b>En el celular</b><small id="s-remote-page"></small></div></div>
+           </div>
+           <div class="card">
+             <div class="srow" id="s-remote-pair-row"><div><b>Emparejar un celular</b><small id="s-remote-pair-help">Te doy un código para escribirlo en el celular. Dura dos minutos.</small></div><button class="ghost" id="s-remote-pair">Emparejar</button></div>
+             <div class="remote-code" id="s-remote-code" hidden><b id="s-remote-code-text"></b><div><small id="s-remote-left"></small><button class="ghost" id="s-remote-cancel">Cancelar</button></div></div>
+             <div class="mcp-list" id="s-remote-list"></div>
+           </div>`,
+        ) +
+        section(
           "extensiones",
           `<div class="card">
              <label class="srow"><div><b>Extensiones y temas</b><small>Cambian cómo se ve la isla o le añaden cosas nuevas, como Spicetify con Spotify. Apagado, Cocuyo arranca tal cual viene.</small></div><input type="checkbox" class="switch" id="s-ext-on"></label>
@@ -1297,7 +1325,7 @@ class SettingsPage implements Page {
     for (const button of el.querySelectorAll<HTMLElement>("#s-lang button")) {
       button.addEventListener("click", () => this.save({ language: button.dataset.value as Settings["language"] }));
     }
-    const toggle = (sel: string, key: "hideOnFullscreen" | "askWhere" | "copyToClipboard" | "autostart" | "cueFullscreen" | "speakFullscreen" | "gameOverlay" | "aiOn" | "aiDictation" | "aiHear" | "padOn" | "checkUpdates" | "barCenter" | "barSolidMax" | "extensionsOn" | "aiAgent" | "agentHands" | "agentConfirm" | "aiLive") => {
+    const toggle = (sel: string, key: "hideOnFullscreen" | "askWhere" | "copyToClipboard" | "autostart" | "cueFullscreen" | "speakFullscreen" | "gameOverlay" | "aiOn" | "aiDictation" | "aiHear" | "padOn" | "checkUpdates" | "barCenter" | "barSolidMax" | "extensionsOn" | "aiAgent" | "agentHands" | "agentConfirm" | "aiLive" | "remoteOn") => {
       const input = q<HTMLInputElement>(sel);
       input.addEventListener("change", () => {
         const change: Partial<Settings> = {};
@@ -1442,6 +1470,43 @@ class SettingsPage implements Page {
       if (target) void this.save({ liveVoice: target.dataset.live ?? "Charon" });
     });
     toggle("#s-agent-confirm", "agentConfirm");
+    toggle("#s-remote", "remoteOn");
+    const relay = q<HTMLInputElement>("#s-remote-relay");
+    relay.addEventListener("pointerdown", () => host.focus(relay));
+    relay.addEventListener("change", async () => {
+      await this.save({ remoteRelay: relay.value.trim() });
+      void this.paintRemote();
+    });
+    q("#s-remote").addEventListener("change", () => setTimeout(() => void this.paintRemote(), 120));
+    q("#s-remote-pair").addEventListener("click", async () => {
+      try {
+        this.note("");
+        await call<string>("remoto_emparejar");
+      } catch (error) {
+        this.note(String(error));
+      }
+      void this.paintRemote();
+    });
+    q("#s-remote-cancel").addEventListener("click", async () => {
+      await call("remoto_cancelar");
+      void this.paintRemote();
+    });
+    q("#s-remote-list").addEventListener("click", async (e) => {
+      const target = (e.target as HTMLElement).closest<HTMLElement>("[data-phone]");
+      if (!target) return;
+      if (target.dataset.sure !== "1") {
+        target.dataset.sure = "1";
+        target.textContent = "¿Seguro?";
+        return;
+      }
+      await call("remoto_quitar", { id: target.dataset.phone });
+      void this.paintRemote();
+    });
+    on<{ tipo: string; nombre?: string; texto?: string }>("remoto", (said) => {
+      if (said.tipo === "emparejado") this.note(`Listo: «${said.nombre}» quedó emparejado.`);
+      if (said.tipo === "fallo" && said.texto) this.note(said.texto);
+      if (this.section === "remoto") void this.paintRemote();
+    });
     q("#s-mcp-open").addEventListener("click", () => void call("mcp_open").catch((error) => this.note(String(error))));
     q("#s-mcp-reload").addEventListener("click", () => void this.paintMcp(true));
     q("#s-ext-on").addEventListener("change", () => reloadInto("extensiones"));
@@ -1621,6 +1686,7 @@ class SettingsPage implements Page {
   }
 
   hide() {
+    window.clearInterval(this.remoteTick);
     this.stopRecording();
     this.closeModels();
     this.tested = false;
@@ -1756,6 +1822,52 @@ class SettingsPage implements Page {
           `<div class="mcp ${server.ok ? "ok" : "bad"}"><i></i><div><b>${esc(server.name)}</b><small>${server.ok ? `${server.tools} herramientas` : esc(server.error ?? "Sin conectar")}</small></div></div>`,
       )
       .join("");
+  }
+
+  private remoteTick = 0;
+
+  private async paintRemote() {
+    const q = <T extends HTMLElement>(sel: string) => this.el.querySelector<T>(sel)!;
+    const state = await call<RemoteState>("remoto_estado", undefined, { activo: false, punto: "", celulares: [], emparejando: null, quedan: 0 });
+    const relay = q<HTMLInputElement>("#s-remote-relay");
+    if (document.activeElement !== relay) relay.value = state.punto;
+    q("#s-remote-page").textContent = REMOTE_PAGE;
+    q<HTMLButtonElement>("#s-remote-pair").disabled = !state.activo || !state.punto;
+    q("#s-remote-pair-help").textContent = !state.activo
+      ? "Enciende primero «Cocuyo en el celular»."
+      : !state.punto
+        ? "Falta el punto de cita."
+        : state.celulares.length >= 5
+          ? "Ya hay cinco celulares. Quita uno para emparejar otro."
+          : "Te doy un código para escribirlo en el celular. Dura dos minutos.";
+    const box = q("#s-remote-code");
+    const left = q("#s-remote-left");
+    window.clearInterval(this.remoteTick);
+    box.hidden = !state.emparejando;
+    q("#s-remote-pair-row").hidden = !!state.emparejando;
+    if (state.emparejando) {
+      q("#s-remote-code-text").textContent = state.emparejando;
+      const until = Date.now() + state.quedan * 1000;
+      const tick = () => {
+        const rest = Math.max(0, Math.round((until - Date.now()) / 1000));
+        left.textContent = `Escríbelo en el celular. Vence en ${Math.floor(rest / 60)}:${String(rest % 60).padStart(2, "0")}`;
+        if (rest === 0) {
+          window.clearInterval(this.remoteTick);
+          this.note("El código venció. Pide otro cuando tengas el celular a mano.");
+          void this.paintRemote();
+        }
+      };
+      tick();
+      this.remoteTick = window.setInterval(tick, 1000);
+    }
+    q("#s-remote-list").innerHTML = state.celulares.length
+      ? state.celulares
+          .map(
+            (phone) =>
+              `<div class="mcp ${phone.conectado ? "ok" : "idle"}"><i></i><div><b>${esc(phone.nombre)}</b><small>${phone.conectado ? "Conectado ahora" : `Emparejado el ${new Date(phone.desde * 1000).toLocaleDateString(locale(), { day: "numeric", month: "short" })}`}</small></div><button class="ghost" data-phone="${esc(phone.id)}">Quitar</button></div>`,
+          )
+          .join("")
+      : `<small class="remote-none">Ningún celular todavía.</small>`;
   }
 
   private async paintExtensions() {
@@ -1961,6 +2073,7 @@ class SettingsPage implements Page {
     q<HTMLInputElement>("#s-live").checked = s.aiLive;
     q("#s-live-voice").innerHTML = LIVE_VOICES.map(([voice, kind]) => `<button class="chip${voice === (s.liveVoice || "Charon") ? " on" : ""}" data-live="${voice}">${voice} · ${tr(kind)}</button>`).join("");
     q<HTMLInputElement>("#s-agent-confirm").checked = s.agentConfirm;
+    q<HTMLInputElement>("#s-remote").checked = s.remoteOn;
     q("#s-agent-need").textContent = !s.aiOn
       ? "Primero enciende un modelo de IA en la sección IA (Gemini viene listo)."
       : s.aiFormat === "anthropic"

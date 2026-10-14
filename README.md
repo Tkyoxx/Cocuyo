@@ -294,6 +294,15 @@ En **Ajustes → Voz → Escribir el dictado en** eliges español, inglés o por
 
 En **Ajustes → Juegos → Hablarle desde el mando** (apagado de fábrica) eliges una combinación: L3 + R3, Select + Start o el botón PS. O la tuya: pulsa **Otros botones**, mantén en el mando los que quieras (gatillos incluidos) y suéltalos. Mantenla, habla y suelta: es lo mismo que el atajo de dar una orden, sin soltar el mando. Vale para los mandos de Xbox (360, One, Series) y para los DualShock 4 y DualSense de PlayStation, por cable o por Bluetooth. Los de Xbox vibran una vez al empezar a escucharte y dos al terminar.
 
+## En tu celular
+
+Háblale o escríbele a Cocuyo desde el celular, estés donde estés: lo que pidas se hace en tu PC y la respuesta te llega al celular, con texto y con la voz que elegiste. Lo que se hace mejor en el celular (cómo llegar a un sitio, una alarma, buscar algo, llamar) te llega como una tarjeta con su botón; el modo agente también puede mandarte cosas con «déjamelo en el celular».
+
+- En el PC: **Ajustes → Remoto**, enciende **Cocuyo en el celular** y pulsa **Emparejar**. Te da un código de nueve letras que dura dos minutos.
+- En el celular: abre [tkyoxx.github.io/Cocuyo](https://tkyoxx.github.io/Cocuyo/), escribe el código y listo. Es una app web: en Android pulsa **Instalar**; en iPhone, Compartir → **Agregar a inicio** (y empareja desde la app instalada, que guarda sus propias llaves). Abre sin internet y queda como una app más.
+- Va cifrado de punta a punta: ECDH P-256 y AES-GCM con las llaves de Windows (CNG) en el PC y WebCrypto en el celular, llaves nuevas en cada conexión y contadores contra repeticiones. El celular y el PC se encuentran en un punto de cita, un [Cloudflare Worker](remoto/) de 60 líneas que solo pasa paquetes que no puede abrir. Si prefieres no usar el mío, sube el tuyo con `npx wrangler deploy` y pon su dirección en Ajustes → Remoto.
+- Hasta cinco celulares; cada uno se quita con **Quitar**. Sin puertos abiertos en tu PC: es él quien sale a buscar al punto de cita.
+
 ## En los juegos
 
 - Con un juego a pantalla completa **exclusiva**, Cocuyo no muestra ninguna ventana: Windows mandaría el juego al escritorio. Ahí avisa con un tono al empezar a escucharte y otro al terminar, y dice la respuesta en voz alta.
@@ -372,6 +381,7 @@ No hay cuentas ni telemetría. Esto es todo lo que sale de tu PC, y cuándo:
 - **Con IA** (Ajustes → IA, apagada de fábrica), lo que le digas va al proveedor que elegiste: como texto, o como audio si activas **Escuchar con el modelo** o el modo en vivo. También le llegan las capturas que le pidas mirar, lo que el agente lea de tu pantalla o tu portapapeles cuando le pides algo que lo necesita, lo que suena mientras tomas apuntes, los dictados si activas **Pulir los dictados** y los nombres y descripciones de tus scripts. Si el modelo corre en tu PC (Ollama, llama.cpp, LM Studio), no sale nada. En el plan gratis de Gemini, Google puede usar lo que le mandas para mejorar sus productos. Ajustes → IA te lo recuerda siempre.
 - **Actualizaciones:** al arrancar y cada seis horas, Cocuyo le pregunta a GitHub si hay una versión nueva. No manda nada tuyo. Se apaga en **Ajustes → Isla → Actualizarse sola**.
 - **El clima** de la pestaña Hoy viene de Open-Meteo, y si no escribiste tu ciudad, la primera vez se averigua por tu conexión (ipwho.is). Los dos son gratis y sin cuenta, y solo se consultan al abrir la pestaña o al preguntar por el clima. Para que no se use ipwho.is, escribe tu ciudad en **Ajustes → Tú**.
+- **Cocuyo en el celular** (apagado de fábrica): con Remoto encendido, tu PC se queda conectado al punto de cita. Por ahí pasan tus órdenes y sus respuestas, cifradas de punta a punta: el punto de cita ve cuándo y cuánto hablan, nunca qué dicen.
 - **Lo demás, solo cuando tú lo pides:** la descarga de la voz y de las voces que suenan a persona, la prueba de velocidad, Spotify si lo conectas, las galerías de scripts y extensiones. Las órdenes de buscar abren tu navegador o Spotify, como si lo hicieras a mano.
 - El atajo global usa un hook de teclado de Windows. Solo distingue `Ctrl`, `Shift`, `Alt` y `Win`; no guarda ni envía ninguna tecla. Está en [`src-tauri/src/hotkeys.rs`](src-tauri/src/hotkeys.rs).
 - El historial del portapapeles vive en memoria y desaparece al cerrar la app. Lo que un gestor de contraseñas marca como privado no se guarda.

@@ -32,16 +32,38 @@ pub(crate) struct Socket {
 unsafe impl Send for Socket {}
 unsafe impl Sync for Socket {}
 
+pub(crate) enum Refused {
+    Session,
+    Unreachable,
+    Offline,
+    Status(u32, String),
+    Upgrade,
+}
+
 impl Socket {
     pub(crate) fn open(key: &str) -> Result<Socket, String> {
+        Socket::connect(HOST, 443, PATH, &format!("x-goog-api-key: {key}\r\n"), true).map_err(|refused| match refused {
+            Refused::Session => "No pude abrir la conexión.".to_string(),
+            Refused::Unreachable => "No llegué a Google.".to_string(),
+            Refused::Offline => "No hay conexión con Google.".to_string(),
+            Refused::Status(status, body) => {
+                let said = serde_json::from_str::<Value>(&body).ok().and_then(|v| v["error"]["message"].as_str().map(str::to_string)).unwrap_or_default();
+                format!("Gemini Live no aceptó la conexión ({status}). {said}").trim().to_string()
+            }
+            Refused::Upgrade => "Google no completó la conexión en vivo.".to_string(),
+        })
+    }
+
+    pub(crate) fn connect(host: &str, port: u16, path: &str, headers: &str, secure: bool) -> Result<Socket, Refused> {
         unsafe {
             let session = WinHttpOpen(w!("Cocuyo"), WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, PCWSTR::null(), PCWSTR::null(), 0);
             if session.is_null() {
-                return Err("No pude abrir la conexión.".into());
+                return Err(Refused::Session);
             }
-            let connect = WinHttpConnect(session, &HSTRING::from(HOST), 443, 0);
-            let request = if connect.is_null() { std::ptr::null_mut() } else { WinHttpOpenRequest(connect, w!("GET"), &HSTRING::from(PATH), PCWSTR::null(), PCWSTR::null(), std::ptr::null(), WINHTTP_FLAG_SECURE) };
-            let fail = |why: String| {
+            let connect = WinHttpConnect(session, &HSTRING::from(host), port, 0);
+            let flags = if secure { WINHTTP_FLAG_SECURE } else { WINHTTP_OPEN_REQUEST_FLAGS(0) };
+            let request = if connect.is_null() { std::ptr::null_mut() } else { WinHttpOpenRequest(connect, w!("GET"), &HSTRING::from(path), PCWSTR::null(), PCWSTR::null(), std::ptr::null(), flags) };
+            let fail = |why: Refused| {
                 if !request.is_null() {
                     let _ = WinHttpCloseHandle(request);
                 }
@@ -52,12 +74,13 @@ impl Socket {
                 Err(why)
             };
             if request.is_null() {
-                return fail("No llegué a Google.".into());
+                return fail(Refused::Unreachable);
             }
             let _ = WinHttpSetOption(Some(request), WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, None);
-            let headers: Vec<u16> = format!("x-goog-api-key: {key}\r\n").encode_utf16().collect();
-            if WinHttpSendRequest(request, Some(&headers), None, 0, 0, 0).is_err() || WinHttpReceiveResponse(request, std::ptr::null_mut()).is_err() {
-                return fail("No hay conexión con Google.".into());
+            let headers: Vec<u16> = headers.encode_utf16().collect();
+            let sent = if headers.is_empty() { WinHttpSendRequest(request, None, None, 0, 0, 0) } else { WinHttpSendRequest(request, Some(&headers), None, 0, 0, 0) };
+            if sent.is_err() || WinHttpReceiveResponse(request, std::ptr::null_mut()).is_err() {
+                return fail(Refused::Offline);
             }
             let mut status = 0u32;
             let mut size = 4u32;
@@ -69,18 +92,24 @@ impl Socket {
                 while WinHttpReadData(request, chunk.as_mut_ptr().cast(), chunk.len() as u32, &mut read).is_ok() && read > 0 && body.len() < 16_384 {
                     body.extend_from_slice(&chunk[..read as usize]);
                 }
-                let said = serde_json::from_slice::<Value>(&body).ok().and_then(|v| v["error"]["message"].as_str().map(str::to_string)).unwrap_or_default();
-                return fail(format!("Gemini Live no aceptó la conexión ({status}). {said}").trim().to_string());
+                return fail(Refused::Status(status, String::from_utf8_lossy(&body).into_owned()));
             }
             let socket = WinHttpWebSocketCompleteUpgrade(request, None);
             let _ = WinHttpCloseHandle(request);
             if socket.is_null() {
                 let _ = WinHttpCloseHandle(connect);
                 let _ = WinHttpCloseHandle(session);
-                return Err("Google no completó la conexión en vivo.".into());
+                return Err(Refused::Upgrade);
             }
             Ok(Socket { session, connect, socket, sending: Mutex::new(()) })
         }
+    }
+
+    pub(crate) fn send_bytes(&self, data: &[u8], binary: bool) -> Result<(), String> {
+        let _turn = self.sending.lock().unwrap();
+        let kind = if binary { WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE } else { WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE };
+        let code = unsafe { WinHttpWebSocketSend(self.socket, kind, Some(data)) };
+        if code == 0 { Ok(()) } else { Err(format!("se cortó la conexión ({code})")) }
     }
 
     pub(crate) fn send(&self, message: &Value) -> Result<(), String> {
@@ -91,6 +120,11 @@ impl Socket {
     }
 
     pub(crate) fn receive(&self) -> Result<Value, String> {
+        let (whole, _) = self.receive_bytes()?;
+        serde_json::from_slice(&whole).map_err(|e| e.to_string())
+    }
+
+    pub(crate) fn receive_bytes(&self) -> Result<(Vec<u8>, bool), String> {
         let mut whole = Vec::new();
         let mut chunk = vec![0u8; 64 * 1024];
         loop {
@@ -111,8 +145,11 @@ impl Socket {
                 return Err(if reason.trim().is_empty() { "Google cerró la conversación".into() } else { format!("Google cerró la conversación: {}", reason.trim()) });
             }
             whole.extend_from_slice(&chunk[..read as usize]);
+            if whole.len() > 4_000_000 {
+                return Err("mensaje demasiado grande".into());
+            }
             if kind == WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE || kind == WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE {
-                return serde_json::from_slice(&whole).map_err(|e| e.to_string());
+                return Ok((whole, kind == WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE));
             }
         }
     }

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Cocuyo" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' wss://*.workers.dev wss://*.cocuyo.app; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'" />
+    <title>Cocuyo</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icono.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icono-180.png" />
+    <link rel="stylesheet" href="estilo.css" />
+  </head>
+  <body>
+    <div class="cielo" aria-hidden="true">
+      <i class="mancha uno"></i><i class="mancha dos"></i><i class="mancha tres"></i>
+      <b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b>
+    </div>
+    <header class="isla" id="isla" data-estado="buscando">
+      <span class="luz" aria-hidden="true"></span>
+      <span class="onda" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+      <span class="isla-texto" id="isla-texto">Buscando tu PC…</span>
+    </header>
+
+    <section class="pantalla" id="emparejar" hidden>
+      <div class="hola">
+        <div class="logo-luz"><img src="icono.svg" alt="" class="logo" /></div>
+        <h1>Conecta tu celular a Cocuyo</h1>
+        <p>Así le hablas a tu PC desde donde estés. Solo tu PC y este celular pueden hablarse: nadie más, ni siquiera el servidor que los junta.</p>
+      </div>
+      <ol class="pasos">
+        <li>En tu PC, abre la isla y ve a <b>Ajustes → Remoto → Emparejar</b>.</li>
+        <li>Escribe aquí el código que te muestra. Dura dos minutos.</li>
+      </ol>
+      <form class="codigo" id="codigo-form" autocomplete="off">
+        <input id="codigo" inputmode="text" autocapitalize="characters" spellcheck="false" maxlength="11" placeholder="K7Q-2XM-94P" aria-label="Código de emparejamiento" />
+        <button type="submit" class="solido" id="codigo-ir">Emparejar</button>
+      </form>
+      <p class="nota" id="emparejar-nota">Tu celular crea su propia llave y nunca sale de aquí.</p>
+      <button type="button" class="fantasma instalar" hidden>Instalar la app</button>
+      <p class="nota ios-ayuda" hidden>En iPhone: toca Compartir y luego «Agregar a inicio». Empareja desde la app instalada: guarda sus propias llaves.</p>
+    </section>
+
+    <section class="pantalla" id="charla-vista" hidden>
+      <nav class="pestanas" id="pestanas">
+        <span class="pestana-luz" aria-hidden="true"></span>
+        <button class="on" data-vista="charla">Charla</button>
+        <button data-vista="ajustes">Ajustes</button>
+      </nav>
+
+      <main class="charla" id="charla" aria-live="polite">
+        <div class="vacio" id="vacio">
+          <h2 id="saludo">Quiubo</h2>
+          <p>Pídele lo que quieras a tu PC, o que haga algo aquí en el celular.</p>
+          <div class="ideas" id="ideas">
+            <button>Pon algo de salsa</button>
+            <button>¿Cómo está el clima?</button>
+            <button>Ponme una alarma a las 6:30</button>
+            <button>Busca vuelos a Cartagena</button>
+            <button>Cómo llego al centro</button>
+          </div>
+        </div>
+      </main>
+
+      <main class="ajustes" id="ajustes" hidden>
+        <div class="tarjeta">
+          <div class="fila"><div><b id="pc-nombre">Tu PC</b><small id="pc-estado">Conectado</small></div></div>
+          <label class="fila"><div><b>Responder con voz</b><small>Lee en voz alta lo que te responde.</small></div><input type="checkbox" class="interruptor" id="hablar" checked /></label>
+        </div>
+        <div class="tarjeta instalar-tarjeta" hidden>
+          <div class="fila"><div><b>Instalar Cocuyo</b><small>Queda como una app más, abre sin internet y no se borra con el historial.</small></div><button class="fantasma instalar">Instalar</button></div>
+          <p class="nota ios-ayuda" hidden>En iPhone: toca Compartir y luego «Agregar a inicio». Empareja desde la app instalada: guarda sus propias llaves.</p>
+        </div>
+        <div class="tarjeta">
+          <div class="fila"><div><b>Olvidar este PC</b><small>Borra la llave de este celular. Para volver, empareja otra vez.</small></div><button class="fantasma peligro" id="olvidar">Olvidar</button></div>
+        </div>
+        <p class="nota">Todo viaja cifrado de punta a punta. El servidor que junta tu celular con tu PC solo ve paquetes que no puede abrir.</p>
+      </main>
+
+      <footer class="dock">
+        <form class="escribir" id="escribir">
+          <input id="texto" placeholder="Escríbele a Cocuyo" enterkeyhint="send" autocomplete="off" />
+          <button type="submit" class="enviar" id="enviar" aria-label="Enviar">
+            <svg viewBox="0 0 24 24"><path d="M5 12h12M12 6l6 6-6 6" /></svg>
+          </button>
+        </form>
+        <button class="mic" id="mic" aria-label="Mantén para hablar">
+          <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M6 11a6 6 0 0 0 12 0M12 17v4" /></svg>
+        </button>
+      </footer>
+    </section>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
