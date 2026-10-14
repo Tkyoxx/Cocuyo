@@ -685,6 +685,41 @@ pub fn finish(cancelled: bool) -> Ended {
 }
 
 #[cfg(debug_assertions)]
+pub fn probe_barge(app: &AppHandle, wav: &std::path::Path) -> Result<(String, String), String> {
+    let bytes = std::fs::read(wav).map_err(|e| e.to_string())?;
+    let rate = u32::from_le_bytes([bytes[24], bytes[25], bytes[26], bytes[27]]);
+    let samples: Vec<f32> = bytes[44..].chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]]) as f32 / 32768.0).collect();
+    let live = connect(app)?;
+    wake_speaker();
+    let first = {
+        let (app, live) = (app.clone(), live.clone());
+        std::thread::spawn(move || {
+            let events = live.events.lock().unwrap();
+            live.socket.send(&json!({ "clientContent": { "turns": [{ "role": "user", "parts": [{ "text": "Cuéntame con calma una historia larguita, de un minuto, sobre un cocuyo que quería ser estrella." }] }], "turnComplete": true } }))?;
+            answer(&app, &live, &events, Instant::now())
+        })
+    };
+    std::thread::sleep(Duration::from_secs(7));
+    let cut_at = Instant::now();
+    GENERATION.fetch_add(1, Ordering::Relaxed);
+    hush();
+    let (feed, taps) = channel();
+    std::thread::spawn(move || {
+        for piece in samples.chunks(rate as usize / 50) {
+            let _ = feed.send((rate, piece.to_vec()));
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    });
+    let second = talk(app, &live, taps, &AtomicBool::new(false), &AtomicBool::new(false), None);
+    eprintln!("[vivo] la historia quedó así: {:?}", first.join().map_err(|_| "se cayó".to_string()));
+    eprintln!("[vivo] la segunda tardó {:?} desde que la interrumpí", cut_at.elapsed());
+    while !QUEUE.lock().unwrap().is_empty() {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    second
+}
+
+#[cfg(debug_assertions)]
 pub fn probe_lasso(app: &AppHandle, wav: &std::path::Path) -> Result<(String, String), String> {
     let bytes = std::fs::read(wav).map_err(|e| e.to_string())?;
     let rate = u32::from_le_bytes([bytes[24], bytes[25], bytes[26], bytes[27]]);

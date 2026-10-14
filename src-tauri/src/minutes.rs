@@ -282,8 +282,9 @@ pub fn finish(app: &AppHandle) -> Result<String, String> {
     let tail: String = heard.chars().rev().take(LONGEST).collect::<Vec<_>>().into_iter().rev().collect();
     let summary = crate::ai::summarize_minutes(app, &tail).unwrap_or_else(|why| format!("(No pude hacer el resumen: {why})"));
     let now = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
-    let minutes = taking.started.elapsed().as_secs() / 60;
-    let page = format!("# Apuntes del {:02}/{:02}/{} · {minutes} min\n\n{summary}\n\n---\n\n## Lo que se dijo\n\n{heard}\n", now.wDay, now.wMonth, now.wYear);
+    let minutes = taking.started.elapsed().as_secs().div_ceil(60);
+    let lasted = if minutes <= 1 { "un minuto".to_string() } else { format!("{minutes} minutos") };
+    let page = format!("# Apuntes del {:02}/{:02}/{} · {lasted}\n\n{summary}\n\n---\n\n## Lo que se dijo\n\n{heard}\n", now.wDay, now.wMonth, now.wYear);
     std::fs::write(&taking.path, page).map_err(|e| e.to_string())?;
     let _ = std::fs::remove_file(&raw);
     finish_bar();
@@ -293,7 +294,7 @@ pub fn finish(app: &AppHandle) -> Result<String, String> {
         "botones": [{ "texto": "Abrir", "abrir": taking.path.to_string_lossy() }, { "texto": "Carpeta", "abrir": taking.path.parent().map(|dir| dir.to_string_lossy().into_owned()).unwrap_or_default() }]
     });
     crate::scripts::show_card(app, "Apuntes", &card);
-    Ok(format!("Listo, guardé {minutes} minutos de apuntes con su resumen en Documentos, Cocuyo, Apuntes."))
+    Ok(format!("Listo, guardé {lasted} de apuntes con su resumen en Documentos, Cocuyo, Apuntes."))
 }
 
 pub fn spoken(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {

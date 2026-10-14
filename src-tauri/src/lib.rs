@@ -86,8 +86,22 @@ fn demo(app: tauri::AppHandle) {
                 eprintln!("[memoria] {:?}", ai::learned(&app, &charla));
             } else if step == "vivo-modelos" {
                 eprintln!("[vivo] modelos: {:?}", ai::live_models(&app));
+            } else if let Some(file) = step.strip_prefix("resumir=") {
+                let text = std::fs::read_to_string(file).unwrap_or_default();
+                let heard = text.split("## Lo que se dijo").nth(1).unwrap_or(&text).to_string();
+                eprintln!("[apuntes] resumen:
+{}", ai::summarize_minutes(&app, &heard).unwrap_or_else(|e| e));
+            } else if step == "apuntes-empezar" {
+                eprintln!("[apuntes] {:?}", minutes::start(&app));
+            } else if step == "apuntes-terminar" {
+                eprintln!("[apuntes] {:?}", minutes::finish(&app));
+            } else if let Some(seconds) = step.strip_prefix("esperar=") {
+                std::thread::sleep(std::time::Duration::from_secs(seconds.parse().unwrap_or(1)));
             } else if let Some(wav) = step.strip_prefix("apuntes-oir=") {
                 eprintln!("[apuntes] {:?}", minutes::probe(&app, std::path::Path::new(wav)));
+            } else if let Some(wav) = step.strip_prefix("vivo-cortar=") {
+                eprintln!("[vivo] cortar {:?}", talk::probe_barge(&app, std::path::Path::new(wav)));
+                talk::forget();
             } else if let Some(wav) = step.strip_prefix("vivo-lazo=") {
                 eprintln!("[vivo] lazo {:?}", talk::probe_lasso(&app, std::path::Path::new(wav)));
                 talk::forget();
