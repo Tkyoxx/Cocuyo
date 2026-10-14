@@ -232,6 +232,7 @@ pub fn alert(text: &str) {
 }
 
 fn say(text: &str) -> Result<(), String> {
+    let text = &crate::i18n::tr(text);
     if say_natural(&text.replace(['«', '»'], "")) {
         return Ok(());
     }

@@ -179,6 +179,71 @@ const REPLIES: &[(&str, &str, &str)] = &[
     ("Desinstalar Cocuyo", "Uninstall Cocuyo", "Desinstalar o Cocuyo"),
     ("Cocuyo se desinstaló.", "Cocuyo was uninstalled.", "O Cocuyo foi desinstalado."),
     ("¿Borrar también tus ajustes, tus tareas y la voz descargada (406 MB)?\n\nSi piensas volver a instalar Cocuyo, elige No.", "Also delete your settings, your tasks and the downloaded voice (406 MB)?\n\nIf you plan to install Cocuyo again, choose No.", "Apagar também seus ajustes, suas tarefas e a voz baixada (406 MB)?\n\nSe você pensa em instalar o Cocuyo de novo, escolha Não."),
+    ("Tu clave de Gemini no trae el modelo de transcripción en vivo.", "Your Gemini key doesn't include the live transcription model.", "Sua chave do Gemini não inclui o modelo de transcrição ao vivo."),
+    ("Para tomar apuntes hace falta tu clave de Gemini (sección IA).", "Taking notes needs your Gemini key (AI section).", "Para fazer anotações é preciso sua chave do Gemini (seção IA)."),
+    ("Para tomar apuntes hace falta Gemini con tu clave (sección IA).", "Taking notes needs Gemini with your key (AI section).", "Para fazer anotações é preciso o Gemini com sua chave (seção IA)."),
+    ("El modelo de transcripción no arrancó: {}", "The transcription model didn't start: {}", "O modelo de transcrição não iniciou: {}"),
+    ("No pude escuchar ni el PC ni el micrófono.", "I couldn't hear either the PC or the microphone.", "Não consegui ouvir nem o PC nem o microfone."),
+    ("Ya estoy tomando apuntes.", "I'm already taking notes.", "Já estou fazendo anotações."),
+    ("Tomando apuntes de lo que suena en el PC y de tu micrófono. Di «termina los apuntes» cuando acabe, y avísales a los demás que los estás grabando.", "Taking notes of what plays on the PC and your microphone. Say “stop taking notes” when it's over, and let the others know you're recording them.", "Fazendo anotações do que toca no PC e do seu microfone. Diga «para as anotações» quando acabar, e avise os outros que você está gravando."),
+    ("No estaba tomando apuntes.", "I wasn't taking notes.", "Eu não estava fazendo anotações."),
+    ("La transcripción no respondió.", "The transcription didn't answer.", "A transcrição não respondeu."),
+    ("Se cortaron los apuntes: {}", "The notes got cut off: {}", "As anotações foram interrompidas: {}"),
+    ("No alcancé a oír nada que apuntar.", "I didn't hear anything worth writing down.", "Não cheguei a ouvir nada para anotar."),
+    ("Listo, guardé {} de apuntes con su resumen en Documentos, Cocuyo, Apuntes.", "Done, I saved {} of notes with a summary in Documents, Cocuyo, Apuntes.", "Pronto, salvei {} de anotações com o resumo em Documentos, Cocuyo, Apuntes."),
+    ("{}. ¿Lo hago?", "{}. Should I do it?", "{}. Faço?"),
+    ("Enviar «{}» a {} por {}", "Send “{}” to {} on {}", "Enviar «{}» para {} pelo {}"),
+    ("Ventana «{}»{}", "Window “{}”{}", "Janela «{}»{}"),
+    ("Listo, le mandé a {}: «{}».", "Done, I sent {}: “{}”.", "Pronto, mandei para {}: «{}»."),
+    ("Quedó sin enviar.", "It wasn't sent.", "Ficou sem enviar."),
+    ("Listo, te devolví el mouse. Me detuve ahí.", "Done, the mouse is yours again. I stopped there.", "Pronto, devolvi o mouse. Parei aí."),
+    ("Me enredé con tantos pasos. Pídemelo por partes.", "I got tangled up in so many steps. Ask me in parts.", "Me enrolei com tantos passos. Peça por partes."),
+    ("No hay ninguna ventana abierta para mirar.", "There's no open window to look at.", "Não há nenhuma janela aberta para olhar."),
+    ("«{}» está abierta, pero Windows no me dejó traerla al frente.", "“{}” is open, but Windows didn't let me bring it to the front.", "«{}» está aberta, mas o Windows não me deixou trazê-la para a frente."),
+    ("No encontré ninguna app llamada «{}» abierta ni instalada.", "I couldn't find any app called “{}”, open or installed.", "Não encontrei nenhum app chamado «{}» aberto nem instalado."),
+    ("Abrí {}, pero su ventana no apareció.", "I opened {}, but its window didn't show up.", "Abri o {}, mas a janela não apareceu."),
+    ("no vi el buscador de chats", "I didn't see the chat search box", "não vi a busca de conversas"),
+    ("no encontré a {} en {}", "I couldn't find {} in {}", "não encontrei {} no {}"),
+    ("no vi dónde se escribe el mensaje", "I didn't see where to type the message", "não vi onde se escreve a mensagem"),
+    ("el chat que se abrió no parece de {} ({})", "the chat that opened doesn't look like {}'s ({})", "a conversa que abriu não parece ser de {} ({})"),
+    ("la ventana se cerró", "the window closed", "a janela fechou"),
+    ("Moviste el mouse: te devolví el control.", "You moved the mouse: you're back in control.", "Você mexeu no mouse: devolvi o controle."),
+    ("Falta la clave de Gemini.", "The Gemini key is missing.", "Falta a chave do Gemini."),
+    ("Tu clave no tiene ningún modelo de voz en vivo.", "Your key doesn't have any live voice model.", "Sua chave não tem nenhum modelo de voz ao vivo."),
+    ("No hay conexión con Google.", "Can't reach Google.", "Sem conexão com o Google."),
+    ("No llegué a Google.", "I couldn't reach Google.", "Não consegui chegar ao Google."),
+    ("No pude abrir la conexión.", "I couldn't open the connection.", "Não consegui abrir a conexão."),
+    ("Google no completó la conexión en vivo.", "Google didn't complete the live connection.", "O Google não completou a conexão ao vivo."),
+    ("Gemini Live no arrancó: {}", "Gemini Live didn't start: {}", "O Gemini Live não iniciou: {}"),
+    ("Gemini se quedó callado.", "Gemini went quiet.", "O Gemini ficou calado."),
+    ("No hay altavoces.", "There are no speakers.", "Não há alto-falantes."),
+    ("Falta la voz local. Descárgala en la pestaña Ajustes del menú.", "The local voice is missing. Download it in the Settings tab of the menu.", "Falta a voz local. Baixe na aba Ajustes do menu."),
+    ("No me dijiste qué hacer.", "You didn't tell me what to do.", "Você não me disse o que fazer."),
+    ("No te escuché.", "I didn't hear you.", "Não te ouvi."),
+    ("Eso tiene varios pasos: enciende el modo agente en Ajustes, sección Agente, y lo hago yo.", "That takes several steps: turn on agent mode in Settings, Agent section, and I'll do it.", "Isso tem vários passos: ligue o modo agente em Ajustes, seção Agente, e eu faço."),
+    ("No entendí qué hacer con «{}». Prueba con «pon…», «abre…» o «busca…».", "I didn't get what to do with “{}”. Try “play…”, “open…” or “search…”.", "Não entendi o que fazer com «{}». Tente «toca…», «abre…» ou «busca…»."),
+    ("Buscando «{}» en Spotify. Conecta Spotify en Ajustes para que la ponga a sonar directamente.", "Searching “{}” on Spotify. Connect Spotify in Settings so I can play it directly.", "Buscando «{}» no Spotify. Conecte o Spotify em Ajustes para eu tocar direto."),
+    ("Buscando «{}» en Spotify. Conecta Spotify en Ajustes para que lo ponga a sonar directamente.", "Searching “{}” on Spotify. Connect Spotify in Settings so I can play it directly.", "Buscando «{}» no Spotify. Conecte o Spotify em Ajustes para eu tocar direto."),
+    ("No hay nada sonando que pueda mezclar. Conecta Spotify en Ajustes para elegir de tus listas.", "Nothing is playing that I can shuffle. Connect Spotify in Settings to pick from your playlists.", "Não há nada tocando que eu possa misturar. Conecte o Spotify em Ajustes para escolher das suas playlists."),
+    ("No encontré ninguna app llamada «{}». Puedes añadirla en la pestaña Apps.", "I couldn't find any app called “{}”. You can add it in the Apps tab.", "Não encontrei nenhum app chamado «{}». Você pode adicionar na aba Apps."),
+    ("No hay respuesta en esa dirección. ¿Está encendido el servicio?", "No answer at that address. Is the service on?", "Sem resposta nesse endereço. O serviço está ligado?"),
+    ("El servicio rechazó la clave.", "The service rejected the key.", "O serviço recusou a chave."),
+    ("El servicio no conoce el modelo «{}» o esa dirección.", "The service doesn't know the model “{}” or that address.", "O serviço não conhece o modelo «{}» ou esse endereço."),
+    ("«{}» llegó al límite de su plan. Lo dejo descansar.", "“{}” reached its plan's limit. I'm letting it rest.", "«{}» chegou ao limite do plano. Vou deixar descansar."),
+    ("El servicio de «{}» está saturado ahora mismo. Prueba en un rato.", "The “{}” service is overloaded right now. Try again in a while.", "O serviço de «{}» está sobrecarregado agora. Tente daqui a pouco."),
+    ("El servicio respondió con el error {}.", "The service answered with error {}.", "O serviço respondeu com o erro {}."),
+    ("El servicio respondió: {}", "The service answered: {}", "O serviço respondeu: {}"),
+    ("Ese servicio no escucha audio.", "That service doesn't listen to audio.", "Esse serviço não escuta áudio."),
+    ("Hoy ya se usó el cupo de los modelos; hasta mañana sigo con lo que entiendo solo.", "Today's quota for the models is used up; until tomorrow I'll go on with what I understand by myself.", "A cota dos modelos de hoje acabou; até amanhã sigo com o que entendo sozinho."),
+    ("El modo agente necesita un servicio con formato OpenAI: Gemini, Groq, Ollama, LM Studio, OpenAI o DeepSeek.", "Agent mode needs a service with the OpenAI format: Gemini, Groq, Ollama, LM Studio, OpenAI or DeepSeek.", "O modo agente precisa de um serviço com formato OpenAI: Gemini, Groq, Ollama, LM Studio, OpenAI ou DeepSeek."),
+    ("El modelo respondió algo vacío.", "The model answered with nothing.", "O modelo respondeu algo vazio."),
+    ("El modelo no oyó nada.", "The model didn't hear anything.", "O modelo não ouviu nada."),
+    ("El modelo no devolvió nada.", "The model returned nothing.", "O modelo não devolveu nada."),
+    ("La voz de Gemini necesita que el servicio de IA elegido sea Gemini.", "The Gemini voice needs Gemini as the chosen AI service.", "A voz do Gemini precisa que o serviço de IA escolhido seja o Gemini."),
+    ("El servicio no devolvió audio.", "The service returned no audio.", "O serviço não devolveu áudio."),
+    ("La voz de Gemini llegó a su límite de hoy.", "The Gemini voice reached today's limit.", "A voz do Gemini chegou ao limite de hoje."),
+    ("(No pude hacer el resumen: {})", "(I couldn't write the summary: {})", "(Não consegui fazer o resumo: {})"),
+    ("{}\n{}", "{}\n{}", "{}\n{}"),
 ];
 
 fn holes<'a>(template: &str, text: &'a str) -> Option<Vec<&'a str>> {
@@ -243,6 +308,21 @@ mod tests {
             translate("Spotify no está sonando. Volumen del equipo al 30 %.", "en"),
             "Spotify isn't playing. System volume at 30%."
         );
+    }
+
+    #[test]
+    fn the_new_replies_too() {
+        assert_eq!(translate("Ya estoy tomando apuntes.", "en"), "I'm already taking notes.");
+        assert_eq!(translate("Listo, guardé 5 minutes de apuntes con su resumen en Documentos, Cocuyo, Apuntes.", "en"), "Done, I saved 5 minutes of notes with a summary in Documents, Cocuyo, Apuntes.");
+        assert_eq!(translate("Listo, le mandé a Ana: «ya voy».", "pt"), "Pronto, mandei para Ana: «ya voy».");
+        assert_eq!(translate("no encontré a Ana en WhatsApp", "en"), "I couldn't find Ana in WhatsApp");
+        assert_eq!(
+            translate("Enviar «ya voy» a Ana por WhatsApp
+Ventana «Chats de prueba» · Ana. ¿Lo hago?", "en"),
+            "Send “ya voy” to Ana on WhatsApp
+Window “Chats de prueba” · Ana. Should I do it?"
+        );
+        assert_eq!(translate("Gemini se quedó callado.", "pt"), "O Gemini ficou calado.");
     }
 
     #[test]

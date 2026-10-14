@@ -280,11 +280,18 @@ pub fn finish(app: &AppHandle) -> Result<String, String> {
         return Ok("No alcancé a oír nada que apuntar.".into());
     }
     let tail: String = heard.chars().rev().take(LONGEST).collect::<Vec<_>>().into_iter().rev().collect();
-    let summary = crate::ai::summarize_minutes(app, &tail).unwrap_or_else(|why| format!("(No pude hacer el resumen: {why})"));
+    let summary = crate::ai::summarize_minutes(app, &tail).unwrap_or_else(|why| crate::i18n::tr(&format!("(No pude hacer el resumen: {why})")));
     let now = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
     let minutes = taking.started.elapsed().as_secs().div_ceil(60);
-    let lasted = if minutes <= 1 { "un minuto".to_string() } else { format!("{minutes} minutos") };
-    let page = format!("# Apuntes del {:02}/{:02}/{} · {lasted}\n\n{summary}\n\n---\n\n## Lo que se dijo\n\n{heard}\n", now.wDay, now.wMonth, now.wYear);
+    let (lasted, title, said) = match (crate::cue::language().0, minutes <= 1) {
+        ("en", true) => ("a minute".to_string(), "Notes from", "What was said"),
+        ("en", false) => (format!("{minutes} minutes"), "Notes from", "What was said"),
+        ("pt", true) => ("um minuto".to_string(), "Anotações de", "O que foi dito"),
+        ("pt", false) => (format!("{minutes} minutos"), "Anotações de", "O que foi dito"),
+        (_, true) => ("un minuto".to_string(), "Apuntes del", "Lo que se dijo"),
+        (_, false) => (format!("{minutes} minutos"), "Apuntes del", "Lo que se dijo"),
+    };
+    let page = format!("# {title} {:02}/{:02}/{} · {lasted}\n\n{summary}\n\n---\n\n## {said}\n\n{heard}\n", now.wDay, now.wMonth, now.wYear);
     std::fs::write(&taking.path, page).map_err(|e| e.to_string())?;
     let _ = std::fs::remove_file(&raw);
     finish_bar();
@@ -306,13 +313,16 @@ pub fn spoken(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
 
 fn wants(spoken: &str) -> Option<bool> {
     let clean = crate::intent::normalize(spoken);
-    const START: [&str; 10] = [
+    const START: &[&str] = &[
         "toma apuntes", "empieza a tomar apuntes", "ponte a tomar apuntes", "graba la clase", "graba la reunion", "graba la llamada",
-        "transcribe la clase", "transcribe la reunion", "transcribe la llamada", "take notes",
+        "transcribe la clase", "transcribe la reunion", "transcribe la llamada", "take notes", "start taking notes", "record the meeting",
+        "record the class", "record the call", "faz anotacoes", "faca anotacoes", "comeca a anotar", "grava a aula", "grava a reuniao",
+        "grava a chamada",
     ];
-    const STOP: [&str; 10] = [
+    const STOP: &[&str] = &[
         "deja de tomar apuntes", "termina los apuntes", "termina de tomar apuntes", "para los apuntes", "deten los apuntes", "ya termino la clase",
-        "ya acabo la clase", "ya termino la reunion", "ya acabo la reunion", "stop taking notes",
+        "ya acabo la clase", "ya termino la reunion", "ya acabo la reunion", "stop taking notes", "stop the notes", "the meeting is over",
+        "the class is over", "para as anotacoes", "para de anotar", "termina as anotacoes", "acabou a aula", "acabou a reuniao",
     ];
     if STOP.iter().any(|phrase| clean.starts_with(phrase)) {
         return Some(false);
@@ -358,6 +368,9 @@ mod tests {
         assert_eq!(wants("graba la reunión"), Some(true));
         assert_eq!(wants("ya terminó la clase"), Some(false));
         assert_eq!(wants("deja de tomar apuntes porfa"), Some(false));
+        assert_eq!(wants("Take notes of this meeting"), Some(true));
+        assert_eq!(wants("grava a reunião"), Some(true));
+        assert_eq!(wants("para as anotações"), Some(false));
         assert_eq!(wants("toma nota comprar pan"), None);
         assert_eq!(wants("apunta comprar pan"), None);
     }

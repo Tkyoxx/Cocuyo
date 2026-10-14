@@ -237,11 +237,12 @@ pub fn normalize(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.to_lowercase().chars() {
         let c = match c {
-            'á' | 'à' | 'ä' | 'â' => 'a',
+            'á' | 'à' | 'ä' | 'â' | 'ã' => 'a',
             'é' | 'è' | 'ë' | 'ê' => 'e',
             'í' | 'ì' | 'ï' | 'î' => 'i',
-            'ó' | 'ò' | 'ö' | 'ô' => 'o',
+            'ó' | 'ò' | 'ö' | 'ô' | 'õ' => 'o',
             'ú' | 'ù' | 'ü' | 'û' => 'u',
+            'ç' => 'c',
             c if c.is_alphanumeric() => c,
             _ => ' ',
         };

@@ -877,13 +877,20 @@ pub fn see(app: &AppHandle, question: &str, png: &[u8]) -> Result<String, String
 }
 
 pub fn summarize_minutes(app: &AppHandle, transcript: &str) -> Result<String, String> {
-    let system = "Te paso la transcripción automática de una clase, reunión o llamada; puede traer errores de oído y frases cortadas. \
-                  Escribe en el idioma en que se habló, en Markdown simple, con exactamente estas tres secciones y estos títulos:\n\
-                  ## Resumen\n(tres a cinco frases con lo importante)\n\
-                  ## Puntos clave\n(viñetas cortas con ideas, datos, fechas y nombres que valga la pena guardar)\n\
-                  ## Pendientes\n(lo que alguien quedó en hacer, con quién y para cuándo si se dijo; si no hay ninguno, quita esta sección)\n\
-                  No copies lo que va entre paréntesis y no inventes nada que no esté en la transcripción.";
-    let reply = chat_up_to(app, system, transcript, Extra::None, 1600)?;
+    let (summary, points, pending) = match crate::cue::language().0 {
+        "en" => ("Summary", "Key points", "To do"),
+        "pt" => ("Resumo", "Pontos-chave", "Pendências"),
+        _ => ("Resumen", "Puntos clave", "Pendientes"),
+    };
+    let system = format!(
+        "Te paso la transcripción automática de una clase, reunión o llamada; puede traer errores de oído y frases cortadas. \
+         Escribe en el idioma en que se habló, en Markdown simple, con exactamente estas tres secciones y estos títulos:\n\
+         ## {summary}\n(tres a cinco frases con lo importante)\n\
+         ## {points}\n(viñetas cortas con ideas, datos, fechas y nombres que valga la pena guardar)\n\
+         ## {pending}\n(lo que alguien quedó en hacer, con quién y para cuándo si se dijo; si no hay ninguno, quita esta sección)\n\
+         No copies lo que va entre paréntesis y no inventes nada que no esté en la transcripción."
+    );
+    let reply = chat_up_to(app, &system, transcript, Extra::None, 1600)?;
     let reply = reply.split("</think>").last().unwrap_or("").trim().to_string();
     if reply.is_empty() {
         return Err("El modelo no devolvió nada.".into());
