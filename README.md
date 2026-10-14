@@ -228,7 +228,7 @@ Cocuyo solo ejecuta lo que hay en esa carpeta, y lo dicho siempre llega como dat
 
 Los scripts ya no solo responden con texto: pueden mostrar **tarjetas** con imagen, filas y botones, una **barra de progreso** mientras trabajan, y **preguntarte** cosas y seguir la conversación. Cocuyo trae la librería para PowerShell, Python y Node.
 
-Y como Spicetify con Spotify, la isla se deja cambiar entera: **temas** (un CSS que le cambia colores, bordes y letras) y **extensiones** (un poco de JavaScript que añade pestañas al menú, efectos alrededor de la isla, widgets en el escritorio u órdenes de voz propias). Vienen de ejemplo un Pomodoro con su pestaña, unas luciérnagas que siguen tu voz y tres temas. Se activan en **Ajustes → Extensiones**.
+Y como Spicetify con Spotify, la isla se deja cambiar entera: **temas** (un CSS que le cambia colores, bordes y letras) y **extensiones** (un poco de JavaScript que añade pestañas al menú, efectos alrededor de la isla, widgets en el escritorio u órdenes de voz propias). Vienen de ejemplo un Pomodoro con su pestaña, unas luciérnagas que siguen tu voz y tres temas. Se activan en **Ajustes → Extensiones**. Cada extensión dice qué usa (internet, lo que copias, tus scripts, herramientas para el agente…) y Cocuyo te lo enseña antes de instalarla; lo que no declaró, no lo puede usar por la API.
 
 Todo explicado, con ejemplos, en [`sdk/`](sdk/README.md).
 

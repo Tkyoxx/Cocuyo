@@ -12,6 +12,7 @@ use crate::settings;
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const GALLERY: &str = "https://raw.githubusercontent.com/Tkyoxx/Cocuyo/main/galeria/extensiones/";
 const FILES: [&str; 9] = ["json", "css", "js", "png", "jpg", "webp", "svg", "woff2", "md"];
+pub const PERMISSIONS: [&str; 10] = ["red", "portapapeles", "pantalla", "voz", "equipo", "datos", "scripts", "agente", "escritorio", "comandos"];
 
 const README: &str = "Extensiones de Cocuyo\r\n=====================\r\n\r\n\
 Cada carpeta de aquí es un tema o una extensión para la isla, al estilo de\r\n\
@@ -21,6 +22,14 @@ Se activan en Ajustes, sección Extensiones. Si alguna rompe la isla, el\r\n\
 icono de Cocuyo junto al reloj tiene «Desactivar extensiones».\r\n\r\n\
 Todo explicado en: https://github.com/Tkyoxx/Cocuyo/tree/main/sdk\r\n\r\n\
 Una extensión puede hacer lo mismo que Cocuyo. Instala solo las que entiendas.\r\n";
+
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub struct Texts {
+    #[serde(default)]
+    nombre: String,
+    #[serde(default)]
+    descripcion: String,
+}
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 pub struct Manifest {
@@ -40,6 +49,10 @@ pub struct Manifest {
     codigo: Option<String>,
     #[serde(default)]
     vista: Option<String>,
+    #[serde(default)]
+    permisos: Option<Vec<String>>,
+    #[serde(default)]
+    traduccion: std::collections::HashMap<String, Texts>,
 }
 
 #[derive(Serialize)]
@@ -53,7 +66,27 @@ pub struct Extension {
     estilo: Option<String>,
     codigo: Option<String>,
     vista: Option<String>,
+    permisos: Option<Vec<String>>,
     activa: bool,
+}
+
+fn known(permissions: &Option<Vec<String>>) -> Option<Vec<String>> {
+    permissions.as_ref().map(|asked| {
+        let mut clean: Vec<String> = PERMISSIONS.iter().filter(|known| asked.iter().any(|p| p.trim() == **known)).map(|p| p.to_string()).collect();
+        clean.dedup();
+        clean
+    })
+}
+
+fn translated(name: &str, about: &str, texts: &std::collections::HashMap<String, Texts>) -> (String, String) {
+    let language = crate::cue::language().0;
+    match texts.get(language) {
+        Some(texts) if language != "es" => (
+            if texts.nombre.trim().is_empty() { name.to_string() } else { texts.nombre.clone() },
+            if texts.descripcion.trim().is_empty() { about.to_string() } else { texts.descripcion.clone() },
+        ),
+        _ => (name.to_string(), about.to_string()),
+    }
 }
 
 pub fn dir(app: &AppHandle) -> Option<PathBuf> {
@@ -116,15 +149,17 @@ pub fn list(app: &AppHandle) -> Vec<Extension> {
             }
             let manifest: Manifest = serde_json::from_slice(&std::fs::read(folder.join("manifest.json")).ok()?).ok()?;
             let tipo = if manifest.tipo == "tema" { "tema" } else { "extension" };
+            let (nombre, descripcion) = translated(&manifest.nombre, &manifest.descripcion, &manifest.traduccion);
             Some(Extension {
-                nombre: if manifest.nombre.trim().is_empty() { id.clone() } else { manifest.nombre.chars().take(60).collect() },
-                descripcion: manifest.descripcion.chars().take(200).collect(),
+                nombre: if nombre.trim().is_empty() { id.clone() } else { nombre.chars().take(60).collect() },
+                descripcion: descripcion.chars().take(200).collect(),
                 autor: manifest.autor.chars().take(40).collect(),
                 version: manifest.version.chars().take(20).collect(),
                 tipo: tipo.into(),
                 estilo: inside(&folder, &manifest.estilo),
                 codigo: inside(&folder, &manifest.codigo),
                 vista: inside(&folder, &manifest.vista),
+                permisos: if tipo == "tema" { Some(Vec::new()) } else { known(&manifest.permisos) },
                 activa: enabled.contains(&id),
                 id,
             })
@@ -230,8 +265,21 @@ pub struct SharedExtension {
     archivos: Vec<String>,
     #[serde(default)]
     vista: String,
+    #[serde(default)]
+    version: String,
+    #[serde(default)]
+    permisos: Option<Vec<String>>,
+    #[serde(default)]
+    traduccion: std::collections::HashMap<String, Texts>,
     #[serde(default, skip_deserializing)]
     have: bool,
+    #[serde(default, skip_deserializing)]
+    newer: bool,
+}
+
+fn installed_version(dir: &Path, id: &str) -> Option<String> {
+    let manifest: Manifest = serde_json::from_slice(&std::fs::read(dir.join(id).join("manifest.json")).ok()?).ok()?;
+    Some(manifest.version)
 }
 
 fn fetch(url: &str) -> Result<Vec<u8>, String> {
@@ -255,7 +303,12 @@ pub async fn extensions_gallery(app: AppHandle) -> Result<Vec<SharedExtension>, 
         .into_iter()
         .filter(|shared| plain_id(&shared.id) && shared.archivos.iter().all(|file| plain_file(file)))
         .map(|mut shared| {
-            shared.have = mine.as_ref().is_some_and(|dir| dir.join(&shared.id).join("manifest.json").is_file());
+            let installed = mine.as_ref().and_then(|dir| installed_version(dir, &shared.id));
+            shared.have = installed.is_some();
+            shared.newer = installed.is_some_and(|version| !shared.version.is_empty() && version != shared.version);
+            shared.permisos = if shared.tipo == "tema" { Some(Vec::new()) } else { known(&shared.permisos) };
+            let (nombre, descripcion) = translated(&shared.nombre, &shared.descripcion, &shared.traduccion);
+            (shared.nombre, shared.descripcion) = (nombre, descripcion);
             if !plain_file(&shared.vista) {
                 shared.vista.clear();
             } else {
@@ -273,6 +326,14 @@ pub async fn extension_install(app: AppHandle, id: String) -> Result<String, Str
     }
     let manifest_bytes = fetch(&format!("{GALLERY}{id}/manifest.json"))?;
     let manifest: Manifest = serde_json::from_slice(&manifest_bytes).map_err(|_| "Esa extensión trae un manifest roto.".to_string())?;
+    if manifest.tipo != "tema" {
+        let listed: Vec<SharedExtension> = serde_json::from_slice(&fetch(&format!("{GALLERY}indice.json"))?).map_err(|_| "La galería respondió algo que no entiendo.".to_string())?;
+        let shown = listed.iter().find(|shared| shared.id == id).and_then(|shared| known(&shared.permisos)).unwrap_or_default();
+        let asked = known(&manifest.permisos).unwrap_or_else(|| PERMISSIONS.iter().map(|p| p.to_string()).collect());
+        if asked.iter().any(|permission| !shown.contains(permission)) {
+            return Err("Esa extensión pide más permisos de los que muestra la galería. No se instala.".into());
+        }
+    }
     let mut files: Vec<String> = [&manifest.estilo, &manifest.codigo, &manifest.vista].into_iter().flatten().cloned().collect();
     files.dedup();
     if files.iter().any(|file| !plain_file(file)) {
@@ -308,6 +369,22 @@ mod tests {
         assert_eq!(matching(&commands, "empiesa el foco").as_deref(), Some("foco:empezar"));
         assert_eq!(matching(&commands, "pon música").as_deref(), None);
         assert_eq!(matching(&commands, "el").as_deref(), None);
+    }
+
+    #[test]
+    fn only_known_permissions_count() {
+        let asked = Some(vec!["red".into(), "agente".into(), "lanzar cohetes".into(), "red".into()]);
+        assert_eq!(known(&asked), Some(vec!["red".to_string(), "agente".to_string()]));
+        assert_eq!(known(&None), None);
+        assert_eq!(known(&Some(Vec::new())), Some(Vec::new()));
+    }
+
+    #[test]
+    fn a_manifest_without_translation_keeps_its_spanish() {
+        let manifest: Manifest = serde_json::from_str(r#"{"nombre":"Foco","descripcion":"Pomodoro","permisos":["agente"],"traduccion":{"en":{"nombre":"Focus"}}}"#).unwrap();
+        assert_eq!(manifest.permisos.as_deref(), Some(&["agente".to_string()][..]));
+        assert_eq!(manifest.traduccion["en"].nombre, "Focus");
+        assert_eq!(translated("Foco", "Pomodoro", &Default::default()), ("Foco".to_string(), "Pomodoro".to_string()));
     }
 
     #[test]

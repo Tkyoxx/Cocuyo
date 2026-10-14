@@ -49,9 +49,12 @@ export interface Eventos {
   listo: undefined;
 }
 
+export type Permiso = "red" | "portapapeles" | "pantalla" | "voz" | "equipo" | "datos" | "scripts" | "agente" | "escritorio" | "comandos";
+
 export interface Cocuyo {
   version: string;
   extension: { id: string; nombre: string };
+  permisos: Permiso[] | null;
   isla: HTMLElement;
   decir(texto: string, ms?: number): void;
   hablar(texto: string): Promise<void>;

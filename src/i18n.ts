@@ -566,6 +566,31 @@ const EXACT: Record<string, [string, string]> = {
   "el servidor quedó trabado": ["the server got stuck", "o servidor travou"],
   "la herramienta falló": ["the tool failed", "a ferramenta falhou"],
   "Cocuyo no sabe hacer eso": ["Cocuyo doesn't know how to do that", "O Cocuyo não sabe fazer isso"],
+  Internet: ["Internet", "Internet"],
+  "Se conecta a internet. Cocuyo no puede impedirlo: esto es lo que el autor declara.": ["It connects to the internet. Cocuyo can't stop that: this is what the author declares.", "Conecta-se à internet. O Cocuyo não pode impedir: isto é o que o autor declara."],
+  "Lo que copias": ["What you copy", "O que você copia"],
+  "Lee y usa lo que tienes en el portapapeles.": ["Reads and uses what's on your clipboard.", "Lê e usa o que está na sua área de transferência."],
+  "Tu pantalla": ["Your screen", "Sua tela"],
+  "Usa tus pantallas y lo que rodeas con el lazo.": ["Uses your screens and what you circle with the lasso.", "Usa suas telas e o que você circula com o laço."],
+  "Lo que dices": ["What you say", "O que você diz"],
+  "Recibe el texto de lo que le dices a Cocuyo y lo que te responde.": ["Gets the text of what you tell Cocuyo and what it answers.", "Recebe o texto do que você diz ao Cocuyo e do que ele responde."],
+  "Datos del PC": ["PC info", "Dados do PC"],
+  "Lee el procesador, la memoria, la red, tus apps y lo que suena.": ["Reads the processor, memory, network, your apps and what's playing.", "Lê o processador, a memória, a rede, seus apps e o que está tocando."],
+  "Tus datos": ["Your data", "Seus dados"],
+  "Lee tus ajustes, tu agenda, tus pendientes y lo que Cocuyo recuerda de ti.": ["Reads your settings, your schedule, your to-dos and what Cocuyo remembers about you.", "Lê seus ajustes, sua agenda, suas pendências e o que o Cocuyo lembra de você."],
+  "Ejecuta los scripts de tu carpeta.": ["Runs the scripts in your folder.", "Executa os scripts da sua pasta."],
+  "Herramientas del agente": ["Agent tools", "Ferramentas do agente"],
+  "Le da herramientas nuevas a la IA, que puede usarlas sola.": ["Gives the AI new tools, which it can use on its own.", "Dá ferramentas novas à IA, que pode usá-las sozinha."],
+  "El escritorio": ["The desktop", "A área de trabalho"],
+  "Pone cosas en el escritorio, fuera de la isla.": ["Puts things on the desktop, outside the island.", "Coloca coisas na área de trabalho, fora da ilha."],
+  "Todo Cocuyo": ["All of Cocuyo", "Todo o Cocuyo"],
+  "Puede llamar a cualquier comando del núcleo: lo mismo que la app.": ["It can call any core command: the same as the app.", "Pode chamar qualquer comando do núcleo: o mesmo que o app."],
+  "No dice qué usa": ["Doesn't say what it uses", "Não diz o que usa"],
+  "Una extensión vieja o hecha a mano: puede usar todo lo que usa Cocuyo.": ["An old or handmade extension: it can use everything Cocuyo uses.", "Uma extensão antiga ou feita à mão: pode usar tudo o que o Cocuyo usa."],
+  "No pide nada especial": ["Asks for nothing special", "Não pede nada especial"],
+  Actualizar: ["Update", "Atualizar"],
+  "Temas y extensiones de la comunidad. Cada una dice qué usa; pasa el mouse por encima para ver qué significa. Instala solo lo que entiendas.": ["Community themes and extensions. Each one says what it uses; hover over it to see what that means. Only install what you understand.", "Temas e extensões da comunidade. Cada uma diz o que usa; passe o mouse por cima para ver o que significa. Instale só o que você entende."],
+  "Esa extensión pide más permisos de los que muestra la galería. No se instala.": ["That extension asks for more permissions than the gallery shows. It won't be installed.", "Essa extensão pede mais permissões do que a galeria mostra. Não será instalada."],
 };
 
 const PATTERNS: [RegExp, string, string][] = [
@@ -695,6 +720,7 @@ const PATTERNS: [RegExp, string, string][] = [
   [/^el servidor se cerró: (.+)$/, "the server closed: $1", "o servidor fechou: $1"],
   [/^el servidor no respondió a «(.+)»$/, "the server didn't answer “$1”", "o servidor não respondeu a «$1»"],
   [/^el servidor «(.+)» no está conectado$/, "the “$1” server isn't connected", "o servidor «$1» não está conectado"],
+  [/^«(.+)» usa (.+) sin declarar el permiso «(.+)» en su manifest\.json\.?$/, "“$1” uses $2 without declaring the “$3” permission in its manifest.json.", "«$1» usa $2 sem declarar a permissão «$3» no seu manifest.json."],
 ];
 
 let lang: Lang = "es";

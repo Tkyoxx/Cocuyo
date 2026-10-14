@@ -2,7 +2,17 @@
   "nombre": "Aurora",
   "descripcion": "La isla con un borde de aurora boreal que respira, y acento verde agua.",
   "autor": "Tkyoxx",
-  "version": "1.0",
+  "version": "1.1",
   "tipo": "tema",
-  "estilo": "estilo.css"
+  "estilo": "estilo.css",
+  "traduccion": {
+    "en": {
+      "nombre": "Aurora",
+      "descripcion": "The island with a breathing northern-lights border and a teal accent."
+    },
+    "pt": {
+      "nombre": "Aurora",
+      "descripcion": "A ilha com uma borda de aurora boreal que respira e destaque verde-água."
+    }
+  }
 }

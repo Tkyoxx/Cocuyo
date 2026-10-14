@@ -9,7 +9,22 @@
       "manifest.json",
       "index.js"
     ],
-    "vista": ""
+    "vista": "",
+    "version": "1.1",
+    "permisos": [
+      "equipo",
+      "escritorio"
+    ],
+    "traduccion": {
+      "en": {
+        "nombre": "Pulse",
+        "descripcion": "A desktop widget with live CPU and memory. One click opens System."
+      },
+      "pt": {
+        "nombre": "Pulso",
+        "descripcion": "Um widget na área de trabalho com o processador e a memória ao vivo. Um clique abre Sistema."
+      }
+    }
   },
   {
     "id": "reloj-mundial",
@@ -21,7 +36,21 @@
       "manifest.json",
       "index.js"
     ],
-    "vista": ""
+    "vista": "",
+    "version": "1.1",
+    "permisos": [
+      "agente"
+    ],
+    "traduccion": {
+      "en": {
+        "nombre": "World clock",
+        "descripcion": "A tab with the time in several cities, day or night. And the agent knows how to check it."
+      },
+      "pt": {
+        "nombre": "Relógio mundial",
+        "descripcion": "Uma aba com a hora de várias cidades, de dia ou de noite. E o agente sabe consultar."
+      }
+    }
   },
   {
     "id": "cocuyos",
@@ -33,7 +62,19 @@
       "manifest.json",
       "index.js"
     ],
-    "vista": ""
+    "vista": "",
+    "version": "1.1",
+    "permisos": [],
+    "traduccion": {
+      "en": {
+        "nombre": "Fireflies",
+        "descripcion": "While you talk to it, fireflies flutter around the island to the beat of your voice."
+      },
+      "pt": {
+        "nombre": "Vaga-lumes",
+        "descripcion": "Enquanto você fala, vaga-lumes voam ao redor da ilha no ritmo da sua voz."
+      }
+    }
   },
   {
     "id": "foco",
@@ -45,7 +86,21 @@
       "manifest.json",
       "index.js"
     ],
-    "vista": ""
+    "vista": "",
+    "version": "1.1",
+    "permisos": [
+      "agente"
+    ],
+    "traduccion": {
+      "en": {
+        "nombre": "Focus",
+        "descripcion": "A Pomodoro tab: 25 minutes of work, 5 of rest. Say “start focus” and that’s it."
+      },
+      "pt": {
+        "nombre": "Foco",
+        "descripcion": "Aba Pomodoro: 25 minutos de trabalho, 5 de descanso. Diga «empieza el foco» e pronto."
+      }
+    }
   },
   {
     "id": "aurora",
@@ -57,7 +112,18 @@
       "manifest.json",
       "estilo.css"
     ],
-    "vista": ""
+    "vista": "",
+    "version": "1.1",
+    "traduccion": {
+      "en": {
+        "nombre": "Aurora",
+        "descripcion": "The island with a breathing northern-lights border and a teal accent."
+      },
+      "pt": {
+        "nombre": "Aurora",
+        "descripcion": "A ilha com uma borda de aurora boreal que respira e destaque verde-água."
+      }
+    }
   },
   {
     "id": "medianoche",
@@ -69,7 +135,18 @@
       "manifest.json",
       "estilo.css"
     ],
-    "vista": ""
+    "vista": "",
+    "version": "1.1",
+    "traduccion": {
+      "en": {
+        "nombre": "Midnight",
+        "descripcion": "Night-blue island with a lilac accent. For those who code at 3 a.m."
+      },
+      "pt": {
+        "nombre": "Meia-noite",
+        "descripcion": "Ilha azul-noite com destaque lilás. Para quem programa às 3 da manhã."
+      }
+    }
   },
   {
     "id": "neon",
@@ -81,6 +158,17 @@
       "manifest.json",
       "estilo.css"
     ],
-    "vista": ""
+    "vista": "",
+    "version": "1.1",
+    "traduccion": {
+      "en": {
+        "nombre": "Neon",
+        "descripcion": "Cyberpunk: magenta, cyan and a terminal font."
+      },
+      "pt": {
+        "nombre": "Neon",
+        "descripcion": "Cyberpunk: magenta, ciano e letra de terminal."
+      }
+    }
   }
 ]

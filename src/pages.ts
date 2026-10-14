@@ -1,7 +1,7 @@
 // las pestañas del menu. es largo, si, algun dia lo parto
 
 import { convertFileSrc } from "@tauri-apps/api/core";
-import type { ExtensionInfo } from "./extensiones";
+import { PERMISOS, type ExtensionInfo, type Permiso } from "./extensiones";
 import { locale, tr, weekLetters } from "./i18n";
 import {
   call,
@@ -1020,6 +1020,15 @@ const AI_KIND_NOTE = {
   pago: "De pago: necesita la clave de tu cuenta con ese proveedor.",
 };
 
+function permissions(tipo: string, permisos: Permiso[] | null) {
+  if (tipo === "tema") return "";
+  if (!permisos) return `<span class="perms"><i class="warn" title="Una extensión vieja o hecha a mano: puede usar todo lo que usa Cocuyo.">No dice qué usa</i></span>`;
+  if (!permisos.length) return `<span class="perms"><i>No pide nada especial</i></span>`;
+  return `<span class="perms">${permisos
+    .map((permiso) => `<i class="${permiso === "comandos" || permiso === "red" ? "warn" : ""}" title="${esc(PERMISOS[permiso][1])}">${esc(PERMISOS[permiso][0])}</i>`)
+    .join("")}</span>`;
+}
+
 function outgoing(s: Settings) {
   if (!s.aiOn) return "Nada: sin IA, tu voz y tus capturas se quedan aquí. Todo se entiende en tu PC.";
   let host = "";
@@ -1760,7 +1769,7 @@ class SettingsPage implements Page {
         .map(
           (item) => `<label class="ext ${on ? "" : "off"}">
             ${item.vista ? `<img src="${esc(extensionUrl(item.vista))}" alt="">` : `<span class="ext-glyph">${item.tipo === "tema" ? "🎨" : "✨"}</span>`}
-            <div><b>${esc(item.nombre)}</b><small class="desc">${esc(item.descripcion || (item.tipo === "tema" ? "Tema" : "Extensión"))}</small><small class="by">${item.tipo === "tema" ? "Tema" : "Extensión"}${item.autor ? ` · @${esc(item.autor)}` : ""}</small></div>
+            <div><b>${esc(item.nombre)}</b><small class="desc">${esc(item.descripcion || (item.tipo === "tema" ? "Tema" : "Extensión"))}</small><small class="by">${item.tipo === "tema" ? "Tema" : "Extensión"}${item.autor ? ` · @${esc(item.autor)}` : ""}</small>${permissions(item.tipo, item.permisos)}</div>
             <input type="checkbox" class="switch" data-ext="${esc(item.id)}" ${item.activa ? "checked" : ""}>
           </label>`,
         )
@@ -1770,15 +1779,19 @@ class SettingsPage implements Page {
   private async openExtensionShop() {
     const shop = this.el.querySelector<HTMLElement>("#s-ext-shop")!;
     shop.hidden = false;
-    const head = `<div class="ai-head"><small>Temas y extensiones de la comunidad. Corren con el mismo poder que Cocuyo: instala solo lo que entiendas.</small><button class="ghost" data-close>Cerrar</button></div>`;
+    const head = `<div class="ai-head"><small>Temas y extensiones de la comunidad. Cada una dice qué usa; pasa el mouse por encima para ver qué significa. Instala solo lo que entiendas.</small><button class="ghost" data-close>Cerrar</button></div>`;
     shop.innerHTML = `${head}<small class="empty">Abriendo la galería…</small>`;
     try {
-      const shared = await call<{ id: string; nombre: string; descripcion: string; autor: string; tipo: string; vista: string; have: boolean }[]>("extensions_gallery");
+      const shared = await call<{ id: string; nombre: string; descripcion: string; autor: string; tipo: string; vista: string; permisos: Permiso[] | null; have: boolean; newer: boolean }[]>("extensions_gallery");
       shop.innerHTML = `${head}<div class="gallery shop">${shared
         .map((item) => {
-          const button = item.have ? `<button class="ghost" disabled>Instalada</button>` : `<button class="ghost" data-get="${esc(item.id)}">Instalar</button>`;
+          const button = item.newer
+            ? `<button class="ghost" data-get="${esc(item.id)}">Actualizar</button>`
+            : item.have
+              ? `<button class="ghost" disabled>Instalada</button>`
+              : `<button class="ghost" data-get="${esc(item.id)}">Instalar</button>`;
           const art = item.vista ? `<img class="shop-art" src="${esc(item.vista)}" alt="" loading="lazy">` : `<span class="shop-art">${item.tipo === "tema" ? "🎨" : "✨"}</span>`;
-          return `<div class="shared shop-item">${art}<div><b>${esc(item.nombre)}</b><small class="desc">${esc(item.descripcion)}</small><small class="by">${item.tipo === "tema" ? "Tema" : "Extensión"}${item.autor ? ` · @${esc(item.autor)}` : ""}</small></div>${button}</div>`;
+          return `<div class="shared shop-item">${art}<div><b>${esc(item.nombre)}</b><small class="desc">${esc(item.descripcion)}</small><small class="by">${item.tipo === "tema" ? "Tema" : "Extensión"}${item.autor ? ` · @${esc(item.autor)}` : ""}</small>${permissions(item.tipo, item.permisos)}</div>${button}</div>`;
         })
         .join("")}</div>`;
     } catch (error) {

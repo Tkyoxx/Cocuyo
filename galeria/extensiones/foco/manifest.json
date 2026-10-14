@@ -2,7 +2,20 @@
   "nombre": "Foco",
   "descripcion": "Pestaña Pomodoro: 25 minutos de trabajo, 5 de descanso. Di «empieza el foco» y listo.",
   "autor": "Tkyoxx",
-  "version": "1.0",
+  "version": "1.1",
   "tipo": "extension",
-  "codigo": "index.js"
+  "codigo": "index.js",
+  "permisos": [
+    "agente"
+  ],
+  "traduccion": {
+    "en": {
+      "nombre": "Focus",
+      "descripcion": "A Pomodoro tab: 25 minutes of work, 5 of rest. Say “start focus” and that’s it."
+    },
+    "pt": {
+      "nombre": "Foco",
+      "descripcion": "Aba Pomodoro: 25 minutos de trabalho, 5 de descanso. Diga «empieza el foco» e pronto."
+    }
+  }
 }

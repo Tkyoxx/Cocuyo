@@ -180,6 +180,52 @@ export default function (cocuyo) {
 }
 ```
 
+### Permisos
+
+El `manifest.json` de una extensión dice qué usa, y Cocuyo se lo muestra a la gente en la galería antes de instalar y en la lista de las instaladas:
+
+```json
+{
+  "nombre": "Pulso",
+  "descripcion": "El procesador y la memoria en un widget del escritorio.",
+  "autor": "tu-usuario-de-github",
+  "version": "1.0",
+  "tipo": "extension",
+  "codigo": "index.js",
+  "permisos": ["equipo", "escritorio"]
+}
+```
+
+| Permiso | Lo que se ve en Cocuyo | Qué deja hacer |
+|---|---|---|
+| `red` | Internet | Conectarse a internet (`fetch`). Cocuyo no lo puede impedir: es tu palabra, y en la galería se revisa |
+| `portapapeles` | Lo que copias | Los comandos `clip_*` y `ocr_clip` |
+| `pantalla` | Tu pantalla | `screens_list`, `lasso_ask` y los `capture_*` |
+| `voz` | Lo que dices | El evento `oido`: el texto de lo que le dices a Cocuyo y lo que responde |
+| `equipo` | Datos del PC | `system_stats`, `net_speed`, `apps_list`, `media_now`, `volume_get`… y el evento `spotify` |
+| `datos` | Tus datos | `cocuyo.ajustes()`, la agenda, los pendientes, la memoria, el clima de tu ciudad y el evento `agenda` |
+| `scripts` | Tus scripts | `cocuyo.ejecutar()` |
+| `agente` | Herramientas del agente | `cocuyo.herramienta()` |
+| `escritorio` | El escritorio | `cocuyo.flotante()` |
+| `comandos` | Todo Cocuyo | `cocuyo.invocar()` con cualquier comando del núcleo. Vale por todos los demás |
+
+Sin pedir nada puedes usar lo visual: `decir`, `hablar`, `tarjeta`, `progreso`, `pestana`, `orden`, `css`, `isla`, `leer`/`guardar`, abrir y cerrar el menú y los eventos `orden`, `nivel`, `nota`, `tarjeta`, `progreso`, `menu`, `lugar` y `listo`. Pon `"permisos": []` para decir eso.
+
+Si tu código usa algo que no declaraste, la API se niega: la función lanza un error («usa … sin declarar el permiso …») y la isla avisa. `cocuyo.permisos` te dice qué tienes. Una extensión sin `permisos` en su manifest sigue funcionando como antes, pero sale con el aviso **No dice qué usa**.
+
+> Ojo: las extensiones corren dentro de la misma ventana que Cocuyo. Los permisos frenan los errores y dejan claro qué hace cada una, pero no son una jaula: alguien con malas intenciones podría saltárselos. Por eso la galería revisa el código antes de aceptarlo, y por eso sigue valiendo instalar solo lo que entiendas.
+
+### En otros idiomas
+
+El nombre y la descripción salen en el idioma de la persona si los traes en `traduccion`:
+
+```json
+"traduccion": {
+  "en": { "nombre": "Pulse", "descripcion": "CPU and memory in a desktop widget." },
+  "pt": { "nombre": "Pulso", "descripcion": "O processador e a memória num widget da área de trabalho." }
+}
+```
+
 ### La API
 
 | | |
@@ -191,12 +237,13 @@ export default function (cocuyo) {
 | `cocuyo.pestana({ id, titulo, ancho, alto, html, montar(el), mostrar(el), ocultar() })` | Una pestaña nueva en el menú, antes de Ajustes |
 | `cocuyo.orden(frases, fn)` | Órdenes de voz propias. Si lo que dices empieza por una de las frases, la llama y Cocuyo no hace nada más |
 | `cocuyo.al(evento, fn)` | Escuchar lo que pasa (ver abajo). Devuelve una función para dejar de escuchar |
-| `cocuyo.flotante(el)` | Pone un elemento en el escritorio, fuera de la isla, y lo hace clicable. Devuelve una función para quitarlo |
+| `cocuyo.flotante(el)` | Pone un elemento en el escritorio, fuera de la isla, y lo hace clicable. Devuelve una función para quitarlo. Pide `escritorio` |
 | `cocuyo.isla` | El elemento de la isla, para pegarle cosas encima |
 | `cocuyo.css(texto)` | Inyecta estilos |
-| `cocuyo.ejecutar(script, dato?)` | Ejecuta uno de tus scripts y devuelve su respuesta |
-| `cocuyo.invocar(comando, args?)` | Llama a cualquier comando del núcleo de Cocuyo (los que usa la propia interfaz) |
-| `cocuyo.ajustes()` | Los ajustes actuales |
+| `cocuyo.ejecutar(script, dato?)` | Ejecuta uno de tus scripts y devuelve su respuesta. Pide `scripts` |
+| `cocuyo.invocar(comando, args?)` | Llama a un comando del núcleo de Cocuyo (los que usa la propia interfaz). Pide el permiso de ese comando, o `comandos` |
+| `cocuyo.ajustes()` | Los ajustes actuales. Pide `datos` |
+| `cocuyo.permisos` | Los permisos que declaraste (`null` si tu manifest no los dice) |
 | `cocuyo.leer(clave, porDefecto)` / `cocuyo.guardar(clave, valor)` | Guardar cosas de tu extensión |
 | `cocuyo.abrirMenu(pestaña?)` / `cocuyo.cerrarMenu()` | Abrir y cerrar el menú |
 
@@ -206,7 +253,7 @@ export default function (cocuyo) {
 |---|---|---|
 | `orden` | Empiezas o terminas de hablarle | `{ chord, phase: "start" \| "end", cancelled }` |
 | `nivel` | Mientras hablas, unas 30 veces por segundo | El volumen de tu voz |
-| `oido` | Entendió lo que dijiste | `{ chord, text, reply, error }` |
+| `oido` | Entendió lo que dijiste (pide `voz`) | `{ chord, text, reply, error }` |
 | `nota` | Cocuyo muestra un aviso | El texto |
 | `tarjeta` / `progreso` | Un script mandó una tarjeta o progreso | Lo que mandó |
 | `menu` | Se abre o se cierra el menú | `true` / `false` |
@@ -298,7 +345,7 @@ export default function (cocuyo) {
 }
 ```
 
-`parametros` es un JSON Schema; `hacer` puede ser `async` y lo que devuelva es lo que lee el agente. Así una extensión se vuelve parte del cerebro de Cocuyo: [`foco`](../galeria/extensiones/foco/index.js) y [`reloj-mundial`](../galeria/extensiones/reloj-mundial/index.js) lo hacen.
+`parametros` es un JSON Schema; `hacer` puede ser `async` y lo que devuelva es lo que lee el agente. Necesita `"permisos": ["agente"]` en el manifest. Así una extensión se vuelve parte del cerebro de Cocuyo: [`foco`](../galeria/extensiones/foco/index.js) y [`reloj-mundial`](../galeria/extensiones/reloj-mundial/index.js) lo hacen.
 
 ### Armar tu propio Jarvis
 
@@ -317,6 +364,6 @@ Por ejemplo, «Encárgate de leer el error que tengo en pantalla, buscarlo en Gi
 ## Publicar
 
 - **Scripts:** desde la isla, **Ajustes → IA → Galería → Subir el mío**. Se abre GitHub con todo escrito; sale a tu nombre cuando se aprueba.
-- **Temas y extensiones:** un pull request que agregue tu carpeta en [`galeria/extensiones`](../galeria/extensiones) y una entrada en su `indice.json` (`id`, `nombre`, `descripcion`, `autor`, `tipo`, `archivos` y, si quieres, una `vista` en `.webp` de 16:9). Los nombres de archivo solo pueden llevar letras, números, `-` y `_`.
+- **Temas y extensiones:** un pull request que agregue tu carpeta en [`galeria/extensiones`](../galeria/extensiones) y una entrada en su `indice.json` (`id`, `nombre`, `descripcion`, `autor`, `tipo`, `version`, `permisos`, `archivos` y, si quieres, `traduccion` y una `vista` en `.webp` de 16:9). Los `permisos` del índice tienen que ser los mismos del manifest: es lo que la gente ve antes de instalar, y Cocuyo no instala una extensión que pida más de lo que mostró. Si subes la `version`, a quien ya la tiene le sale **Actualizar**. Los nombres de archivo solo pueden llevar letras, números, `-` y `_`.
 
 Lo que no entra: nada que borre cosas, mande datos de nadie a otro sitio o descargue y ejecute otra cosa sin decirlo clarísimo.

@@ -2,7 +2,17 @@
   "nombre": "Medianoche",
   "descripcion": "Isla azul noche y acento lila. Para los que programan a las 3 a. m.",
   "autor": "Tkyoxx",
-  "version": "1.0",
+  "version": "1.1",
   "tipo": "tema",
-  "estilo": "estilo.css"
+  "estilo": "estilo.css",
+  "traduccion": {
+    "en": {
+      "nombre": "Midnight",
+      "descripcion": "Night-blue island with a lilac accent. For those who code at 3 a.m."
+    },
+    "pt": {
+      "nombre": "Meia-noite",
+      "descripcion": "Ilha azul-noite com destaque lilás. Para quem programa às 3 da manhã."
+    }
+  }
 }

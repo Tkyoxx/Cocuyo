@@ -1,0 +1,23 @@
+name: Extensiones
+
+# cada pull request que toque la galeria de extensiones pasa por aqui:
+# que digan sus permisos, que el indice diga lo mismo y que el codigo no use mas de lo declarado
+on:
+  pull_request:
+    paths:
+      - "galeria/extensiones/**"
+  push:
+    branches: [main]
+    paths:
+      - "galeria/extensiones/**"
+
+permissions:
+  contents: read
+
+jobs:
+  revisar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Revisar permisos
+        run: python3 .github/revisar-extensiones.py

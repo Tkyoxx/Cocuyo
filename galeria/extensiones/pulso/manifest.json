@@ -2,7 +2,21 @@
   "nombre": "Pulso",
   "descripcion": "Un widget en el escritorio con el procesador y la memoria en vivo. Un clic y abre Equipo.",
   "autor": "Tkyoxx",
-  "version": "1.0",
+  "version": "1.1",
   "tipo": "extension",
-  "codigo": "index.js"
+  "codigo": "index.js",
+  "permisos": [
+    "equipo",
+    "escritorio"
+  ],
+  "traduccion": {
+    "en": {
+      "nombre": "Pulse",
+      "descripcion": "A desktop widget with live CPU and memory. One click opens System."
+    },
+    "pt": {
+      "nombre": "Pulso",
+      "descripcion": "Um widget na área de trabalho com o processador e a memória ao vivo. Um clique abre Sistema."
+    }
+  }
 }

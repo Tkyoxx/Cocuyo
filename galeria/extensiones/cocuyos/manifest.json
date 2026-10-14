@@ -2,7 +2,18 @@
   "nombre": "Cocuyos",
   "descripcion": "Mientras le hablas, unas luciérnagas revolotean alrededor de la isla al ritmo de tu voz.",
   "autor": "Tkyoxx",
-  "version": "1.0",
+  "version": "1.1",
   "tipo": "extension",
-  "codigo": "index.js"
+  "codigo": "index.js",
+  "permisos": [],
+  "traduccion": {
+    "en": {
+      "nombre": "Fireflies",
+      "descripcion": "While you talk to it, fireflies flutter around the island to the beat of your voice."
+    },
+    "pt": {
+      "nombre": "Vaga-lumes",
+      "descripcion": "Enquanto você fala, vaga-lumes voam ao redor da ilha no ritmo da sua voz."
+    }
+  }
 }
