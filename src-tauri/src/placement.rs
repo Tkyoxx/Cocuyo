@@ -232,6 +232,11 @@ pub fn exclusive() -> bool {
     unsafe { SHQueryUserNotificationState() }.is_ok_and(|state| state == QUNS_RUNNING_D3D_FULL_SCREEN)
 }
 
+// con la barra escondida, una ventana maximizada tambien ocupa toda la pantalla y no por eso es un juego
+fn covers_screen(r: &RECT, width: i32, height: i32, maximized: bool) -> bool {
+    !maximized && r.left <= 0 && r.top <= 0 && r.right >= width && r.bottom >= height
+}
+
 fn decide(foreground: HWND, dock: Dock, hide_on_fullscreen: bool) -> Place {
     unsafe {
         let (width, height) = (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
@@ -240,10 +245,7 @@ fn decide(foreground: HWND, dock: Dock, hide_on_fullscreen: bool) -> Place {
         let fullscreen = !foreground.is_invalid()
             && !is_shell(&class_of(foreground))
             && GetWindowRect(foreground, &mut r).is_ok()
-            && r.left <= 0
-            && r.top <= 0
-            && r.right >= width
-            && r.bottom >= height;
+            && covers_screen(&r, width, height, IsZoomed(foreground).as_bool());
         FULLSCREEN.store(fullscreen, Ordering::Relaxed);
         if hide_on_fullscreen && fullscreen {
             return Place::Hidden;
@@ -255,5 +257,20 @@ fn decide(foreground: HWND, dock: Dock, hide_on_fullscreen: bool) -> Place {
             Dock::Auto if something_under_island(width / 2) => Place::Right,
             Dock::Auto => Place::Top,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_maximized_window_is_not_fullscreen_even_with_the_taskbar_hidden() {
+        let maximized = RECT { left: -8, top: -8, right: 1928, bottom: 1088 };
+        assert!(!covers_screen(&maximized, 1920, 1080, true));
+        let game = RECT { left: 0, top: 0, right: 1920, bottom: 1080 };
+        assert!(covers_screen(&game, 1920, 1080, false));
+        let window = RECT { left: 100, top: 100, right: 900, bottom: 700 };
+        assert!(!covers_screen(&window, 1920, 1080, false));
     }
 }
