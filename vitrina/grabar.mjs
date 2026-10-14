@@ -97,6 +97,7 @@ async function speak(emit, seconds) {
 }
 
 const TOP = [0, 0, 1280, 720];
+const MENU = [180, 0, 920, 460];
 
 const scenes = {
   async portada({ page, emit }) {
@@ -193,7 +194,7 @@ const scenes = {
     await page.click('button[data-sec="ia"]');
     await wait(700);
     await page.mouse.move(640, 300, { steps: 10 });
-    await record(page, "galeria", TOP, async () => {
+    await record(page, "galeria", MENU, async () => {
       await wait(600);
       await page.locator("#s-gallery").scrollIntoViewIfNeeded();
       await wait(300);
@@ -221,7 +222,7 @@ const scenes = {
     await emit("demo", "fondos");
     await wait(1600);
     await page.mouse.move(640, 200, { steps: 10 });
-    await record(page, "fondos", TOP, async () => {
+    await record(page, "fondos", MENU, async () => {
       await wait(600);
       for (const step of [1, 2, 3]) {
         const card = await page.locator(`#wall [data-wall="${step}"]`).boundingBox();
