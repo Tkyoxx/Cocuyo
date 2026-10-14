@@ -462,6 +462,23 @@ fn agent(app: &AppHandle, task: &str) -> Result<String, String> {
     Ok(answer)
 }
 
+fn quick(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
+    let config = crate::settings::load(app);
+    if !config.ai_agent || !config.agent_hands {
+        return None;
+    }
+    let (chat, who, text) = crate::agent::quick_message(spoken)?;
+    Some(match crate::agent::send_message(app, &chat, &who, &text) {
+        Err(why) if crate::agent::wanted(app) && !crate::pc::let_go() => {
+            if cfg!(debug_assertions) {
+                eprintln!("[rápido] no salió ({why}); lo intenta el agente");
+            }
+            agent(app, spoken)
+        }
+        done => done,
+    })
+}
+
 fn task_for(app: &AppHandle, spoken: &str) -> Option<String> {
     if !crate::agent::wanted(app) {
         return None;
@@ -471,6 +488,9 @@ fn task_for(app: &AppHandle, spoken: &str) -> Option<String> {
 
 pub fn run_order(app: &AppHandle, spoken: &str) -> Result<String, String> {
     if let Some(done) = crate::scripts::answered(app, spoken) {
+        return done;
+    }
+    if let Some(done) = quick(app, spoken) {
         return done;
     }
     if let Some(task) = task_for(app, spoken) {
@@ -835,7 +855,7 @@ pub fn finish(app: &AppHandle, chord: Chord, cancelled: bool) {
                 inject::paste(&text).map(|()| String::new())
             } else {
                 let outcome = match &order {
-                    Some(order) => match crate::scripts::answered(app, &text).or_else(|| crate::extensions::spoken(app, &text)) {
+                    Some(order) => match crate::scripts::answered(app, &text).or_else(|| quick(app, &text)).or_else(|| crate::extensions::spoken(app, &text)) {
                         Some(done) => done,
                         None if task_for(app, &text).is_some() => agent(app, &task_for(app, &text).unwrap_or_else(|| text.clone())),
                         None if crate::ai::asking() => follow(app, &text, order),

@@ -504,7 +504,7 @@ pub fn chat_tools(app: &AppHandle, messages: &[Value], tools: &[Value]) -> Resul
             body["tool_choice"] = json!("auto");
         }
         if brisk {
-            body["reasoning_effort"] = json!("low");
+            body["reasoning_effort"] = json!("minimal");
         }
         let (mut status, mut reply) = send(&url, &headers, Some(&body))?;
         count(app, model);

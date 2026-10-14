@@ -439,7 +439,7 @@ pub fn open(app: &AppHandle, name: &str) -> Result<String, String> {
             std::thread::sleep(Duration::from_millis(400));
             if let Some(hwnd) = window_called(name).or_else(|| window_called(&found.name)) {
                 bring(hwnd);
-                std::thread::sleep(Duration::from_millis(900));
+                std::thread::sleep(Duration::from_millis(500));
                 return look(false).map(|(text, _)| text);
             }
             let now = GetForegroundWindow();
@@ -686,9 +686,104 @@ pub fn act(actions: &[Value]) -> Result<String, String> {
                 break;
             }
         }
-        std::thread::sleep(Duration::from_millis(220));
+        std::thread::sleep(Duration::from_millis(120));
     }
     Ok(log.join("\n"))
+}
+
+pub enum Sent {
+    Done,
+    Declined,
+}
+
+fn things_now() -> Vec<Thing> {
+    SEEN.lock().unwrap().as_ref().map(|seen| seen.things.clone()).unwrap_or_default()
+}
+
+fn has_any(name: &str, words: &[&str]) -> bool {
+    let name = crate::intent::normalize(name);
+    words.iter().any(|word| name.contains(word))
+}
+
+fn names(name: &str, who: &str) -> bool {
+    let name = format!("{} ", crate::intent::normalize(name));
+    let who = crate::intent::normalize(who);
+    !who.is_empty() && (name.starts_with(&format!("{who} ")) || name.contains(&format!(" {who} ")))
+}
+
+fn stop_if_touched() -> Result<(), String> {
+    if moved_by_hand() {
+        return Err("Moviste el mouse: te devolví el control.".into());
+    }
+    Ok(())
+}
+
+fn tap_on(thing: &Thing) {
+    let (x, y) = center(&thing.rect);
+    unsafe { click(x, y, false, false) };
+}
+
+pub fn message(app: &AppHandle, chat: &str, who: &str, text: &str, ask: &dyn Fn(&str) -> bool) -> Result<Sent, String> {
+    let wait = |ms: u64| std::thread::sleep(Duration::from_millis(ms));
+    open(app, chat)?;
+    if crate::intent::normalize(chat).contains("discord") {
+        press("ctrl+k")?;
+        wait(450);
+        crate::inject::paste(who)?;
+        wait(1000);
+        stop_if_touched()?;
+        press("enter")?;
+    } else {
+        let search = things_now()
+            .into_iter()
+            .filter(|thing| thing.kind == "campo" && has_any(&thing.name, &["buscar", "search", "pesquis"]))
+            .min_by_key(|thing| (thing.rect.top, thing.rect.left))
+            .ok_or("no vi el buscador de chats")?;
+        tap_on(&search);
+        wait(150);
+        press("ctrl+a")?;
+        crate::inject::paste(who)?;
+        wait(1100);
+        stop_if_touched()?;
+        refresh()?;
+        let chat_row = things_now()
+            .into_iter()
+            .filter(|thing| matches!(thing.kind, "elemento" | "botón" | "enlace") && thing.rect.top >= search.rect.bottom - 2 && names(&thing.name, who))
+            .min_by_key(|thing| (thing.rect.top, thing.rect.left))
+            .ok_or_else(|| format!("no encontré a {who} en {chat}"))?;
+        tap_on(&chat_row);
+    }
+    wait(800);
+    stop_if_touched()?;
+    refresh()?;
+    let field = things_now()
+        .into_iter()
+        .filter(|thing| thing.kind == "campo" && !thing.password && !has_any(&thing.name, &["buscar", "search", "pesquis"]))
+        .max_by_key(|thing| (thing.focused || has_any(&thing.name, &["mensaje", "message", "mensagem", "escrib"]), thing.rect.bottom))
+        .ok_or("no vi dónde se escribe el mensaje")?;
+    if !shows(who) {
+        return Err(format!("el chat que se abrió no parece de {who} ({})", where_now()));
+    }
+    tap_on(&field);
+    wait(120);
+    crate::inject::paste(text)?;
+    wait(250);
+    refresh()?;
+    stop_if_touched()?;
+    if !ask(&format!("Enviar «{text}» a {who} por {chat}\n{}", where_now())) {
+        let _ = press("ctrl+a");
+        let _ = press("borrar");
+        return Ok(Sent::Declined);
+    }
+    if crate::intent::normalize(&title_now()).is_empty() {
+        return Err("la ventana se cerró".into());
+    }
+    press("enter")?;
+    Ok(Sent::Done)
+}
+
+fn title_now() -> String {
+    seen_window().map(|hwnd| unsafe { title_of(hwnd) }).unwrap_or_default()
 }
 
 pub fn let_go() -> bool {

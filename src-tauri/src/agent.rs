@@ -142,6 +142,7 @@ enum Doer {
     Screen,
     Remember,
     Window,
+    Message,
     Look,
     Hands,
     Extension(String),
@@ -202,6 +203,20 @@ fn toolbox(app: &AppHandle) -> (Vec<Value>, HashMap<String, Doer>) {
             object(json!({ "app": { "type": "string", "description": "WhatsApp, Discord, Bloc de notas, Chrome…" } }), &["app"]),
         ));
         doers.insert("cocuyo_ventana".to_string(), Doer::Window);
+        tools.push(function(
+            "cocuyo_mensaje",
+            "La vía rápida para mandar un mensaje por WhatsApp, Discord o Telegram: abre la app, busca el chat, comprueba que es el correcto, \
+             escribe y pide permiso antes de enviar. Úsala siempre que sea mandar un mensaje a alguien; si falla, hazlo paso a paso.",
+            object(
+                json!({
+                    "app": { "type": "string", "enum": ["WhatsApp", "Discord", "Telegram"] },
+                    "para": { "type": "string", "description": "El nombre del contacto o chat, como lo tendría guardado" },
+                    "texto": { "type": "string", "description": "El mensaje tal cual se envía, en primera persona" }
+                }),
+                &["app", "para", "texto"],
+            ),
+        ));
+        doers.insert("cocuyo_mensaje".to_string(), Doer::Message);
         tools.push(function(
             "cocuyo_mirar",
             "Mira la ventana de adelante: sus elementos numerados. Con imagen=true también ves una captura; pídela solo si los elementos no bastan, es más lenta.",
@@ -293,7 +308,7 @@ fn hands(app: &AppHandle, args: &Value) -> Result<Done, String> {
                 return Ok(Done { text: format!("{log}No llegué a la última acción.{VIEW}{view}"), image });
             }
         }
-        std::thread::sleep(Duration::from_millis(500));
+        std::thread::sleep(Duration::from_millis(350));
         crate::pc::refresh()?;
         if !crate::pc::shows(&who) {
             let (view, image) = crate::pc::look(false)?;
@@ -307,7 +322,7 @@ fn hands(app: &AppHandle, args: &Value) -> Result<Done, String> {
         actions = vec![last];
     }
     log.push_str(&crate::pc::act(&actions)?);
-    std::thread::sleep(Duration::from_millis(700));
+    std::thread::sleep(Duration::from_millis(450));
     let (view, image) = crate::pc::look(args.get("ver").and_then(Value::as_bool).unwrap_or(false))?;
     Ok(Done { text: format!("{log}{VIEW}{view}"), image })
 }
@@ -332,6 +347,7 @@ fn act(app: &AppHandle, doer: &Doer, args: &Value) -> Result<Done, String> {
         Doer::Screen => crate::capture::screen_text().map(Done::from),
         Doer::Remember => crate::ai::memorize(app, &text(args, "dato")).map(|()| String::from("Guardado.").into()),
         Doer::Window => crate::pc::open(app, &text(args, "app")).map(Done::from),
+        Doer::Message => send_message(app, &text(args, "app"), &text(args, "para"), &text(args, "texto")).map(Done::from),
         Doer::Look => crate::pc::look(args.get("imagen").and_then(Value::as_bool).unwrap_or(false)).map(|(text, image)| Done { text, image }),
         Doer::Hands => hands(app, args),
         Doer::Extension(name) => ask_extension(app, name, args).map(Done::from),
@@ -352,6 +368,7 @@ fn label(name: &str, args: &Value) -> String {
         "cocuyo_pantalla" => "Leyendo la pantalla".into(),
         "cocuyo_recordar" => "Guardando en la memoria".into(),
         "cocuyo_ventana" => format!("Abriendo {}", text(args, "app")),
+        "cocuyo_mensaje" => format!("Escribiéndole a {}", text(args, "para")),
         "cocuyo_mirar" => "Mirando la ventana".into(),
         "cocuyo_hacer" => {
             let actions = args.get("acciones").and_then(Value::as_array).map_or(0, Vec::len);
@@ -378,7 +395,98 @@ fn forget_old_views(messages: &mut [Value]) {
     }
 }
 
-const QUICK: [&str; 2] = ["cocuyo_orden", "cocuyo_script"];
+const QUICK: [&str; 3] = ["cocuyo_orden", "cocuyo_script", "cocuyo_mensaje"];
+
+pub fn quick_message(spoken: &str) -> Option<(String, String, String)> {
+    let all: Vec<&str> = spoken.split_whitespace().collect();
+    let flat = |word: &str| crate::intent::normalize(word).trim().to_string();
+    let at = all.iter().position(|word| matches!(flat(word).as_str(), "whatsapp" | "wasap" | "guasap" | "whatsap" | "discord" | "telegram"))?;
+    let chat = match flat(all[at]).as_str() {
+        "discord" => "Discord",
+        "telegram" => "Telegram",
+        _ => "WhatsApp",
+    };
+    let mut from = at;
+    while from > 0 && matches!(flat(all[from - 1]).as_str(), "por" | "en" | "al" | "via" | "desde" | "el" | "mi") {
+        from -= 1;
+    }
+    let words: Vec<&str> = all[..from].iter().chain(all[at + 1..].iter()).copied().collect();
+    let plain: Vec<String> = words.iter().map(|word| flat(word)).collect();
+    let word = |i: usize| plain.get(i).map(String::as_str).unwrap_or("");
+    let mut i = 0;
+    while matches!(word(i), "oye" | "cocuyo" | "porfa" | "hey" | "ey" | "") && i < plain.len() {
+        i += 1;
+    }
+    if !matches!(word(i), "mandale" | "enviale" | "escribele" | "dile" | "avisale" | "manda" | "envia" | "escribe" | "mandar" | "enviar" | "escribir" | "mandales" | "dime") || word(i) == "dime" {
+        return None;
+    }
+    i += 1;
+    if word(i) == "un" && word(i + 1) == "mensaje" {
+        i += 2;
+    } else if word(i) == "mensaje" {
+        i += 1;
+    }
+    if !matches!(word(i), "a" | "para") {
+        return None;
+    }
+    i += 1;
+    if matches!(word(i), "mi" | "mis") {
+        i += 1;
+    }
+    let start = i;
+    while i < plain.len() && !matches!(word(i), "que" | "diciendo" | "diciendole") {
+        i += 1;
+    }
+    if i == start || i - start > 4 || i >= plain.len() {
+        return None;
+    }
+    let who = words[start..i].join(" ").trim_matches(|c: char| !c.is_alphanumeric()).to_string();
+    if matches!(word(i), "diciendo" | "diciendole") {
+        i += 1;
+    }
+    if word(i) == "que" {
+        i += 1;
+        if word(i) == "diga" {
+            i += 1;
+        }
+    }
+    let mut said: Vec<String> = words[i..].iter().map(|word| word.to_string()).collect();
+    if said.len() > 1 && matches!(flat(&said[0]).as_str(), "la" | "lo" | "le") {
+        said[0] = "te".into();
+    }
+    let mut text = said.join(" ").trim().trim_end_matches(['.', ',']).to_string();
+    if text.is_empty() || who.is_empty() {
+        return None;
+    }
+    if let Some(first) = text.chars().next() {
+        text = first.to_uppercase().collect::<String>() + &text[first.len_utf8()..];
+    }
+    Some((chat.to_string(), who, text))
+}
+
+fn speaks_of_them(text: &str) -> bool {
+    let clean = format!(" {} ", crate::intent::normalize(text));
+    [" ella ", " el ", " su ", " sus ", " usted ", " si puede ", " si quiere ", " que si "].iter().any(|cue| clean.contains(cue))
+}
+
+pub fn send_message(app: &AppHandle, chat: &str, who: &str, text: &str) -> Result<String, String> {
+    let mut text = text.to_string();
+    if speaks_of_them(&text) && crate::ai::mode(app).is_some() {
+        let ask = format!("Conviértelo en el mensaje que la persona le escribe directamente a {who}: en segunda persona (tú), corto y natural, sin comillas.");
+        if let Ok(direct) = crate::ai::edit(app, &ask, &text) {
+            text = direct.trim().trim_matches(['"', '«', '»']).to_string();
+        }
+    }
+    progress(app, &format!("Escribiéndole a {who}"), false);
+    crate::pc::begin();
+    let confirm = crate::settings::load(app).agent_confirm;
+    let sent = crate::pc::message(app, chat, who, &text, &|what| !confirm || permission(app, what));
+    progress(app, "Listo", true);
+    match sent? {
+        crate::pc::Sent::Done => Ok(format!("Listo, le mandé a {who}: «{text}».")),
+        crate::pc::Sent::Declined => Ok("Quedó sin enviar.".into()),
+    }
+}
 
 fn prompt(app: &AppHandle, said: &str, with_hands: bool) -> String {
     let now = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
@@ -522,6 +630,20 @@ mod tests {
         for light in ["abre whatsapp", "pon bad bunny", "sube el volumen", "qué clima hace", "recuérdame en 10 minutos sacar la pizza", "anota comprar pan", "abre discord"] {
             assert!(!needs_steps(light), "{light}");
         }
+    }
+
+    #[test]
+    fn messages_are_understood_without_asking_the_model() {
+        let got = |said: &str| quick_message(said).map(|(app, who, text)| format!("{app}|{who}|{text}"));
+        assert_eq!(got("mándale a Angela por WhatsApp que llego tarde").as_deref(), Some("WhatsApp|Angela|Llego tarde"));
+        assert_eq!(got("por WhatsApp envíale un mensaje a Juan Pérez diciéndole que ya voy").as_deref(), Some("WhatsApp|Juan Pérez|Ya voy"));
+        assert_eq!(got("dile a Angela por wasap que la quiero mucho").as_deref(), Some("WhatsApp|Angela|Te quiero mucho"));
+        assert_eq!(got("escríbele a mi mamá en Discord que ya comí").as_deref(), Some("Discord|mamá|Ya comí"));
+        assert_eq!(got("Oye, manda un mensaje a Pedro por Telegram que diga hola, ¿cómo vas?").as_deref(), Some("Telegram|Pedro|Hola, ¿cómo vas?"));
+        assert_eq!(got("abre WhatsApp"), None);
+        assert_eq!(got("mándale a Angela que llego tarde"), None);
+        assert_eq!(got("dime qué me escribió Angela por WhatsApp"), None);
+        assert!(speaks_of_them("que si ella puede venir") && !speaks_of_them("Llego tarde"));
     }
 
     #[test]
