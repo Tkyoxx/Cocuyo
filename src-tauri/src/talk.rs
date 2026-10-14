@@ -263,6 +263,7 @@ static LIVE: Mutex<Option<Arc<Live>>> = Mutex::new(None);
 static MODEL: Mutex<String> = Mutex::new(String::new());
 static THINK: Mutex<String> = Mutex::new(String::new());
 
+#[cfg(debug_assertions)]
 pub fn try_model(model: &str, think: &str) {
     *MODEL.lock().unwrap() = model.to_string();
     *THINK.lock().unwrap() = think.to_string();
@@ -581,6 +582,7 @@ pub fn finish(cancelled: bool) -> Ended {
     }
 }
 
+#[cfg(debug_assertions)]
 pub fn probe_audio(app: &AppHandle, wav: &std::path::Path) -> Result<(String, String), String> {
     let bytes = std::fs::read(wav).map_err(|e| e.to_string())?;
     let rate = u32::from_le_bytes([bytes[24], bytes[25], bytes[26], bytes[27]]);
@@ -605,6 +607,7 @@ pub fn probe_audio(app: &AppHandle, wav: &std::path::Path) -> Result<(String, St
     heard
 }
 
+#[cfg(debug_assertions)]
 pub fn probe(app: &AppHandle, text: &str) -> Result<(String, String), String> {
     let live = connect(app)?;
     wake_speaker();

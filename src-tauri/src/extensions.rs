@@ -66,8 +66,18 @@ pub fn dir(app: &AppHandle) -> Option<PathBuf> {
 }
 
 pub fn allow(app: &AppHandle) {
-    if let Some(dir) = dir(app) {
-        let _ = app.asset_protocol_scope().allow_directory(&dir, true);
+    let Some(dir) = dir(app) else { return };
+    let scope = app.asset_protocol_scope();
+    let mut folders = vec![(dir, 0)];
+    while let Some((folder, depth)) = folders.pop() {
+        for entry in std::fs::read_dir(&folder).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() && depth < 3 {
+                folders.push((path, depth + 1));
+            } else if path.is_file() {
+                let _ = scope.allow_file(&path);
+            }
+        }
     }
 }
 
@@ -126,6 +136,7 @@ pub fn list(app: &AppHandle) -> Vec<Extension> {
 
 #[tauri::command]
 pub fn extensions_list(app: AppHandle) -> Vec<Extension> {
+    allow(&app);
     list(&app)
 }
 
