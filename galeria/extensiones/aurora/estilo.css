@@ -1,4 +1,4 @@
-/* aurora: la isla respira entre verde agua y violeta */
+/* aurora: la isla respira entre verde agua y violeta. el fondo se queda liso y la luz va en tiras finas, asi la isla no se repinta entera en cada cuadro */
 :root {
   --accent: #5ef2c2;
   --accent-ink: #032019;
@@ -6,70 +6,82 @@
 }
 #island {
   filter: none;
-  --aurora-va: to top;
-  --aurora-cruza: 90deg;
-  --aurora-forma: 0 0 var(--r) var(--r);
-}
-#island[data-dock="right"] {
-  --aurora-va: to right;
-  --aurora-cruza: 180deg;
-  --aurora-forma: var(--r) 0 0 var(--r);
-}
-#island .shell {
-  box-shadow: inset 0 -12px 18px -14px rgb(94 242 194 / 0.45);
 }
 #island .shell::before,
 #island .shell::after {
   content: "";
   position: absolute;
-  inset: 0;
-  padding: 1.5px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: min(100%, calc(var(--r) * 2 + 10px));
   border-radius: inherit;
   pointer-events: none;
-  mask:
-    linear-gradient(var(--aurora-va), #000 15%, rgb(0 0 0 / 0.45) 50%, transparent 92%),
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  mask-composite: intersect, exclude;
-}
-#island .shell::before {
-  background: linear-gradient(var(--aurora-cruza), #5ec8f2, #5ef2c2 30%, #8ff7a7 50%, #5ef2c2 70%, #5ec8f2);
-}
-#island .shell::after,
-#island::after {
-  opacity: 0;
-}
-#island:is([data-face="peek"], [data-face="voice"]) .shell::after,
-#island:is([data-face="peek"], [data-face="voice"])::after {
-  animation: aurora-respira 7s ease-in-out infinite;
+  box-shadow:
+    inset 0 -1.5px 0 0 #6ff5bd,
+    inset 1.5px 0 0 0 #5ec8f2,
+    inset -1.5px 0 0 0 #5ec8f2;
+  -webkit-mask-image: linear-gradient(to top, #000 45%, transparent);
+  mask-image: linear-gradient(to top, #000 45%, transparent);
 }
 #island .shell::after {
-  background: linear-gradient(var(--aurora-cruza), #c08bff, #8b7bff 30%, #5ef2c2 50%, #8b7bff 70%, #c08bff);
+  box-shadow:
+    inset 0 -1.5px 0 0 #a58bff,
+    inset 1.5px 0 0 0 #c08bff,
+    inset -1.5px 0 0 0 #c08bff;
+  opacity: 0;
+}
+#island[data-dock="right"] .shell::before,
+#island[data-dock="right"] .shell::after {
+  top: 0;
+  right: auto;
+  width: min(100%, calc(var(--r) * 2 + 10px));
+  height: auto;
+  box-shadow:
+    inset 1.5px 0 0 0 #6ff5bd,
+    inset 0 1.5px 0 0 #5ec8f2,
+    inset 0 -1.5px 0 0 #5ec8f2;
+  -webkit-mask-image: linear-gradient(to right, #000 45%, transparent);
+  mask-image: linear-gradient(to right, #000 45%, transparent);
+}
+#island[data-dock="right"] .shell::after {
+  box-shadow:
+    inset 1.5px 0 0 0 #a58bff,
+    inset 0 1.5px 0 0 #c08bff,
+    inset 0 -1.5px 0 0 #c08bff;
 }
 #island::before,
 #island::after {
   content: "";
   position: absolute;
-  inset: 0;
+  left: 6%;
+  right: 6%;
+  bottom: -12px;
+  height: 24px;
   z-index: -1;
-  border-radius: var(--aurora-forma);
   pointer-events: none;
-  filter: blur(5px);
-  transition: visibility 0.2s;
-}
-#island::before {
-  background: linear-gradient(var(--aurora-va), rgb(94 242 194 / 0.7), rgb(94 242 194 / 0.22) 45%, transparent 85%);
+  background: radial-gradient(closest-side, rgb(94 242 194 / 0.4), transparent);
 }
 #island::after {
-  background: linear-gradient(var(--aurora-va), rgb(139 123 255 / 0.7), rgb(139 123 255 / 0.22) 45%, transparent 85%);
+  background: radial-gradient(closest-side, rgb(139 123 255 / 0.45), transparent);
+  opacity: 0;
 }
-#island[data-face="menu"]::before,
-#island[data-face="menu"]::after,
-#island[data-face="guide"]::before,
-#island[data-face="guide"]::after,
-#island[data-face="install"]::before,
-#island[data-face="install"]::after {
-  visibility: hidden;
+#island[data-dock="right"]::before,
+#island[data-dock="right"]::after {
+  top: 6%;
+  bottom: 6%;
+  left: -12px;
+  right: auto;
+  width: 24px;
+  height: auto;
+}
+#island:is([data-face="peek"], [data-face="voice"]) .shell::after,
+#island:is([data-face="peek"], [data-face="voice"])::after {
+  animation: aurora-respira 7s ease-in-out infinite;
+}
+#island:is([data-face="menu"], [data-face="guide"], [data-face="install"])::before,
+#island:is([data-face="menu"], [data-face="guide"], [data-face="install"])::after {
+  display: none;
 }
 @keyframes aurora-respira {
   50% {
@@ -77,11 +89,9 @@
   }
 }
 :root[data-lite] #island::before,
-:root[data-lite] #island::after {
-  display: none;
-}
+:root[data-lite] #island::after,
 :root[data-lite] #island .shell::after {
-  animation: none;
+  display: none;
 }
 #caption[data-who="app"] .said {
   border-color: rgb(94 242 194 / 0.35);
