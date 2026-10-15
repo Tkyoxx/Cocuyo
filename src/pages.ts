@@ -1263,7 +1263,8 @@ class SettingsPage implements Page {
         ) +
         section(
           "juegos",
-          `<div class="card">
+          `<div class="scol">
+           <div class="card">
              <label class="srow"><div><b>Avisar con sonido</b><small>Un tono al empezar a escucharte y otro al terminar, cuando hay algo a pantalla completa.</small></div><input type="checkbox" class="switch" id="s-cue"></label>
              <label class="srow"><div><b>Responder en voz alta</b><small>Dice lo que hizo con la voz de Windows, porque ahí no se ve la isla.</small></div><input type="checkbox" class="switch" id="s-speak"></label>
            </div>
@@ -1272,10 +1273,18 @@ class SettingsPage implements Page {
              <div class="srow stack"><div class="segmented" id="s-pad-combo"><span class="thumb"></span><button data-value="0">L3 + R3</button><button data-value="1">Select + Start</button><button data-value="2">Botón PS</button><button data-value="3">Panel táctil</button></div><button class="ghost" id="s-pad-rec">Otros botones</button></div>
              <label class="srow"><div><b>Dibujar el aviso dentro del juego</b><small>Carga una pequeña librería en el juego para pintar ahí la píldora y los subtítulos, igual que fuera (Direct3D 11, 64 bits).</small><small class="warn">No lo actives en juegos con anti-trampas: pueden cerrarse o sancionar tu cuenta.</small></div><input type="checkbox" class="switch" id="s-layer"></label>
            </div>
+           </div>
+           <div class="scol">
            <div class="card">
-             <div class="srow"><div><b>Discord</b><small id="s-dc-state">Silénciate, ensordécete y entra o sal de canales de voz hablándole a Cocuyo, también con el juego abierto.</small></div><button class="ghost" id="s-dc-go">Conectar</button></div>
-             <div class="srow slim"><div><small>Usa tu propia app de Discord, gratis: crea una con «New Application», en OAuth2 copia el Client ID y el Client Secret y agrega el redirect http://127.0.0.1. Al conectar, Discord te pide permiso una vez.</small></div><button class="ghost" id="s-dc-portal">Abrir el portal</button></div>
-             <div class="srow slim pair"><input id="s-dc-id" placeholder="Client ID" spellcheck="false" autocomplete="off" /><input id="s-dc-secret" type="password" placeholder="Client Secret" spellcheck="false" autocomplete="off" /></div>
+             <div class="srow"><div><b>Discord por voz</b><small id="s-dc-state">Silénciate, ensordécete y entra o sal de canales de voz hablándole a Cocuyo, también con el juego abierto.</small></div><button class="ghost" id="s-dc-go" hidden>Desconectar</button></div>
+             <div class="dc-steps" id="s-dc-steps">
+               <div class="srow slim"><div><b>1. Crea tu app de Discord</b><small>Es gratis y solo la usas tú. En el portal pulsa «New Application», ponle de nombre Cocuyo, marca la casilla y dale «Create».</small></div><button class="ghost" id="s-dc-portal">Abrir el portal</button></div>
+               <div class="srow slim"><div><b>2. Agrega la dirección de vuelta</b><small>En el menú de la izquierda entra a «OAuth2». En «Redirects» pulsa «Add Redirect», pega la dirección y dale «Save Changes» abajo.</small></div><button class="ghost" id="s-dc-copy">Copiar la dirección</button></div>
+               <div class="srow stack"><div><b>3. Copia el Client ID</b><small>En la misma página de «OAuth2», arriba en «Client Information». Pulsa «Copy» y pégalo aquí.</small></div><input id="s-dc-id" placeholder="Client ID: solo números" spellcheck="false" autocomplete="off" /></div>
+               <div class="srow stack"><div><b>4. Copia el Client Secret</b><small>Justo debajo del Client ID: pulsa «Reset Secret», confirma con «Yes, do it!» y copia el que sale (Discord lo muestra una sola vez).</small></div><input id="s-dc-secret" type="password" placeholder="Client Secret" spellcheck="false" autocomplete="off" /></div>
+               <div class="srow slim"><div><b>5. Conecta</b><small>Con Discord abierto, pulsa Conectar. Discord te muestra una ventana pidiendo permiso para Cocuyo: dale «Autorizar». La llave queda cifrada en tu PC.</small></div><button class="ghost pick" id="s-dc-connect">Conectar</button></div>
+             </div>
+           </div>
            </div>`,
         ) +
         section(
@@ -1652,23 +1661,34 @@ class SettingsPage implements Page {
     for (const input of [dcId, dcSecret]) input.addEventListener("pointerdown", () => host.focus(input));
     const paintDiscord = async () => {
       const state = await call<{ configurado: boolean; conectado: boolean }>("discord_estado", undefined, { configurado: false, conectado: false });
-      q("#s-dc-go").textContent = state.conectado ? "Desconectar" : "Conectar";
+      q("#s-dc-go").hidden = !state.conectado;
+      q("#s-dc-steps").hidden = state.conectado;
       q("#s-dc-state").textContent = state.conectado
-        ? "Conectado. Dile «silénciame en Discord», «métete al canal General» o «sal del canal»."
-        : "Silénciate, ensordécete y entra o sal de canales de voz hablándole a Cocuyo, también con el juego abierto.";
-      dcId.closest<HTMLElement>(".srow")!.hidden = state.conectado;
+        ? "Conectado. Dile «silénciame en Discord», «desmutéame», «ensordéceme», «métete al canal General» o «sal del canal»."
+        : "Silénciate, ensordécete y entra o sal de canales de voz hablándole a Cocuyo, también con el juego abierto. Se arma una sola vez en 5 pasos:";
     };
     void paintDiscord();
     q("#s-dc-portal").addEventListener("click", () => void call("script_action", { action: { abrir: "https://discord.com/developers/applications" } }).catch(() => {}));
-    q("#s-dc-go").addEventListener("click", async () => {
-      const button = q<HTMLButtonElement>("#s-dc-go");
-      const state = await call<{ conectado: boolean }>("discord_estado", undefined, { conectado: false });
-      if (state.conectado) {
-        await call("discord_quitar");
-        return void paintDiscord();
+    q("#s-dc-copy").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText("http://127.0.0.1");
+        this.note("Copiada: http://127.0.0.1. Pégala en «Add Redirect».");
+      } catch {
+        this.note("Escribe en «Add Redirect»: http://127.0.0.1");
       }
+    });
+    q("#s-dc-go").addEventListener("click", async () => {
+      await call("discord_quitar");
+      this.note("Discord desconectado de Cocuyo.");
+      void paintDiscord();
+    });
+    q("#s-dc-connect").addEventListener("click", async () => {
+      const button = q<HTMLButtonElement>("#s-dc-connect");
+      if (!dcId.value.trim()) return this.note("Falta el paso 3: pega el Client ID.");
+      if (!dcSecret.value.trim()) return this.note("Falta el paso 4: pega el Client Secret.");
       button.disabled = true;
-      this.note("Mira Discord: te va a pedir permiso para Cocuyo.");
+      button.textContent = "Esperando a Discord…";
+      this.note("Mira Discord: te va a pedir permiso para Cocuyo. Dale «Autorizar».");
       try {
         this.note(await call<string>("discord_conectar", { id: dcId.value, secreto: dcSecret.value }));
         dcSecret.value = "";
@@ -1676,6 +1696,7 @@ class SettingsPage implements Page {
         this.note(String(error));
       }
       button.disabled = false;
+      button.textContent = "Conectar";
       void paintDiscord();
     });
     q("#s-rec-save").addEventListener("click", async () => {
