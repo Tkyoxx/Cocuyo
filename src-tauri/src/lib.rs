@@ -148,6 +148,8 @@ fn demo(app: tauri::AppHandle) {
             } else if let Some(text) = step.strip_prefix("orden=") {
                 let started = std::time::Instant::now();
                 eprintln!("[orden] {text} -> {:?} en {:?}", voice::run_order(&app, text), started.elapsed());
+            } else if step == "discord" {
+                eprintln!("[discord] {}", discord::probe(&app));
             } else if step == "error-prueba" {
                 grabadora::fake_failure(&app);
             } else if step == "ia" {

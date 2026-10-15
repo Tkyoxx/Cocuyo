@@ -1279,7 +1279,7 @@ class SettingsPage implements Page {
              <div class="srow"><div><b>Discord por voz</b><small id="s-dc-state">Silénciate, ensordécete y entra o sal de canales de voz hablándole a Cocuyo, también con el juego abierto.</small></div><button class="ghost" id="s-dc-go" hidden>Desconectar</button></div>
              <div class="dc-steps" id="s-dc-steps">
                <div class="srow slim"><div><b>1. Crea tu app de Discord</b><small>Es gratis y solo la usas tú. En el portal pulsa «New Application», ponle de nombre Cocuyo, marca la casilla y dale «Create».</small></div><button class="ghost" id="s-dc-portal">Abrir el portal</button></div>
-               <div class="srow slim"><div><b>2. Agrega la dirección de vuelta</b><small>En el menú de la izquierda entra a «OAuth2». En «Redirects» pulsa «Add Redirect», pega la dirección y dale «Save Changes» abajo.</small></div><button class="ghost" id="s-dc-copy">Copiar la dirección</button></div>
+               <div class="srow slim"><div><b>2. Agrega la dirección de vuelta</b><small>En el menú de la izquierda entra a «OAuth2». En «Redirects» pulsa «Add Redirect», pega la dirección y dale «Save Changes» abajo. Tiene que quedar una sola dirección: si hay otras, bórralas.</small></div><button class="ghost" id="s-dc-copy">Copiar la dirección</button></div>
                <div class="srow stack"><div><b>3. Copia el Client ID</b><small>En la misma página de «OAuth2», arriba en «Client Information». Pulsa «Copy» y pégalo aquí.</small></div><input id="s-dc-id" placeholder="Client ID: solo números" spellcheck="false" autocomplete="off" /></div>
                <div class="srow stack"><div><b>4. Copia el Client Secret</b><small>Justo debajo del Client ID: pulsa «Reset Secret», confirma con «Yes, do it!» y copia el que sale (Discord lo muestra una sola vez).</small></div><input id="s-dc-secret" type="password" placeholder="Client Secret" spellcheck="false" autocomplete="off" /></div>
                <div class="srow slim"><div><b>5. Conecta</b><small>Con Discord abierto, pulsa Conectar. Discord te muestra una ventana pidiendo permiso para Cocuyo: dale «Autorizar». La llave queda cifrada en tu PC.</small></div><button class="ghost pick" id="s-dc-connect">Conectar</button></div>
@@ -1325,8 +1325,20 @@ class SettingsPage implements Page {
         section(
           "musica",
           `<div class="card">
-             <div class="srow"><div><b>Spotify</b><small id="s-sp"></small></div><button class="ghost" id="s-sp-go"></button></div>
-             <div class="srow slim" id="s-sp-id-row" hidden><input id="s-sp-id" placeholder="Pega aquí el Client ID de tu app de Spotify" spellcheck="false" /></div>
+             <div class="srow"><div><b>Spotify</b><small id="s-sp"></small></div><button class="ghost" id="s-sp-go" hidden>Desconectar</button></div>
+             <div class="dc-steps" id="s-sp-steps">
+               <div class="srow slim" data-sp-setup><div><b>1. Crea tu app de Spotify</b><small>Es gratis y solo la usas tú. En el portal entra con tu cuenta de Spotify, acepta los términos si te los pide y pulsa «Create app». De nombre ponle Cocuyo y de descripción lo que quieras.</small></div><button class="ghost" id="s-sp-portal">Abrir el portal</button></div>
+               <div class="srow slim" data-sp-setup><div><b>2. Agrega la dirección de vuelta</b><small>En la misma página, en «Redirect URIs», pega la dirección y pulsa «Add». Más abajo, en «Which API/SDKs are you planning to use?», marca «Web API», acepta los términos y dale «Save».</small></div><button class="ghost" id="s-sp-copy">Copiar la dirección</button></div>
+               <div class="srow stack" data-sp-setup><div><b>3. Copia el Client ID</b><small>Entra a tu app, pulsa «Settings» y copia el «Client ID» de arriba. El Client Secret no hace falta.</small></div><input id="s-sp-id" placeholder="Client ID de tu app de Spotify" spellcheck="false" autocomplete="off" /></div>
+               <div class="srow slim"><div><b id="s-sp-last">4. Conecta</b><small>Pulsa Conectar: se abre el navegador, entras con tu cuenta y le das «Aceptar». La llave queda cifrada en tu PC.</small></div><button class="ghost pick" id="s-sp-connect">Conectar</button></div>
+             </div>
+           </div>
+           <div class="card">
+             <div class="srow"><div><b>Qué le puedes pedir</b><small>Dilo como te salga; estos son ejemplos.</small></div></div>
+             <div class="srow slim"><div><b>«pon Bad Bunny», «pon rock en español», «pon mi lista de entrenar»</b><small>Suena en Spotify: la canción, el artista, un género o tu lista.</small></div></div>
+             <div class="srow slim"><div><b>«agrega esta canción a mi lista Gym», «crea una lista Para el carro»</b><small>Tus listas. Si lo conectaste antes y no te deja, dale Desconectar y Conectar otra vez: hace falta un permiso nuevo.</small></div></div>
+             <div class="srow slim"><div><b>«dale me gusta», «quítala de Me gusta», «pon en cola Despacito»</b><small>Me gusta y la cola.</small></div></div>
+             <div class="srow slim"><div><b>«pausa», «siguiente», «súbele», «¿qué suena?»</b><small>Esto funciona aunque no conectes nada: va por los controles de música de Windows.</small></div></div>
            </div>`,
           true,
         ) +
@@ -1470,11 +1482,20 @@ class SettingsPage implements Page {
 
     const spotifyId = q<HTMLInputElement>("#s-sp-id");
     spotifyId.addEventListener("pointerdown", () => host.focus(spotifyId));
-    q("#s-sp-go").addEventListener("click", async () => {
-      if (this.spotify?.source === "cocuyo") {
-        await call("spotify_disconnect");
-        return this.loadSpotify();
+    q("#s-sp-portal").addEventListener("click", () => void call("script_action", { action: { abrir: "https://developer.spotify.com/dashboard" } }).catch(() => {}));
+    q("#s-sp-copy").addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText("http://127.0.0.1:5173/");
+        this.note("Copiada: http://127.0.0.1:5173/. Pégala en «Redirect URIs».");
+      } catch {
+        this.note("Escribe en «Redirect URIs»: http://127.0.0.1:5173/");
       }
+    });
+    q("#s-sp-go").addEventListener("click", async () => {
+      await call("spotify_disconnect");
+      void this.loadSpotify();
+    });
+    q("#s-sp-connect").addEventListener("click", async () => {
       if (!this.spotify?.hasClientId) {
         const pasted = spotifyId.value.trim();
         if (!pasted) return this.note("Pega primero el Client ID de tu app de Spotify.");
@@ -2024,16 +2045,18 @@ class SettingsPage implements Page {
   private paintSpotify(status: SpotifyStatus) {
     this.spotify = status;
     const state = this.el.querySelector("#s-sp")!;
-    const button = this.el.querySelector<HTMLButtonElement>("#s-sp-go")!;
-    const idRow = this.el.querySelector<HTMLElement>("#s-sp-id-row")!;
-    idRow.hidden = status.hasClientId || status.connecting;
+    const connected = status.source === "cocuyo";
+    const button = this.el.querySelector<HTMLButtonElement>("#s-sp-connect")!;
+    this.el.querySelector<HTMLElement>("#s-sp-go")!.hidden = !connected;
+    this.el.querySelector<HTMLElement>("#s-sp-steps")!.hidden = connected;
+    for (const row of this.el.querySelectorAll<HTMLElement>("[data-sp-setup]")) row.hidden = status.hasClientId;
+    this.el.querySelector("#s-sp-last")!.textContent = status.hasClientId ? "Conecta" : "4. Conecta";
     button.disabled = status.connecting;
-    button.textContent = status.source === "cocuyo" ? "Desconectar" : "Conectar";
     if (status.connecting) state.textContent = "Acepta en el navegador que se acaba de abrir…";
-    else if (status.source === "cocuyo") state.textContent = "Conectado con su propia sesión. No necesita Mis Notas abierta.";
+    else if (connected) state.textContent = "Conectado con su propia sesión. No necesita Mis Notas abierta.";
     else if (status.source === "mis-notas") state.textContent = "Usando la sesión de Mis Notas mientras esté abierta. Conecta para no depender de ella.";
     else if (status.hasClientId) state.textContent = "Sin conectar. Usará el Client ID que ya tienes en Mis Notas.";
-    else state.textContent = "Sin conectar. Hace falta el Client ID de tu app de Spotify.";
+    else state.textContent = "Sin conectar. Se arma una sola vez en 4 pasos:";
   }
 
   private async loadVoice() {

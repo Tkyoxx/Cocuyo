@@ -82,11 +82,27 @@ fn token_request(fields: &[(&str, &str)]) -> Result<Value, String> {
         .creation_flags(crate::apps::CREATE_NO_WINDOW)
         .output()
         .map_err(|_| "No pude abrir curl.exe.".to_string())?;
+    if cfg!(debug_assertions) {
+        let raw = String::from_utf8_lossy(&output.stdout);
+        eprintln!("[discord] token: {}", if raw.contains("access_token") { "llegó la llave".to_string() } else { raw.chars().take(400).collect() });
+    }
     let answer: Value = serde_json::from_slice(&output.stdout).map_err(|_| "Discord no respondió.".to_string())?;
     if answer["access_token"].is_string() {
         Ok(answer)
     } else {
         Err(format!("Discord no dio el permiso: {}", answer["error_description"].as_str().or(answer["error"].as_str()).unwrap_or("sin motivo")))
+    }
+}
+
+fn plain(error: &str) -> String {
+    if error.contains("redirect_uri") || error.contains("Redirect URI") {
+        "Discord no encontró la dirección de vuelta de tu app. En el portal, entra a «OAuth2», y en «Redirects» deja una sola: http://127.0.0.1 (borra las demás con la X). Dale «Save Changes» abajo y vuelve a pulsar Conectar.".into()
+    } else if error.contains("invalid_client") {
+        "Discord no reconoce el Client Secret. En «OAuth2» pulsa «Reset Secret», copia el nuevo y pégalo otra vez.".into()
+    } else if error.contains("access_denied") || error.contains("cancel") {
+        "No le diste «Autorizar» en Discord. Pulsa Conectar otra vez y acepta.".into()
+    } else {
+        error.to_string()
     }
 }
 
@@ -115,9 +131,13 @@ fn session(app: &AppHandle) -> Result<Pipe, String> {
         }
     }
     if !renewed {
-        let granted = pipe.command("AUTHORIZE", json!({ "client_id": id, "scopes": ["rpc", "rpc.voice.read", "rpc.voice.write"] }))?;
+        let granted = pipe.command("AUTHORIZE", json!({ "client_id": id, "scopes": ["rpc", "rpc.voice.read", "rpc.voice.write"] }));
+        if cfg!(debug_assertions) {
+            eprintln!("[discord] authorize: {:?}", granted.as_ref().map(|g| g.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>())));
+        }
+        let granted = granted.map_err(|e| plain(&e))?;
         let code = granted["code"].as_str().ok_or("Discord no dio el permiso.")?;
-        let fresh = token_request(&[("client_id", &id), ("client_secret", &secret), ("grant_type", "authorization_code"), ("code", code), ("redirect_uri", REDIRECT)])?;
+        let fresh = token_request(&[("client_id", &id), ("client_secret", &secret), ("grant_type", "authorization_code"), ("code", code), ("redirect_uri", REDIRECT)]).map_err(|e| plain(&e))?;
         stored["access"] = fresh["access_token"].clone();
         stored["refresh"] = fresh["refresh_token"].clone();
         keep(app, &stored)?;
@@ -220,6 +240,14 @@ pub fn spoken(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
     })
 }
 
+#[cfg(debug_assertions)]
+pub fn probe(app: &AppHandle) -> String {
+    match session(app) {
+        Ok(mut pipe) => format!("conectado: {:?}", pipe.command("GET_SELECTED_VOICE_CHANNEL", json!({})).map(|c| c["name"].clone())),
+        Err(e) => format!("falló: {e}"),
+    }
+}
+
 #[derive(serde::Serialize)]
 pub struct Estado {
     configurado: bool,
@@ -273,5 +301,7 @@ mod tests {
         assert_eq!(understand("transmite mi pantalla en discord"), Some(Order::Stream));
         assert_eq!(understand("silencia el volumen"), None);
         assert_eq!(understand("pon salsa"), None);
+        assert!(plain("Discord: OAuth2 Error: invalid_request: Missing \"redirect_uri\" in request.").contains("deja una sola: http://127.0.0.1"));
+        assert_eq!(plain("Discord no está abierto."), "Discord no está abierto.");
     }
 }
