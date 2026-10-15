@@ -194,6 +194,9 @@ pub enum Cue {
     Listen,
     Done,
     Fail,
+    Recording,
+    Stopped,
+    Kept,
 }
 
 const RATE: u32 = 22_050;
@@ -224,6 +227,10 @@ fn wav(notes: &[(f32, u32)]) -> Vec<u8> {
     out.extend(data.to_le_bytes());
     out.extend(samples.iter().flat_map(|s| s.to_le_bytes()));
     out
+}
+
+pub fn ring(cue: Cue) {
+    sound(cue);
 }
 
 pub fn play(cue: Cue) {
@@ -279,6 +286,14 @@ pub fn alert(text: &str) {
 }
 
 fn say(text: &str) -> Result<(), String> {
+    SAYING.fetch_add(1, Ordering::Relaxed);
+    let said = say_now(text);
+    QUIET_UNTIL.fetch_max(now_ms() + 250, Ordering::Relaxed);
+    SAYING.fetch_sub(1, Ordering::Relaxed);
+    said
+}
+
+fn say_now(text: &str) -> Result<(), String> {
     let text = &crate::i18n::tr(text);
     if say_natural(&text.replace(['«', '»'], "")) {
         return Ok(());
@@ -299,22 +314,103 @@ fn say(text: &str) -> Result<(), String> {
 }
 
 fn sound(cue: Cue) {
-    static SOUNDS: OnceLock<[Vec<u8>; 3]> = OnceLock::new();
+    static SOUNDS: OnceLock<[Vec<u8>; 6]> = OnceLock::new();
     let sounds = SOUNDS.get_or_init(|| {
         [
             wav(&[(660.0, 70), (880.0, 90)]),   // sube: te escucho
             wav(&[(880.0, 70), (1320.0, 120)]), // sube más: hecho
             wav(&[(440.0, 90), (330.0, 150)]),  // baja: no pude
+            chime(&[(0, 659.3, 0.9), (85, 987.8, 0.8), (170, 1318.5, 0.75), (255, 1975.5, 0.5)], 900), // campanitas que suben: grabando
+            chime(&[(0, 1568.0, 0.6), (95, 1174.7, 0.75), (190, 784.0, 0.85), (300, 523.3, 1.0)], 1100), // bajan y se posan: guardado
+            chime(&[(0, 1760.0, 0.7), (0, 2637.0, 0.35), (120, 2093.0, 0.6)], 650),                    // destello: guarde lo ultimo
         ]
     });
+    let tone = &sounds[cue as usize];
+    let lasts = (tone.len().saturating_sub(44) / 2) as u64 * 1000 / RATE as u64;
+    QUIET_UNTIL.fetch_max(now_ms() + lasts + 150, Ordering::Relaxed);
     unsafe {
-        let _ = PlaySoundW(PCWSTR(sounds[cue as usize].as_ptr().cast()), None, SND_MEMORY | SND_ASYNC | SND_NODEFAULT);
+        let _ = PlaySoundW(PCWSTR(tone.as_ptr().cast()), None, SND_MEMORY | SND_ASYNC | SND_NODEFAULT);
     }
+}
+
+fn chime(notes: &[(u32, f32, f32)], length_ms: u32) -> Vec<u8> {
+    let count = (RATE * length_ms / 1000) as usize;
+    let mut mix = vec![0f32; count];
+    let partials = [(1.0, 1.0, 1.0), (2.0, 0.32, 1.8), (3.01, 0.12, 2.6), (4.17, 0.05, 3.4)];
+    for (start, hz, gain) in notes {
+        let first = (RATE * start / 1000) as usize;
+        for i in first..count {
+            let t = (i - first) as f32 / RATE as f32;
+            let attack = (t / 0.004).min(1.0);
+            let mut sample = 0.0;
+            for (ratio, level, fade) in partials {
+                let pitch = hz * ratio;
+                if pitch < RATE as f32 / 2.0 {
+                    sample += (t * pitch * std::f32::consts::TAU).sin() * level * (-t * 5.0 * fade).exp();
+                }
+            }
+            mix[i] += sample * attack * gain;
+        }
+    }
+    let echo = (RATE * 110 / 1000) as usize;
+    for i in echo..count {
+        mix[i] += mix[i - echo] * 0.22;
+    }
+    let tail = (RATE / 25) as usize;
+    for (n, sample) in mix.iter_mut().rev().take(tail).enumerate() {
+        *sample *= n as f32 / tail as f32;
+    }
+    let peak = mix.iter().fold(0f32, |m, s| m.max(s.abs())).max(1e-6);
+    let samples: Vec<i16> = mix.iter().map(|s| (s / peak * 0.3 * i16::MAX as f32) as i16).collect();
+    let data = samples.len() as u32 * 2;
+    let mut out = Vec::with_capacity(44 + data as usize);
+    out.extend(b"RIFF");
+    out.extend((36 + data).to_le_bytes());
+    out.extend(b"WAVEfmt ");
+    out.extend(16u32.to_le_bytes());
+    out.extend(1u16.to_le_bytes());
+    out.extend(1u16.to_le_bytes());
+    out.extend(RATE.to_le_bytes());
+    out.extend((RATE * 2).to_le_bytes());
+    out.extend(2u16.to_le_bytes());
+    out.extend(16u16.to_le_bytes());
+    out.extend(b"data");
+    out.extend(data.to_le_bytes());
+    out.extend(samples.iter().flat_map(|s| s.to_le_bytes()));
+    out
+}
+
+static QUIET_UNTIL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static SAYING: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
+}
+
+pub fn quiet() -> bool {
+    SAYING.load(Ordering::Relaxed) > 0 || now_ms() < QUIET_UNTIL.load(Ordering::Relaxed)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chimes_are_valid_wav_files() {
+        let sets: [(&str, &[(u32, f32, f32)], u32); 3] = [
+            ("grabando", &[(0, 659.3, 0.9), (85, 987.8, 0.8), (170, 1318.5, 0.75), (255, 1975.5, 0.5)], 900),
+            ("guardado", &[(0, 1568.0, 0.6), (95, 1174.7, 0.75), (190, 784.0, 0.85), (300, 523.3, 1.0)], 1100),
+            ("repeticion", &[(0, 1760.0, 0.7), (0, 2637.0, 0.35), (120, 2093.0, 0.6)], 650),
+        ];
+        for (name, notes, length) in sets {
+            let sound = chime(notes, length);
+            assert_eq!(&sound[..4], b"RIFF");
+            assert_eq!(sound.len(), 44 + (RATE * length / 1000) as usize * 2);
+            if let Ok(dir) = std::env::var("COCUYO_SONIDOS") {
+                let _ = std::fs::write(std::path::Path::new(&dir).join(format!("{name}.wav")), &sound);
+            }
+        }
+    }
 
     #[test]
     fn tones_are_valid_wav_files() {

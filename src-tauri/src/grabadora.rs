@@ -448,6 +448,7 @@ struct Ear {
     rate: u32,
     gain: f32,
     clean: Option<crate::ruido::Denoiser>,
+    system: bool,
 }
 
 struct Ears {
@@ -507,15 +508,18 @@ impl Ears {
                 let clean = (what == "micrófono" && noise > 0).then(|| crate::ruido::Denoiser::new(noise > 1));
                 names.push(format!("{what}: {name}{}", if clean.is_some() { " (sin ruido)" } else { "" }));
                 streams.push(stream);
-                ears.push(Ear { queue: VecDeque::new(), left: crate::talk::Resampler::new(rate as f64, RATE as f64), right: crate::talk::Resampler::new(rate as f64, RATE as f64), rate, gain, clean });
+                ears.push(Ear { queue: VecDeque::new(), left: crate::talk::Resampler::new(rate as f64, RATE as f64), right: crate::talk::Resampler::new(rate as f64, RATE as f64), rate, gain, clean, system: what == "PC" });
             }
         }
         (!ears.is_empty()).then(|| Ears { _streams: streams, arriving, ears, written: 0 })
     }
 
     fn take(&mut self, elapsed: Duration, lag: u64) -> Option<Vec<i16>> {
-        while let Ok((who, samples)) = self.arriving.try_recv() {
+        while let Ok((who, mut samples)) = self.arriving.try_recv() {
             let ear = &mut self.ears[who];
+            if ear.system && crate::cue::quiet() {
+                samples.fill(0.0);
+            }
             if let Some(clean) = ear.clean.as_mut() {
                 let mono: Vec<f32> = samples.iter().step_by(2).copied().collect();
                 let mono = if ear.rate == RATE { mono } else { ear.left.feed(&mono) };
@@ -1705,19 +1709,53 @@ pub async fn grabar_equipo(app: AppHandle) -> Equipo {
     .unwrap_or_else(|_| Equipo { graficas: Vec::new(), procesador: String::new(), hilos: threads(), monitores: Vec::new(), codecs: vec![Codec::H264], automatico: "equilibrado".into(), plan: plan(&Wanted::from(&crate::settings::Settings::default()), &Machine::default(), None), codificador: String::new(), ultima: serde_json::Value::Null })
 }
 
+#[derive(Clone, Copy)]
+pub enum Notice {
+    Started,
+    Stopped,
+    Kept,
+}
+
+pub fn notice(_app: &AppHandle, what: Notice, done: &Result<String, String>) {
+    crate::cue::ring(match (what, done) {
+        (_, Err(_)) => crate::cue::Cue::Fail,
+        (Notice::Started, _) => crate::cue::Cue::Recording,
+        (Notice::Stopped, _) => crate::cue::Cue::Stopped,
+        (Notice::Kept, _) => crate::cue::Cue::Kept,
+    });
+}
+
 #[tauri::command]
 pub async fn grabar_empezar(app: AppHandle) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || start(&app)).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        let done = start(&app);
+        notice(&app, Notice::Started, &done);
+        done
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn grabar_parar(app: AppHandle) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || stop(&app)).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        let done = stop(&app);
+        notice(&app, Notice::Stopped, &done);
+        done
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn grabar_ultimo(app: AppHandle) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || save_last(&app)).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || {
+        let done = save_last(&app);
+        notice(&app, Notice::Kept, &done);
+        done
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1726,16 +1764,19 @@ pub fn grabar_estado() -> Estado {
 }
 
 pub fn toggle(app: &AppHandle) -> String {
-    let said = if recording() {
-        stop(app).map(|file| format!("Grabación guardada: {}", Path::new(&file).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or(file)))
-    } else {
-        start(app).map(|_| "Grabando la pantalla. Pulsa el mismo atajo para parar.".to_string())
-    };
-    said.unwrap_or_else(|why| why)
+    let (what, done) = if recording() { (Notice::Stopped, stop(app)) } else { (Notice::Started, start(app)) };
+    notice(app, what, &done);
+    match (what, done) {
+        (_, Err(why)) => why,
+        (Notice::Started, _) => "Grabando la pantalla.".into(),
+        _ => "Grabación guardada.".into(),
+    }
 }
 
 pub fn replay_hotkey(app: &AppHandle) -> String {
-    save_last(app).map(|file| format!("Guardé lo último: {}", Path::new(&file).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or(file))).unwrap_or_else(|why| why)
+    let done = save_last(app);
+    notice(app, Notice::Kept, &done);
+    done.map(|_| "Guardé lo último.".to_string()).unwrap_or_else(|why| why)
 }
 
 #[cfg(test)]

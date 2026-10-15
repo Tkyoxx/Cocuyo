@@ -604,6 +604,7 @@ const EXACT: Record<string, [string, string]> = {
   "Todo lo que suena: el juego, la música, la otra persona en una llamada.": ["Everything that plays: the game, the music, the other person on a call.", "Tudo o que toca: o jogo, a música, a outra pessoa numa chamada."],
   "Su volumen": ["Its volume", "Volume"],
   "Volumen del PC": ["PC volume", "Volume do PC"],
+  "Grabación guardada.": ["Recording saved.", "Gravação salva."],
   "Quitar el ruido": ["Remove noise", "Tirar o ruído"],
   "El ventilador, el zumbido o el soplido de fondo. Lo hace Cocuyo mismo y casi no gasta.": ["The fan, the hum or the background hiss. Cocuyo does it itself and it barely costs anything.", "O ventilador, o zumbido ou o chiado de fundo. O próprio Cocuyo faz e quase não gasta."],
   Suave: ["Soft", "Suave"],

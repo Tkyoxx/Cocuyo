@@ -770,8 +770,8 @@ fn act(app: &AppHandle, spoken: &str) -> Result<String, String> {
         }
         Intent::Lock => crate::system::lock().map(|()| "Equipo bloqueado.".into()),
         Intent::Record(true) => crate::grabadora::start(app).map(|_| "Grabando la pantalla.".into()),
-        Intent::Record(false) => crate::grabadora::stop(app).map(|file| format!("Grabación guardada: {}.", file_name(&file))),
-        Intent::SaveReplay => crate::grabadora::save_last(app).map(|file| format!("Guardé lo último: {}.", file_name(&file))),
+        Intent::Record(false) => crate::grabadora::stop(app).map(|_| "Grabación guardada.".into()),
+        Intent::SaveReplay => crate::grabadora::save_last(app).map(|_| "Guardé lo último.".into()),
         Intent::Settings => {
             let _ = app.emit_to(overlay::LABEL, "settings", ());
             Ok(String::new())
@@ -781,10 +781,6 @@ fn act(app: &AppHandle, spoken: &str) -> Result<String, String> {
             None => Err(format!("No entendí qué hacer con «{spoken}». Prueba con «pon…», «abre…» o «busca…».")),
         },
     }
-}
-
-fn file_name(path: &str) -> String {
-    std::path::Path::new(path).file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| path.to_string())
 }
 
 fn sounding(played: Played) -> Result<String, String> {

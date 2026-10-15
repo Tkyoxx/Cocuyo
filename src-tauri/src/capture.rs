@@ -254,7 +254,6 @@ pub fn hotkey(app: &AppHandle, id: usize) {
         if !(id == HOTKEY_RECORD && crate::grabadora::recording()) {
             let _ = app.emit_to(overlay::LABEL, "note", crate::i18n::tr(&said));
         }
-        crate::cue::answer(&said);
         return;
     }
     if selecting() {

@@ -105,8 +105,8 @@ function paintRecording(state: RecState) {
 async function stopRecording(e: Event) {
   e.stopPropagation();
   try {
-    const file = await call<string>("grabar_parar");
-    caption.say("app", `Grabación guardada: ${file.split("\\").pop()}`, 4200);
+    await call<string>("grabar_parar");
+    caption.say("app", "Grabación guardada.", 3200);
   } catch (error) {
     caption.say("app", String(error), 4200);
   }

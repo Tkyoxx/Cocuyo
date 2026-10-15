@@ -150,7 +150,7 @@ mod tests {
             let started = std::time::Instant::now();
             let cleaned = denoiser.process(&mixed);
             let spent = started.elapsed().as_secs_f64();
-            assert!(spent < 0.3, "3 s de audio en {spent} s");
+            assert!(spent < if cfg!(debug_assertions) { 3.0 } else { 0.3 }, "3 s de audio en {spent} s");
             println!("[ruido] {} 3 s de audio en {:.2} ms ({:.3} % de un núcleo)", if strong { "fuerte" } else { "suave" }, spent * 1000.0, spent / 3.0 * 100.0);
             let quiet_before = rms(&mixed[48_000..96_000]);
             let quiet_after = rms(&cleaned[48_000..96_000]);
