@@ -8,6 +8,10 @@ import { Spring } from "./spring";
 export class Menu {
   open = false;
   typing = false;
+  private typingSince = 0;
+  private typingIn: HTMLInputElement | null = null;
+  private reclaimed = false;
+  private blurCheck = 0;
   onSize: (size: Size) => void = () => {};
   onSettings: (settings: Settings) => void = () => {};
   onSay: (text: string) => void = () => {};
@@ -33,8 +37,11 @@ export class Menu {
     say: (text) => this.onSay(text),
     close: () => this.onClose(),
     focus: (input) => {
+      this.typingIn = input;
       if (this.typing) return;
       this.typing = true;
+      this.typingSince = performance.now();
+      this.reclaimed = false;
       void call("set_focusable", { on: true }).then(() => input.focus());
     },
     settingsChanged: (settings) => this.onSettings(settings),
@@ -46,7 +53,17 @@ export class Menu {
       if (this.open) this.layout(true);
     }).observe(this.tabsEl);
     window.addEventListener("blur", () => {
-      if (this.typing) this.onClose();
+      if (!this.typing) return;
+      window.clearTimeout(this.blurCheck);
+      const fresh = performance.now() - this.typingSince < 800;
+      if (fresh && !this.reclaimed) {
+        this.reclaimed = true;
+        const input = this.typingIn;
+        void call("set_focusable", { on: true }).then(() => input?.focus());
+      }
+      this.blurCheck = window.setTimeout(() => {
+        if (this.typing && !document.hasFocus()) this.onClose();
+      }, fresh ? 700 : 150);
     });
     window.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && this.open) this.onClose();
@@ -82,8 +99,10 @@ export class Menu {
     if (!this.open) return;
     this.open = false;
     this.current.hide?.();
+    window.clearTimeout(this.blurCheck);
     if (this.typing) {
       this.typing = false;
+      this.typingIn = null;
       (document.activeElement as HTMLElement | null)?.blur();
       void call("set_focusable", { on: false });
     }

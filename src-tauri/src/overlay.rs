@@ -136,7 +136,10 @@ pub fn set_focusable(window: WebviewWindow, on: bool) -> Result<(), String> {
         let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
         let bit = WS_EX_NOACTIVATE.0 as isize;
         if on {
-            FOCUS_BEFORE.store(GetForegroundWindow().0 as isize, Ordering::Relaxed);
+            let before = GetForegroundWindow();
+            if before != hwnd {
+                FOCUS_BEFORE.store(before.0 as isize, Ordering::Relaxed);
+            }
             SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex & !bit);
             let _ = SetForegroundWindow(hwnd);
             window.set_focus().map_err(|e| e.to_string())?;
