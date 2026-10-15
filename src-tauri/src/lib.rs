@@ -326,6 +326,7 @@ pub fn run() {
             remoto::remoto_cancelar,
             remoto::remoto_estado,
             remoto::remoto_quitar,
+            remoto::remoto_crear_punto,
         ])
         .setup(|app| {
             let window = app

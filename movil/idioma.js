@@ -12,7 +12,11 @@ const EXACTO = {
   ],
   "En tu PC, abre la isla y ve a": ["On your PC, open the island and go to", "No seu PC, abra a ilha e vá em"],
   "Ajustes → Remoto → Emparejar": ["Settings → Remote → Pair", "Ajustes → Remoto → Parear"],
-  "Escribe aquí el código que te muestra. Dura dos minutos.": ["Type here the code it shows you. It lasts two minutes.", "Digite aqui o código que ele mostra. Dura dois minutos."],
+  "Escanea con la cámara el QR que te muestra, o escribe aquí el código. Dura dos minutos.": ["Scan the QR it shows you with your camera, or type the code here. It lasts two minutes.", "Escaneie com a câmera o QR que ele mostra, ou digite o código aqui. Dura dois minutos."],
+  "Escanea con la cámara del celular el QR que te muestra Cocuyo en tu PC. Así esta página sabe dónde encontrarlo.": [
+    "Scan the QR that Cocuyo shows on your PC with your phone's camera. That's how this page knows where to find it.",
+    "Escaneie com a câmera do celular o QR que o Cocuyo mostra no seu PC. Assim esta página sabe onde encontrá-lo.",
+  ],
   Emparejar: ["Pair", "Parear"],
   "Tu celular crea su propia llave y nunca sale de aquí.": ["Your phone makes its own key and it never leaves it.", "Seu celular cria a própria chave e ela nunca sai daqui."],
   "Código de emparejamiento": ["Pairing code", "Código de pareamento"],
@@ -62,9 +66,9 @@ const EXACTO = {
   "Ese código no está esperando en ningún PC. Revisa las letras o pide uno nuevo.": ["No PC is waiting with that code. Check the letters or ask for a new one.", "Nenhum PC está esperando esse código. Confira as letras ou peça outro."],
   "Se cortó la conexión mientras emparejábamos.": ["The connection dropped while pairing.", "A conexão caiu enquanto pareávamos."],
   "El código tiene nueve letras y números, como K7Q-2XM-94P.": ["The code has nine letters and numbers, like K7Q-2XM-94P.", "O código tem nove letras e números, como K7Q-2XM-94P."],
-  "Falta la dirección del punto de cita. Abre esta página desde el enlace que te da Cocuyo en tu PC.": [
-    "The meeting point address is missing. Open this page from the link Cocuyo gives you on your PC.",
-    "Falta o endereço do ponto de encontro. Abra esta página pelo link que o Cocuyo te dá no PC.",
+  "Falta la dirección de tu punto de cita. Escanea con la cámara el QR que te muestra Cocuyo en tu PC.": [
+    "Your meeting point address is missing. Scan the QR that Cocuyo shows on your PC with your camera.",
+    "Falta o endereço do seu ponto de encontro. Escaneie com a câmera o QR que o Cocuyo mostra no seu PC.",
   ],
   "La respuesta no vino de tu PC. Empieza otra vez.": ["The answer didn't come from your PC. Start again.", "A resposta não veio do seu PC. Comece de novo."],
   "Eso es muy largo para mandarlo de una. Habla menos de un minuto.": ["That's too long to send at once. Talk for less than a minute.", "Isso é longo demais para mandar de uma vez. Fale menos de um minuto."],

@@ -387,6 +387,11 @@ async function arrancar() {
     mostrar("emparejar");
     estado("buscando", "Sin emparejar");
     if (guardado.codigo) $("codigo").value = `${guardado.codigo.slice(0, 3)}-${guardado.codigo.slice(3, 6)}-${guardado.codigo.slice(6)}`;
+    if (guardado.sinPunto) {
+      $("codigo-form").hidden = true;
+      $("emparejar-nota").textContent = t("Escanea con la cámara del celular el QR que te muestra Cocuyo en tu PC. Así esta página sabe dónde encontrarlo.");
+      return;
+    }
     $("codigo-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const nota = $("emparejar-nota");
@@ -407,6 +412,7 @@ async function arrancar() {
         $("codigo-ir").disabled = false;
       }
     });
+    if (guardado.codigo) $("codigo-form").requestSubmit();
     return;
   }
   enlace = guardado.enlace;

@@ -2,6 +2,9 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::io::Write;
+use std::os::windows::process::CommandExt;
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -21,6 +24,11 @@ const JSON: u8 = 1;
 const AUDIO: u8 = 2;
 const VOICE: u8 = 3;
 const MOST_VOICE: usize = 1_800_000;
+const CLOUDFLARE: &str = "https://api.cloudflare.com/client/v4";
+const WORKER: &str = include_str!("../../remoto/worker.js");
+const WORKER_NAME: &str = "cocuyo-remoto";
+const WORKER_DATE: &str = "2026-09-01";
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[derive(Clone, Serialize, Deserialize)]
 struct Phone {
@@ -255,6 +263,117 @@ fn pair_with(app: &AppHandle, socket: &Socket, key: &[u8]) -> Result<String, Str
         save(app, &book)?;
         return Ok(name);
     }
+}
+
+fn quote(text: &str) -> String {
+    text.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+fn curl(config: &str, seconds: u32) -> Result<(u16, String), String> {
+    let mut child = Command::new("curl.exe")
+        .args(["--silent", "--show-error", "--max-time", &seconds.to_string(), "--connect-timeout", "10", "--config", "-"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn()
+        .map_err(|_| "No pude abrir curl.exe.".to_string())?;
+    child.stdin.take().ok_or("sin entrada")?.write_all(config.as_bytes()).map_err(|e| e.to_string())?;
+    let output = child.wait_with_output().map_err(|e| e.to_string())?;
+    let text = String::from_utf8_lossy(&output.stdout).into_owned();
+    let (body, status) = text.rsplit_once('\n').ok_or("No hubo respuesta de Cloudflare. Revisa tu conexión.")?;
+    let status = status.trim().parse::<u16>().unwrap_or(0);
+    if status == 0 {
+        return Err("No hubo respuesta de Cloudflare. Revisa tu conexión.".into());
+    }
+    Ok((status, body.to_string()))
+}
+
+fn cloudflare(token: &str, method: &str, path: &str, json: Option<&Value>, form: &[String]) -> Result<Value, String> {
+    let mut config = format!(
+        "url = \"{CLOUDFLARE}{}\"\nrequest = \"{method}\"\nheader = \"Authorization: Bearer {}\"\nwrite-out = \"\\n%{{http_code}}\"\n",
+        quote(path),
+        quote(token)
+    );
+    if let Some(json) = json {
+        config += &format!("header = \"Content-Type: application/json\"\ndata = \"{}\"\n", quote(&json.to_string()));
+    }
+    for part in form {
+        config += &format!("form = \"{}\"\n", quote(part));
+    }
+    let (status, body) = curl(&config, 90)?;
+    let answer: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
+    if answer["success"] == true {
+        return Ok(answer["result"].clone());
+    }
+    let first = &answer["errors"][0];
+    Err(match (status, first["code"].as_i64()) {
+        (401 | 403, _) | (_, Some(10000 | 9109 | 6003)) => "Cloudflare no aceptó la llave. Créala con la plantilla «Edit Cloudflare Workers» y pégala completa.".into(),
+        _ => format!("Cloudflare respondió: {}", first["message"].as_str().filter(|m| !m.is_empty()).unwrap_or("un error sin explicación")),
+    })
+}
+
+fn worker_parts(dir: &std::path::Path, with_migration: bool) -> Result<Vec<String>, String> {
+    let mut metadata = json!({
+        "main_module": "worker.js",
+        "compatibility_date": WORKER_DATE,
+        "bindings": [{ "type": "durable_object_namespace", "name": "SALAS", "class_name": "Sala" }],
+    });
+    if with_migration {
+        metadata["migrations"] = json!({ "new_tag": "v1", "new_sqlite_classes": ["Sala"] });
+    }
+    let meta = dir.join("metadata.json");
+    let code = dir.join("worker.js");
+    std::fs::write(&meta, metadata.to_string()).map_err(|e| e.to_string())?;
+    std::fs::write(&code, WORKER).map_err(|e| e.to_string())?;
+    Ok(vec![
+        format!("metadata=@{};type=application/json", meta.display()),
+        format!("worker.js=@{};type=application/javascript+module;filename=worker.js", code.display()),
+    ])
+}
+
+fn cloudflare_key_looks_wrong(token: &str) -> bool {
+    token.len() < 30 || token.chars().any(|c| c.is_whitespace() || c.is_control())
+}
+
+fn create_relay(token: &str) -> Result<(String, bool), String> {
+    let token = token.trim();
+    if cloudflare_key_looks_wrong(token) {
+        return Err("Eso no parece una llave de Cloudflare. Cópiala completa desde la página donde la creaste.".into());
+    }
+    let accounts = cloudflare(token, "GET", "/accounts?per_page=5", None, &[])?;
+    let account = accounts[0]["id"].as_str().ok_or("La llave no ve ninguna cuenta. Créala con la plantilla «Edit Cloudflare Workers».")?.to_string();
+    let base = format!("/accounts/{account}/workers");
+    let subdomain = match cloudflare(token, "GET", &format!("{base}/subdomain"), None, &[]) {
+        Ok(found) if found["subdomain"].as_str().is_some_and(|name| !name.is_empty()) => found["subdomain"].as_str().unwrap_or_default().to_string(),
+        _ => {
+            let name = format!("cocuyo-{}", hex(&candado::random(4)));
+            cloudflare(token, "PUT", &format!("{base}/subdomain"), Some(&json!({ "subdomain": name })), &[])?["subdomain"].as_str().unwrap_or(&name).to_string()
+        }
+    };
+    let dir = std::env::temp_dir().join(format!("cocuyo-punto-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let script = format!("{base}/scripts/{WORKER_NAME}");
+    let uploaded = cloudflare(token, "PUT", &script, None, &worker_parts(&dir, true)?)
+        .or_else(|why| if why.contains("migration") || why.contains("Durable Object") { cloudflare(token, "PUT", &script, None, &worker_parts(&dir, false)?) } else { Err(why) });
+    let _ = std::fs::remove_dir_all(&dir);
+    uploaded?;
+    cloudflare(token, "POST", &format!("{script}/subdomain"), Some(&json!({ "enabled": true, "previews_enabled": false })), &[])?;
+    let host = format!("{WORKER_NAME}.{subdomain}.workers.dev");
+    let started = Instant::now();
+    while started.elapsed() < Duration::from_secs(40) {
+        if curl(&format!("url = \"https://{host}/\"\nwrite-out = \"\\n%{{http_code}}\"\n"), 8).is_ok_and(|(_, body)| body.contains("punto de cita")) {
+            return Ok((host, true));
+        }
+        std::thread::sleep(Duration::from_secs(4));
+    }
+    Ok((host, false))
+}
+
+#[tauri::command]
+pub async fn remoto_crear_punto(llave: String) -> Result<Value, String> {
+    let (host, answers) = tauri::async_runtime::spawn_blocking(move || create_relay(&llave)).await.map_err(|e| e.to_string())?.map_err(|why| crate::i18n::tr(&why))?;
+    Ok(json!({ "punto": format!("wss://{host}"), "responde": answers }))
 }
 
 #[tauri::command]
@@ -671,6 +790,28 @@ mod tests {
         assert!(for_the_phone("busca vuelos a Cartagena en el pc").is_none());
         assert!(for_the_phone("pon algo de salsa").is_none());
         assert_eq!(without_pc("busca gatos en el PC"), "busca gatos");
+    }
+
+    #[test]
+    fn the_worker_goes_inside_cocuyo() {
+        assert!(WORKER.contains("export class Sala"));
+        assert!(include_str!("../../remoto/wrangler.toml").contains(WORKER_DATE));
+        let dir = std::env::temp_dir().join("cocuyo-prueba-partes");
+        std::fs::create_dir_all(&dir).unwrap();
+        let parts = worker_parts(&dir, true).unwrap();
+        assert!(parts[0].starts_with("metadata=@") && parts[1].contains("filename=worker.js"));
+        let metadata: Value = serde_json::from_str(&std::fs::read_to_string(dir.join("metadata.json")).unwrap()).unwrap();
+        assert_eq!(metadata["migrations"]["new_sqlite_classes"][0], "Sala");
+        assert_eq!(std::fs::read_to_string(dir.join("worker.js")).unwrap(), WORKER);
+        let _ = std::fs::remove_dir_all(dir);
+        assert_eq!(quote(r#"a"b\c"#), r#"a\"b\\c"#);
+    }
+
+    #[test]
+    fn a_bad_key_never_leaves_the_pc() {
+        assert!(cloudflare_key_looks_wrong("corta"));
+        assert!(cloudflare_key_looks_wrong("una llave con espacios que es bastante larga para pasar"));
+        assert!(!cloudflare_key_looks_wrong("AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-AbCd"));
     }
 
     #[test]

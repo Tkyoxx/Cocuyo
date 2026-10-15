@@ -2334,9 +2334,28 @@ img.shop-art {
   gap: 16px;
   padding: 14px 16px 12px;
 }
-.remote-code > b {
+.remote-steps {
+  border-top: 1px solid rgb(255 255 255 / 0.06);
+}
+.remote-code[hidden],
+.srow[hidden] {
+  display: none;
+}
+.remote-qr {
+  flex: none;
+  width: 128px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+.remote-qr svg {
+  display: block;
+  width: 100%;
+}
+.remote-code b {
   color: var(--accent);
-  font: 600 30px/1 "Cascadia Mono", Consolas, monospace;
+  font: 600 22px/1 "Cascadia Mono", Consolas, monospace;
+  white-space: nowrap;
   letter-spacing: 0.06em;
   user-select: text;
 }
@@ -2345,6 +2364,7 @@ img.shop-art {
   flex-direction: column;
   align-items: flex-start;
   gap: 6px;
+  min-width: 0;
 }
 .remote-code small {
   color: var(--dim);

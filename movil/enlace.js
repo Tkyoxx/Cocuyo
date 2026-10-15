@@ -11,7 +11,7 @@ const PING = '{"t":"ping"}';
 
 const parametros = new URLSearchParams(location.search);
 const ancla = new URLSearchParams(location.hash.slice(1));
-if (ancla.has("codigo") || ancla.has("punto")) history.replaceState(null, "", location.pathname + location.search);
+if (ancla.has("codigo") || ancla.has("punto")) history.replaceState(null, "", location.pathname + location.search + (ancla.has("punto") ? `#punto=${encodeURIComponent(ancla.get("punto"))}` : ""));
 
 function base() {
   return new Promise((listo, mal) => {
@@ -97,7 +97,7 @@ function esperar(ws, quiero, segundos) {
 async function emparejar(codigo, punto) {
   const limpio = limpiarCodigo(codigo);
   if (!limpio) throw new Error("El código tiene nueve letras y números, como K7Q-2XM-94P.");
-  if (!punto) throw new Error("Falta la dirección del punto de cita. Abre esta página desde el enlace que te da Cocuyo en tu PC.");
+  if (!punto) throw new Error("Falta la dirección de tu punto de cita. Escanea con la cámara el QR que te muestra Cocuyo en tu PC.");
   const { sala, llave } = await deCodigo(limpio);
   const par = await nuevoPar();
   const nombre = await nombreDelCelular();
@@ -295,6 +295,7 @@ export async function abrirEnlace(recibir, avisar) {
   }
   return {
     emparejado: false,
+    sinPunto: !punto,
     codigo: limpiarCodigo(ancla.get("codigo") ?? "") ?? "",
     olvidar,
     async emparejar(codigo) {

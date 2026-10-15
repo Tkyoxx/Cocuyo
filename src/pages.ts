@@ -3,6 +3,7 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { PERMISOS, type ExtensionInfo, type Permiso } from "./extensiones";
 import { locale, tr, weekLetters } from "./i18n";
+import { qrSvg } from "./qr";
 import {
   call,
   captureKeysAvailable,
@@ -1278,15 +1279,21 @@ class SettingsPage implements Page {
           "remoto",
           `<div class="card">
              <label class="srow"><div><b>Cocuyo en el celular</b><small>Háblale o escríbele desde tu celular, estés donde estés. Va cifrado de punta a punta: el punto de cita solo pasa paquetes que no puede abrir.</small></div><input type="checkbox" class="switch" id="s-remote"></label>
+             <div class="srow slim"><div><b>Tu punto de cita</b><small id="s-remote-relay-sum"></small></div><button class="ghost" id="s-remote-redo" hidden>Montarlo otra vez</button></div>
+             <div class="remote-steps" id="s-remote-steps">
+             <div class="srow slim"><div><b>1. Una cuenta de Cloudflare</b><small>Gratis y sin tarjeta. Ahí vive tu punto de cita y nadie más lo usa. Si ya la tienes, sáltate esto.</small></div><button class="ghost" data-open="https://dash.cloudflare.com/sign-up">Crear cuenta</button></div>
+             <div class="srow slim"><div><b>2. Una llave para Cocuyo</b><small>Dale a «Create Token», elige la plantilla «Edit Cloudflare Workers» con «Use template», baja hasta «Continue to summary» y luego «Create Token». Copia la llave que sale.</small></div><button class="ghost" data-open="https://dash.cloudflare.com/profile/api-tokens">Abrir mis llaves</button></div>
+             <div class="srow slim"><div><b>3. Pégala aquí</b><small>Cocuyo la usa una sola vez para montar tu punto de cita y la olvida. Después puedes borrarla en Cloudflare.</small></div></div>
+             <div class="srow slim pair"><input id="s-remote-key" type="password" placeholder="Llave de Cloudflare" spellcheck="false" autocomplete="off" /><button class="ghost pick" id="s-remote-make">Crear mi punto de cita</button></div>
              <div class="srow stack">
-               <div><b>Punto de cita</b><small>El servidor que junta tu celular con tu PC. Si montas el tuyo, pon aquí su dirección.</small></div>
+               <div><b>¿Ya tienes uno?</b><small>Si montaste el tuyo a mano, pon aquí su dirección.</small></div>
                <input id="s-remote-relay" placeholder="wss://…" spellcheck="false" />
              </div>
-             <div class="srow slim"><div><b>En el celular</b><small id="s-remote-page"></small></div></div>
+             </div>
            </div>
            <div class="card">
              <div class="srow" id="s-remote-pair-row"><div><b>Emparejar un celular</b><small id="s-remote-pair-help">Te doy un código para escribirlo en el celular. Dura dos minutos.</small></div><button class="ghost" id="s-remote-pair">Emparejar</button></div>
-             <div class="remote-code" id="s-remote-code" hidden><b id="s-remote-code-text"></b><div><small id="s-remote-left"></small><button class="ghost" id="s-remote-cancel">Cancelar</button></div></div>
+             <div class="remote-code" id="s-remote-code" hidden><div class="remote-qr" id="s-remote-qr"></div><div><b id="s-remote-code-text"></b><small>Escanéalo con la cámara del celular, o abre <span id="s-remote-page"></span> y escribe el código.</small><small id="s-remote-left"></small><button class="ghost" id="s-remote-cancel">Cancelar</button></div></div>
              <div class="mcp-list" id="s-remote-list"></div>
            </div>`,
         ) +
@@ -1489,6 +1496,43 @@ class SettingsPage implements Page {
       void this.paintRemote();
     });
     q("#s-remote").addEventListener("change", () => setTimeout(() => void this.paintRemote(), 120));
+    const key = q<HTMLInputElement>("#s-remote-key");
+    key.addEventListener("pointerdown", () => host.focus(key));
+    q("#s-remote-steps").addEventListener("click", (e) => {
+      const url = (e.target as HTMLElement).closest<HTMLElement>("[data-open]")?.dataset.open;
+      if (url) void call("script_action", { action: { abrir: url } }).catch(() => {});
+    });
+    q("#s-remote-redo").addEventListener("click", () => {
+      this.remoteRedo = true;
+      void this.paintRemote();
+    });
+    const make = q<HTMLButtonElement>("#s-remote-make");
+    const create = async () => {
+      if (make.disabled) return;
+      if (!key.value.trim()) {
+        this.note("Pega primero la llave de Cloudflare.");
+        key.focus();
+        return;
+      }
+      make.disabled = true;
+      make.textContent = "Montando…";
+      this.note("Montando tu punto de cita en Cloudflare. Tarda menos de un minuto.");
+      try {
+        const made = await call<{ punto: string; responde: boolean }>("remoto_crear_punto", { llave: key.value });
+        key.value = "";
+        this.remoteRedo = false;
+        await this.save({ remoteRelay: made.punto, remoteOn: true });
+        q<HTMLInputElement>("#s-remote").checked = true;
+        this.note(made.responde ? "Listo: tu punto de cita ya está en Cloudflare. Ahora empareja tu celular." : "Tu punto de cita quedó creado, pero todavía no responde. Cloudflare a veces tarda unos minutos con una dirección nueva: empareja en un rato.");
+      } catch (error) {
+        this.note(String(error));
+      }
+      make.disabled = false;
+      make.textContent = "Crear mi punto de cita";
+      void this.paintRemote();
+    };
+    make.addEventListener("click", () => void create());
+    key.addEventListener("keydown", (e) => e.key === "Enter" && void create());
     q("#s-remote-pair").addEventListener("click", async () => {
       try {
         this.note("");
@@ -1836,6 +1880,7 @@ class SettingsPage implements Page {
   }
 
   private remoteTick = 0;
+  private remoteRedo = false;
 
   private async paintRemote() {
     const q = <T extends HTMLElement>(sel: string) => this.el.querySelector<T>(sel)!;
@@ -1843,11 +1888,15 @@ class SettingsPage implements Page {
     const relay = q<HTMLInputElement>("#s-remote-relay");
     if (document.activeElement !== relay) relay.value = state.punto;
     q("#s-remote-page").textContent = REMOTE_PAGE;
+    const host = state.punto.replace(/^wss?:\/\//, "");
+    q("#s-remote-relay-sum").textContent = state.punto ? host : "Todavía no tienes. Cocuyo lo monta por ti en tu cuenta gratis de Cloudflare: son tres pasos.";
+    q("#s-remote-redo").hidden = !state.punto || this.remoteRedo;
+    q("#s-remote-steps").hidden = !!state.punto && !this.remoteRedo;
     q<HTMLButtonElement>("#s-remote-pair").disabled = !state.activo || !state.punto;
     q("#s-remote-pair-help").textContent = !state.activo
       ? "Enciende primero «Cocuyo en el celular»."
       : !state.punto
-        ? "Falta el punto de cita."
+        ? "Primero monta tu punto de cita."
         : state.celulares.length >= 5
           ? "Ya hay cinco celulares. Quita uno para emparejar otro."
           : "Te doy un código para escribirlo en el celular. Dura dos minutos.";
@@ -1858,10 +1907,11 @@ class SettingsPage implements Page {
     q("#s-remote-pair-row").hidden = !!state.emparejando;
     if (state.emparejando) {
       q("#s-remote-code-text").textContent = state.emparejando;
+      q("#s-remote-qr").innerHTML = qrSvg(`https://${REMOTE_PAGE}/#punto=${state.punto}&codigo=${state.emparejando.replace(/-/g, "")}`);
       const until = Date.now() + state.quedan * 1000;
       const tick = () => {
         const rest = Math.max(0, Math.round((until - Date.now()) / 1000));
-        left.textContent = `Escríbelo en el celular. Vence en ${Math.floor(rest / 60)}:${String(rest % 60).padStart(2, "0")}`;
+        left.textContent = `Vence en ${Math.floor(rest / 60)}:${String(rest % 60).padStart(2, "0")}`;
         if (rest === 0) {
           window.clearInterval(this.remoteTick);
           this.note("El código venció. Pide otro cuando tengas el celular a mano.");
