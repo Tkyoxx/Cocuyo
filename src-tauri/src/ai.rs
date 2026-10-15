@@ -20,8 +20,6 @@ const RESTS: [Duration; 3] = [Duration::from_secs(60), Duration::from_secs(600),
 const MAX_TOKENS: u32 = 400;
 const REMEMBERED: usize = 300;
 const THRIFTY_FROM: f32 = 0.6;
-const VOICE_DAILY: u32 = 9;
-const VOICE_MODELS: [&str; 4] = ["gemini-3.8-flash-lite-tts", "gemini-3.8-flash-tts", "gemini-3.1-flash-tts-preview", "gemini-2.5-flash-preview-tts"];
 
 static NO_EFFORT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static PLAIN_ONLY: Mutex<Vec<String>> = Mutex::new(Vec::new());
@@ -674,14 +672,6 @@ pub(crate) fn unbase64(text: &str) -> Vec<u8> {
     out
 }
 
-fn audio_in(reply: &Value) -> Option<&str> {
-    match reply {
-        Value::Object(fields) => fields.iter().filter_map(|(name, value)| if name == "data" { value.as_str() } else { audio_in(value) }).max_by_key(|data| data.len()),
-        Value::Array(items) => items.iter().filter_map(audio_in).max_by_key(|data| data.len()),
-        _ => None,
-    }
-}
-
 pub(crate) fn voice_file(app: &AppHandle, text: &str, voice: &str) -> Result<PathBuf, String> {
     use std::hash::{Hash, Hasher};
     let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?.join("voz").join("dichos");
@@ -705,47 +695,35 @@ pub(crate) fn wav_from_pcm(pcm: &[u8]) -> Vec<u8> {
     wav
 }
 
+pub(crate) fn keep_voice(app: &AppHandle, text: &str, voice: &str, pcm: &[u8]) -> Result<PathBuf, String> {
+    let file = voice_file(app, text, voice)?;
+    std::fs::write(&file, wav_from_pcm(pcm)).map_err(|e| e.to_string())?;
+    let dir = file.parent().map(PathBuf::from).unwrap_or_default();
+    let mut kept: Vec<_> = std::fs::read_dir(&dir).into_iter().flatten().flatten().filter_map(|entry| Some((entry.metadata().ok()?.modified().ok()?, entry.path()))).collect();
+    kept.sort();
+    for (_, old) in kept.iter().rev().skip(400) {
+        let _ = std::fs::remove_file(old);
+    }
+    Ok(file)
+}
+
+pub(crate) fn gemini_voice(app: &AppHandle) -> Result<(), String> {
+    let config = settings::load(app);
+    if !config.ai_url.contains("googleapis.com") || config.ai_format == "anthropic" {
+        return Err("La voz de Gemini necesita que el servicio de IA elegido sea Gemini.".into());
+    }
+    Ok(())
+}
+
 pub fn voice_wav(app: &AppHandle, text: &str, voice: &str) -> Result<PathBuf, String> {
     let file = voice_file(app, text, voice)?;
-    let dir = file.parent().map(PathBuf::from).unwrap_or_default();
     if file.is_file() {
         return Ok(file);
     }
-    if !settings::load(app).ai_url.contains("googleapis.com") {
-        return Err("La voz de Gemini necesita que el servicio de IA elegido sea Gemini.".into());
-    }
-    let key = key(app).ok_or("Falta la clave de Gemini.")?;
-    let asked_today = |model: &str| with_usage(app, |counts| counts.iter().find(|(name, _)| name == model).map_or(0, |(_, used)| *used));
-    for model in VOICE_MODELS.iter().filter(|model| !resting(model) && asked_today(model) < VOICE_DAILY) {
-        let body = json!({
-            "model": model,
-            "input": [{ "type": "user_input", "content": [{ "type": "text", "text": text }] }],
-            "response_format": { "type": "audio" },
-            "generation_config": { "speech_config": [{ "voice": voice }] }
-        });
-        let (status, reply) = send("https://generativelanguage.googleapis.com/v1beta/interactions", &[format!("x-goog-api-key: {key}")], Some(&body))?;
-        count(app, model);
-        if cfg!(debug_assertions) {
-            eprintln!("[voz] {model}: {status} {}", reply.to_string().chars().take(260).collect::<String>());
-        }
-        if status == 429 || status == 404 {
-            rest(model);
-            continue;
-        }
-        if !(200..300).contains(&status) {
-            return Err(refusal(status, &reply, model));
-        }
-        let pcm = unbase64(audio_in(&reply).ok_or("El servicio no devolvió audio.")?);
-        let wav = if pcm.starts_with(b"RIFF") { pcm } else { wav_from_pcm(&pcm) };
-        std::fs::write(&file, wav).map_err(|e| e.to_string())?;
-        let mut kept: Vec<_> = std::fs::read_dir(&dir).into_iter().flatten().flatten().filter_map(|entry| Some((entry.metadata().ok()?.modified().ok()?, entry.path()))).collect();
-        kept.sort();
-        for (_, old) in kept.iter().rev().skip(400) {
-            let _ = std::fs::remove_file(old);
-        }
-        return Ok(file);
-    }
-    Err("La voz de Gemini llegó a su límite de hoy.".into())
+    gemini_voice(app)?;
+    let mut pcm = Vec::new();
+    crate::talk::read_aloud(crate::talk::reader(app, voice)?, text, |piece| pcm.extend_from_slice(piece))?;
+    keep_voice(app, text, voice, &pcm)
 }
 
 fn chats(id: &str) -> bool {
@@ -1006,9 +984,7 @@ mod tests {
     #[test]
     fn audio_comes_back_from_text() {
         assert_eq!(unbase64(&base64(b"RIFF sonido de prueba \x00\xff")), b"RIFF sonido de prueba \x00\xff");
-        let reply = json!({ "steps": [{ "type": "model_output", "content": [{ "type": "audio", "mime_type": "audio/wav", "data": "UklGRg==" }] }], "id": "x" });
-        assert_eq!(audio_in(&reply), Some("UklGRg=="));
-        assert_eq!(audio_in(&json!({ "error": { "message": "no" } })), None);
+        assert!(wav_from_pcm(&[1, 2, 3, 4]).starts_with(b"RIFF") && wav_from_pcm(&[1, 2, 3, 4]).len() == 48);
     }
 
     #[test]

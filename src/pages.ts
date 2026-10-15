@@ -2028,7 +2028,7 @@ class SettingsPage implements Page {
           : now?.slow
             ? "Kokoro es la más natural, pero pesada: en un equipo modesto una frase nueva tarda varios segundos. Las ya dichas salen al instante."
             : chosen && !chosen.startsWith("local:")
-              ? "Voz de Gemini: usa tu clave y solo da para unas pocas frases nuevas al día; cuando se acaban, habla la de Windows."
+              ? "Voz de Gemini: usa tu clave con Gemini Live, sin límite diario, y suena mientras se genera. Si Gemini no responde, habla la de Windows."
               : "La de Windows, una local que suena a persona (se descarga una vez y habla sin internet) o una de Gemini.";
     this.el.querySelector("#s-voice-help")!.textContent = help;
   }

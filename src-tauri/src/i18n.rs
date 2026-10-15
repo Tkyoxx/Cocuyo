@@ -241,7 +241,6 @@ const REPLIES: &[(&str, &str, &str)] = &[
     ("El modelo no devolvió nada.", "The model returned nothing.", "O modelo não devolveu nada."),
     ("La voz de Gemini necesita que el servicio de IA elegido sea Gemini.", "The Gemini voice needs Gemini as the chosen AI service.", "A voz do Gemini precisa que o serviço de IA escolhido seja o Gemini."),
     ("El servicio no devolvió audio.", "The service returned no audio.", "O serviço não devolveu áudio."),
-    ("La voz de Gemini llegó a su límite de hoy.", "The Gemini voice reached today's limit.", "A voz do Gemini chegou ao limite de hoje."),
     ("(No pude hacer el resumen: {})", "(I couldn't write the summary: {})", "(Não consegui fazer o resumo: {})"),
     ("Enciende Remoto primero.", "Turn on Remote first.", "Ligue o Remoto primeiro."),
     ("Falta el punto de cita: pon su dirección en Ajustes, sección Remoto.", "The meeting point is missing: put its address in Settings, Remote section.", "Falta o ponto de encontro: coloque o endereço em Ajustes, seção Remoto."),

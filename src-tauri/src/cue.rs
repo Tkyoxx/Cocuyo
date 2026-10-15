@@ -61,7 +61,30 @@ pub fn wav_of(text: &str) -> Result<Vec<u8>, String> {
 }
 
 #[cfg(not(test))]
+fn say_live(text: &str) -> Option<bool> {
+    let (app, voice) = NATURAL.lock().unwrap().clone().filter(|(_, voice)| !voice.is_empty() && !voice.contains(':') && voice != "loquendero")?;
+    if crate::ai::voice_file(&app, text, &voice).is_ok_and(|file| file.is_file()) || crate::ai::gemini_voice(&app).is_err() {
+        return None;
+    }
+    Some(match crate::talk::speak(&app, text, &voice) {
+        Ok(pcm) => {
+            let _ = crate::ai::keep_voice(&app, text, &voice, &pcm);
+            true
+        }
+        Err(why) => {
+            if cfg!(debug_assertions) {
+                eprintln!("[voz] en vivo: {why}");
+            }
+            false
+        }
+    })
+}
+
+#[cfg(not(test))]
 fn say_natural(text: &str) -> bool {
+    if let Some(said) = say_live(text) {
+        return said;
+    }
     let Some(spoken) = natural_wav(text) else { return false };
     match spoken {
         Ok(file) => unsafe {

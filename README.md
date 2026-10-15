@@ -201,7 +201,7 @@ En **Ajustes → Voz → Voz al responder** eliges con qué voz habla Cocuyo:
 | Kokoro (Dora, Alex, Santa) | En tu equipo, sin internet | Solo equipos rápidos: es la más natural, pero en uno modesto una frase larga tarda más de 20 s |
 | Las de Windows (Pablo, Laura, Helena…) | En tu equipo | Cualquiera. Ya vienen con Windows y hablan al instante |
 | El Loquendero (solo en español) | En tu equipo | La voz de los videos de 2015: la de Loquendo si la tienes instalada (Cocuyo no la trae: es de pago); si no, Pablo más grave |
-| Gemini (Kore, Puck, Charon) | En Google, con tu clave | El plan gratis solo da unas 10 frases nuevas al día por modelo |
+| Gemini (Kore, Puck, Charon) | En Google, con tu clave | Va por Gemini Live: sin límite diario y suena mientras se genera |
 
 Las voces locales usan [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) y se descargan de sus publicaciones oficiales al elegirlas, comprobadas con SHA-256. Con cualquiera, cada frase se prepara una vez y se guarda: «En pausa.» o «Siguiente.» salen después al instante.
 

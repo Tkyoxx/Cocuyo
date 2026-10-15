@@ -376,6 +376,22 @@ pub(crate) fn reader(app: &AppHandle, voice: &str) -> Result<Socket, String> {
     Ok(socket)
 }
 
+#[cfg(not(test))]
+pub(crate) fn speak(app: &AppHandle, text: &str, voice: &str) -> Result<Vec<u8>, String> {
+    let socket = reader(app, voice)?;
+    wake_speaker();
+    let mut to_speaker = None;
+    let mut whole = Vec::new();
+    read_aloud(socket, text, |pcm| {
+        whole.extend_from_slice(pcm);
+        play(pcm, &mut to_speaker);
+    })?;
+    while !QUEUE.lock().unwrap().is_empty() {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    Ok(whole)
+}
+
 pub(crate) fn read_aloud(socket: Socket, text: &str, mut chunk: impl FnMut(&[u8])) -> Result<(), String> {
     let socket = Arc::new(socket);
     let done = Arc::new(AtomicBool::new(false));

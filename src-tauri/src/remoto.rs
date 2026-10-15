@@ -857,9 +857,7 @@ fn reply(app: &AppHandle, link: &Link, text: Option<String>, error: Option<Strin
                 if !whole.is_empty() {
                     let _ = link.send(JSON, json!({ "tipo": "voz-fin" }).to_string().as_bytes());
                     if read.is_ok() && sent {
-                        if let Ok(file) = crate::ai::voice_file(app, &spoken, &voice) {
-                            let _ = std::fs::write(file, crate::ai::wav_from_pcm(&whole));
-                        }
+                        let _ = crate::ai::keep_voice(app, &spoken, &voice, &whole);
                     }
                     return;
                 }
