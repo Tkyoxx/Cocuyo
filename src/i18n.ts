@@ -604,6 +604,8 @@ const EXACT: Record<string, [string, string]> = {
   "Todo lo que suena: el juego, la música, la otra persona en una llamada.": ["Everything that plays: the game, the music, the other person on a call.", "Tudo o que toca: o jogo, a música, a outra pessoa numa chamada."],
   "Su volumen": ["Its volume", "Volume"],
   "Volumen del PC": ["PC volume", "Volume do PC"],
+  "Que Cocuyo salga en los videos": ["Show Cocuyo in videos", "Mostrar o Cocuyo nos vídeos"],
+  "La isla, lo que entiende y lo que responde quedan grabados. Apagado, se esconde solo mientras grabas un video.": ["The island, what it understands and what it answers get recorded. Off, it hides only while you record a video.", "A ilha, o que ele entende e o que responde ficam gravados. Desligado, ele se esconde só enquanto você grava um vídeo."],
   "un juego o Escritorio": ["a game or Desktop", "um jogo ou Área de trabalho"],
   "Grabación guardada.": ["Recording saved.", "Gravação salva."],
   "Quitar el ruido": ["Remove noise", "Tirar o ruído"],

@@ -1281,6 +1281,7 @@ class SettingsPage implements Page {
              <div class="srow stack"><div><b>Calidad</b><small id="s-rec-plan"></small></div>${segmented("s-rec-profile", [["auto", "Automática"], ["ahorro", "Ahorro"], ["equilibrado", "Equilibrada"], ["alta", "Alta"], ["maxima", "Máxima"]])}</div>
              <div id="s-rec-manual"></div>
              <label class="srow"><div><b>Mostrar el cursor</b><small>Se dibuja en la gráfica, encima de la imagen.</small></div><input type="checkbox" class="switch" id="s-rec-cursor"></label>
+             <label class="srow"><div><b>Que Cocuyo salga en los videos</b><small>La isla, lo que entiende y lo que responde quedan grabados. Apagado, se esconde solo mientras grabas un video.</small></div><input type="checkbox" class="switch" id="s-rec-show"></label>
            </div>
            <div class="card">
              <label class="srow"><div><b>Repetición instantánea</b><small id="s-rec-replay-help"></small></div><input type="checkbox" class="switch" id="s-rec-replay"></label>
@@ -1638,6 +1639,7 @@ class SettingsPage implements Page {
       else if (input.id === "s-rec-system") void this.save({ recSystem: input.checked });
       else if (input.id === "s-rec-mic") void this.save({ recMic: input.checked });
       else if (input.id === "s-rec-cursor") void this.save({ recCursor: input.checked });
+      else if (input.id === "s-rec-show") void this.save({ recShowCocuyo: input.checked });
       else if (input.id === "s-rec-replay") void this.save({ recReplay: input.checked });
     });
     q("#s-rec-save").addEventListener("click", async () => {
@@ -2124,6 +2126,7 @@ class SettingsPage implements Page {
     q<HTMLInputElement>("#s-rec-kbps").value = String(plan.kbps / 1000);
     this.paintKbps(plan.kbps);
     q<HTMLInputElement>("#s-rec-cursor").checked = s.recCursor;
+    q<HTMLInputElement>("#s-rec-show").checked = s.recShowCocuyo;
     q<HTMLInputElement>("#s-rec-system").checked = s.recSystem;
     q<HTMLInputElement>("#s-rec-mic").checked = s.recMic;
     q<HTMLInputElement>("#s-rec-system-vol").value = String(s.recSystemVol);

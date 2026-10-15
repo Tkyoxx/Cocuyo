@@ -1554,7 +1554,6 @@ fn spawn_engine(app: &AppHandle, wanted: Wanted) -> Result<Engine, String> {
     let thread = std::thread::Builder::new()
         .name("grabadora".into())
         .spawn(move || {
-            hide_overlay(&handle, true);
             let fps = plan.fps;
             let done = run(Run { app: Some(&handle), wanted: job_wanted, plan, orders: inbox, limit: None });
             hide_overlay(&handle, false);
@@ -1630,6 +1629,9 @@ pub fn start(app: &AppHandle) -> Result<String, String> {
     }
     engine.recording = Some((path.clone(), now_ms()));
     drop(slot);
+    if !crate::settings::load(app).rec_show_cocuyo {
+        hide_overlay(app, true);
+    }
     announce();
     Ok(path.display().to_string())
 }
@@ -1644,6 +1646,7 @@ pub fn stop(app: &AppHandle) -> Result<String, String> {
     engine.recording = None;
     let finished = if engine.wanted.replay == 0 { slot.take() } else { None };
     drop(slot);
+    hide_overlay(app, false);
     if let Some(engine) = finished {
         let _ = stop_engine(engine);
     }

@@ -91,6 +91,7 @@ pub struct Settings {
     pub rec_replay: bool,
     pub rec_replay_secs: u32,
     pub rec_monitor: String,
+    pub rec_show_cocuyo: bool,
 }
 
 const AI_URL: &str = "https://generativelanguage.googleapis.com/v1beta/openai";
@@ -173,6 +174,7 @@ impl Default for Settings {
             rec_replay: false,
             rec_replay_secs: 30,
             rec_monitor: String::new(),
+            rec_show_cocuyo: true,
         }
     }
 }

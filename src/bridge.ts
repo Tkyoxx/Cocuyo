@@ -192,6 +192,7 @@ export interface Settings {
   recReplay: boolean;
   recReplaySecs: number;
   recMonitor: string;
+  recShowCocuyo: boolean;
 }
 
 export interface Hotkey {
@@ -319,6 +320,7 @@ const DEFAULTS: Settings = {
   recReplay: false,
   recReplaySecs: 30,
   recMonitor: "",
+  recShowCocuyo: true,
 };
 
 export function onKey(handler: (vk: number) => void) {
