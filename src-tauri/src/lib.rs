@@ -337,6 +337,9 @@ pub fn run() {
             remoto::remoto_quitar,
             remoto::remoto_crear_punto,
             mic::mic_list,
+            grabadora::grabar_empezar,
+            grabadora::grabar_parar,
+            grabadora::grabar_estado,
         ])
         .setup(|app| {
             let window = app

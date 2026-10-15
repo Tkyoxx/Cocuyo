@@ -991,11 +991,11 @@ const energia: Page = {
 };
 
 type ChordKey = "dictationKeys" | "commandKeys" | "lassoKeys";
-type HotkeyKey = "captureRegion" | "captureWindow" | "captureScreen";
+type HotkeyKey = "captureRegion" | "captureWindow" | "captureScreen" | "captureRecord";
 type KeysKey = ChordKey | HotkeyKey;
 
 const CHORDS: ChordKey[] = ["dictationKeys", "commandKeys", "lassoKeys"];
-const HOTKEYS: HotkeyKey[] = ["captureRegion", "captureWindow", "captureScreen"];
+const HOTKEYS: HotkeyKey[] = ["captureRegion", "captureWindow", "captureScreen", "captureRecord"];
 const isChord = (key: KeysKey): key is ChordKey => (CHORDS as string[]).includes(key);
 const ESCAPE = 0x1b;
 
@@ -1230,6 +1230,9 @@ class SettingsPage implements Page {
              <label class="srow"><div><b>Copiar al portapapeles</b><small>La captura queda lista para pegar.</small></div><input type="checkbox" class="switch" id="s-copy"></label>
            </div>
            <div class="card">
+             <div class="srow"><div><b>Grabar la pantalla</b><small id="s-rec-help">Con el audio del PC y tu micrófono. Lo codifica la gráfica, así casi no gasta.</small></div><button class="ghost pick" id="s-rec">Grabar</button></div>
+           </div>
+           <div class="card">
              <div class="srow" id="s-folder-row"><div><b>Carpeta de capturas</b><small class="path" id="s-folder"></small></div><button class="ghost" id="s-reset" hidden>Restablecer</button><button class="ghost" id="s-open">Abrir</button><button class="ghost" id="s-pick">Cambiar</button></div>
            </div>`,
         ) +
@@ -1321,7 +1324,8 @@ class SettingsPage implements Page {
            <div class="card">${
              keyRow("captureRegion", "Capturar un rectángulo", "") +
              keyRow("captureWindow", "Capturar la ventana activa", "") +
-             keyRow("captureScreen", "Capturar toda la pantalla", "")
+             keyRow("captureScreen", "Capturar toda la pantalla", "") +
+             keyRow("captureRecord", "Grabar la pantalla", "Una vez empieza, otra vez para y guarda.")
            }</div>`,
         )
       }<p class="snote" id="s-note"></p></div>`;
@@ -1485,6 +1489,30 @@ class SettingsPage implements Page {
     toggle("#s-agent", "aiAgent");
     toggle("#s-agent-hands", "agentHands");
     toggle("#s-live", "aiLive");
+    const rec = q<HTMLButtonElement>("#s-rec");
+    const paintRec = (on: boolean) => {
+      rec.textContent = on ? "Parar" : "Grabar";
+      rec.classList.toggle("on", on);
+    };
+    void call<boolean>("grabar_estado", undefined, false).then(paintRec);
+    rec.addEventListener("click", async () => {
+      rec.disabled = true;
+      try {
+        if (await call<boolean>("grabar_estado", undefined, false)) {
+          const file = await call<string>("grabar_parar");
+          paintRec(false);
+          this.note(`Guardada: ${file.split("\\").pop()}`);
+        } else {
+          await call<string>("grabar_empezar");
+          paintRec(true);
+          this.note("Grabando. Pulsa Parar para guardar.");
+        }
+      } catch (error) {
+        paintRec(false);
+        this.note(String(error));
+      }
+      rec.disabled = false;
+    });
     q("#s-mic").addEventListener("click", async (e) => {
       const target = (e.target as HTMLElement).closest<HTMLElement>("[data-mic]");
       if (!target) return;

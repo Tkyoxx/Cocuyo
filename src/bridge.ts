@@ -172,6 +172,7 @@ export interface Settings {
   captureRegion: Hotkey;
   captureWindow: Hotkey;
   captureScreen: Hotkey;
+  captureRecord: Hotkey;
 }
 
 export interface Hotkey {
@@ -279,6 +280,7 @@ const DEFAULTS: Settings = {
   captureRegion: { mods: 0, vk: 0x2c },
   captureWindow: { mods: 4, vk: 0x2c },
   captureScreen: { mods: 1, vk: 0x2c },
+  captureRecord: { mods: 5, vk: 0x52 },
 };
 
 export function onKey(handler: (vk: number) => void) {

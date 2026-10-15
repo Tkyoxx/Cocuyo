@@ -521,6 +521,47 @@ unsafe fn run(path: &Path, height: u32, fps: u32, sound: (bool, bool), stop: &At
     Ok(stats)
 }
 
+type Running = (std::sync::Arc<AtomicBool>, std::thread::JoinHandle<Result<Stats, String>>, std::path::PathBuf);
+
+static RECORDING: std::sync::Mutex<Option<Running>> = std::sync::Mutex::new(None);
+
+#[tauri::command]
+pub fn grabar_empezar(app: tauri::AppHandle) -> Result<String, String> {
+    let mut running = RECORDING.lock().unwrap();
+    if running.is_some() {
+        return Err("Ya estoy grabando.".into());
+    }
+    let settings = crate::settings::load(&app);
+    let dir = crate::settings::capture_dir(&app, &settings).ok_or("No encontré la carpeta de capturas.")?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let now = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
+    let file = dir.join(format!("Grabación {:04}-{:02}-{:02} {:02}-{:02}-{:02}.mp4", now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond));
+    let stop = std::sync::Arc::new(AtomicBool::new(false));
+    let (path, halt) = (file.clone(), stop.clone());
+    let worker = std::thread::Builder::new()
+        .name("grabadora".into())
+        .spawn(move || record(&path, 0, 60, (true, true), &halt, None))
+        .map_err(|e| e.to_string())?;
+    *running = Some((stop, worker, file.clone()));
+    Ok(file.display().to_string())
+}
+
+#[tauri::command]
+pub fn grabar_parar() -> Result<String, String> {
+    let (stop, worker, file) = RECORDING.lock().unwrap().take().ok_or("No estaba grabando.")?;
+    stop.store(true, Ordering::Relaxed);
+    let stats = worker.join().map_err(|_| "La grabadora se cayó.".to_string())??;
+    if cfg!(debug_assertions) {
+        eprintln!("[grabar] {}", serde_json::to_string(&stats).unwrap_or_default());
+    }
+    Ok(file.display().to_string())
+}
+
+#[tauri::command]
+pub fn grabar_estado() -> bool {
+    RECORDING.lock().unwrap().as_ref().is_some_and(|(_, worker, _)| !worker.is_finished())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

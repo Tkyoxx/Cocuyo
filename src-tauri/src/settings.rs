@@ -71,6 +71,7 @@ pub struct Settings {
     pub capture_region: Hotkey,
     pub capture_window: Hotkey,
     pub capture_screen: Hotkey,
+    pub capture_record: Hotkey,
 }
 
 const AI_URL: &str = "https://generativelanguage.googleapis.com/v1beta/openai";
@@ -133,13 +134,14 @@ impl Default for Settings {
             capture_region: DEFAULT_CAPTURES[0],
             capture_window: DEFAULT_CAPTURES[1],
             capture_screen: DEFAULT_CAPTURES[2],
+            capture_record: DEFAULT_CAPTURES[3],
         }
     }
 }
 
 impl Settings {
-    fn captures(&self) -> [Hotkey; 3] {
-        [self.capture_region, self.capture_window, self.capture_screen]
+    fn captures(&self) -> [Hotkey; 4] {
+        [self.capture_region, self.capture_window, self.capture_screen, self.capture_record]
     }
 }
 
@@ -151,11 +153,11 @@ fn check_keys(settings: &Settings) -> Result<(), String> {
     if chords[0] == chords[1] || chords[0] == chords[2] || chords[1] == chords[2] {
         return Err("Dictar, rodear y dar órdenes necesitan atajos distintos.".into());
     }
-    let [region, window, screen] = settings.captures();
-    if ![region, window, screen].into_iter().all(hotkeys::valid_hotkey) {
+    let [region, window, screen, record] = settings.captures();
+    if ![region, window, screen, record].into_iter().all(hotkeys::valid_hotkey) {
         return Err("Una letra o un número necesita Ctrl, Shift, Alt o Win. Solas solo valen Impr Pant y las teclas F.".into());
     }
-    if region == window || region == screen || window == screen {
+    if region == window || region == screen || window == screen || [region, window, screen].contains(&record) {
         return Err("Cada captura necesita su propio atajo.".into());
     }
     Ok(())
@@ -183,6 +185,7 @@ pub fn load(app: &AppHandle) -> Settings {
             capture_region: safe.capture_region,
             capture_window: safe.capture_window,
             capture_screen: safe.capture_screen,
+            capture_record: safe.capture_record,
             ..settings
         };
     }

@@ -592,6 +592,14 @@ const EXACT: Record<string, [string, string]> = {
   "Esa extensión pide más permisos de los que muestra la galería. No se instala.": ["That extension asks for more permissions than the gallery shows. It won't be installed.", "Essa extensão pede mais permissões do que a galeria mostra. Não será instalada."],
   Remoto: ["Remote", "Remoto"],
   "Panel táctil": ["Touchpad", "Touchpad"],
+  "Grabar la pantalla": ["Record the screen", "Gravar a tela"],
+  "Con el audio del PC y tu micrófono. Lo codifica la gráfica, así casi no gasta.": ["With the PC's sound and your microphone. The graphics card encodes it, so it barely costs anything.", "Com o áudio do PC e seu microfone. A placa de vídeo codifica, então quase não pesa."],
+  Grabar: ["Record", "Gravar"],
+  "Una vez empieza, otra vez para y guarda.": ["Once starts, again stops and saves.", "Uma vez começa, de novo para e salva."],
+  Parar: ["Stop", "Parar"],
+  "Grabando. Pulsa Parar para guardar.": ["Recording. Press Stop to save.", "Gravando. Aperte Parar para salvar."],
+  "Ya estoy grabando.": ["I'm already recording.", "Já estou gravando."],
+  "No estaba grabando.": ["I wasn't recording.", "Eu não estava gravando."],
   "El de Windows": ["Windows default", "O do Windows"],
   "El que usa Cocuyo para oírte. Si no te escucha, prueba con otro.": ["The one Cocuyo uses to hear you. If it doesn't hear you, try another.", "O que o Cocuyo usa para te ouvir. Se ele não te ouvir, tente outro."],
   "No encuentro ningún micrófono conectado.": ["I can't find any microphone plugged in.", "Não encontro nenhum microfone conectado."],
@@ -652,6 +660,7 @@ const EXACT: Record<string, [string, string]> = {
 };
 
 const PATTERNS: [RegExp, string, string][] = [
+  [/^Guardada: (.+)$/, "Saved: $1", "Salva: $1"],
   [/^Vence en (\d+:\d\d)$/, "Expires in $1", "Vence em $1"],
   [/^Emparejado el (.+)$/, "Paired on $1", "Pareado em $1"],
   [/^Listo: «(.+)» quedó emparejado\.$/, "Done: “$1” is paired.", "Pronto: «$1» foi pareado."],
