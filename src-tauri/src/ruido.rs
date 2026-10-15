@@ -123,6 +123,58 @@ impl Denoiser {
     }
 }
 
+pub struct Rnnoise {
+    state: Box<nnnoiseless::DenoiseState<'static>>,
+    pending: Vec<f32>,
+    frame: Vec<f32>,
+    out: Vec<f32>,
+}
+
+impl Rnnoise {
+    pub fn new() -> Rnnoise {
+        let size = nnnoiseless::DenoiseState::FRAME_SIZE;
+        Rnnoise { state: nnnoiseless::DenoiseState::new(), pending: Vec::with_capacity(size * 4), frame: vec![0.0; size], out: vec![0.0; size] }
+    }
+
+    pub fn process(&mut self, input: &[f32]) -> Vec<f32> {
+        let size = nnnoiseless::DenoiseState::FRAME_SIZE;
+        self.pending.extend_from_slice(input);
+        let mut cleaned = Vec::with_capacity(input.len() + size);
+        while self.pending.len() >= size {
+            for (slot, sample) in self.frame.iter_mut().zip(&self.pending[..size]) {
+                *slot = sample * 32768.0;
+            }
+            self.state.process_frame(&mut self.out, &self.frame);
+            cleaned.extend(self.out.iter().map(|s| s / 32768.0));
+            self.pending.drain(..size);
+        }
+        cleaned
+    }
+}
+
+pub enum Cleaner {
+    Own(Denoiser),
+    Rnn(Rnnoise),
+}
+
+impl Cleaner {
+    pub fn new(kind: u8) -> Option<Cleaner> {
+        match kind {
+            1 => Some(Cleaner::Own(Denoiser::new(false))),
+            2 => Some(Cleaner::Own(Denoiser::new(true))),
+            3 => Some(Cleaner::Rnn(Rnnoise::new())),
+            _ => None,
+        }
+    }
+
+    pub fn process(&mut self, input: &[f32]) -> Vec<f32> {
+        match self {
+            Cleaner::Own(own) => own.process(input),
+            Cleaner::Rnn(rnn) => rnn.process(input),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,6 +210,18 @@ mod tests {
             let voiced_after = rms(&cleaned[110_000..140_000]);
             assert!(voiced_after > rms(&voice[110_000..140_000]) * 0.85, "voz {voiced_after}");
         }
+    }
+
+    #[test]
+    fn rnnoise_lowers_the_hiss_too() {
+        let mut seed = 11;
+        let hiss: Vec<f32> = (0..48_000 * 3).map(|_| noise(&mut seed) * 0.05).collect();
+        let mut cleaner = Cleaner::new(3).unwrap();
+        let cleaned = cleaner.process(&hiss);
+        assert_eq!(cleaned.len(), hiss.len() / 480 * 480);
+        let (before, after) = (rms(&hiss[48_000..96_000]), rms(&cleaned[48_000..96_000]));
+        println!("[rnnoise] soplido {before:.4} -> {after:.4}");
+        assert!(after < before * 0.8, "{before} -> {after}");
     }
 
     #[test]

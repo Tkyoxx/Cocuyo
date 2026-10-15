@@ -230,6 +230,9 @@ fn wav(notes: &[(f32, u32)]) -> Vec<u8> {
 }
 
 pub fn ring(cue: Cue) {
+    if matches!(cue, Cue::Recording | Cue::Kept) {
+        QUIET_UNTIL.fetch_max(now_ms() + 1150, Ordering::Relaxed);
+    }
     sound(cue);
 }
 
@@ -286,14 +289,6 @@ pub fn alert(text: &str) {
 }
 
 fn say(text: &str) -> Result<(), String> {
-    SAYING.fetch_add(1, Ordering::Relaxed);
-    let said = say_now(text);
-    QUIET_UNTIL.fetch_max(now_ms() + 250, Ordering::Relaxed);
-    SAYING.fetch_sub(1, Ordering::Relaxed);
-    said
-}
-
-fn say_now(text: &str) -> Result<(), String> {
     let text = &crate::i18n::tr(text);
     if say_natural(&text.replace(['«', '»'], "")) {
         return Ok(());
@@ -320,14 +315,12 @@ fn sound(cue: Cue) {
             wav(&[(660.0, 70), (880.0, 90)]),   // sube: te escucho
             wav(&[(880.0, 70), (1320.0, 120)]), // sube más: hecho
             wav(&[(440.0, 90), (330.0, 150)]),  // baja: no pude
-            chime(&[(0, 659.3, 0.9), (85, 987.8, 0.8), (170, 1318.5, 0.75), (255, 1975.5, 0.5)], 900), // campanitas que suben: grabando
-            chime(&[(0, 1568.0, 0.6), (95, 1174.7, 0.75), (190, 784.0, 0.85), (300, 523.3, 1.0)], 1100), // bajan y se posan: guardado
-            chime(&[(0, 1760.0, 0.7), (0, 2637.0, 0.35), (120, 2093.0, 0.6)], 650),                    // destello: guarde lo ultimo
+            chime(&[(0, 329.6, 0.9), (90, 493.9, 0.8), (180, 659.3, 0.75), (270, 987.8, 0.5)], 900), // campanitas que suben: grabando
+            chime(&[(0, 784.0, 0.6), (100, 587.3, 0.75), (200, 392.0, 0.85), (310, 261.6, 1.0)], 1100), // bajan y se posan: guardado
+            chime(&[(0, 880.0, 0.7), (0, 1318.5, 0.3), (120, 1046.5, 0.6)], 650),                   // destello: guarde lo ultimo
         ]
     });
     let tone = &sounds[cue as usize];
-    let lasts = (tone.len().saturating_sub(44) / 2) as u64 * 1000 / RATE as u64;
-    QUIET_UNTIL.fetch_max(now_ms() + lasts + 150, Ordering::Relaxed);
     unsafe {
         let _ = PlaySoundW(PCWSTR(tone.as_ptr().cast()), None, SND_MEMORY | SND_ASYNC | SND_NODEFAULT);
     }
@@ -336,7 +329,7 @@ fn sound(cue: Cue) {
 fn chime(notes: &[(u32, f32, f32)], length_ms: u32) -> Vec<u8> {
     let count = (RATE * length_ms / 1000) as usize;
     let mut mix = vec![0f32; count];
-    let partials = [(1.0, 1.0, 1.0), (2.0, 0.32, 1.8), (3.01, 0.12, 2.6), (4.17, 0.05, 3.4)];
+    let partials = [(1.0, 1.0, 1.0), (2.0, 0.18, 1.8), (3.01, 0.05, 2.6)];
     for (start, hz, gain) in notes {
         let first = (RATE * start / 1000) as usize;
         for i in first..count {
@@ -361,7 +354,7 @@ fn chime(notes: &[(u32, f32, f32)], length_ms: u32) -> Vec<u8> {
         *sample *= n as f32 / tail as f32;
     }
     let peak = mix.iter().fold(0f32, |m, s| m.max(s.abs())).max(1e-6);
-    let samples: Vec<i16> = mix.iter().map(|s| (s / peak * 0.105 * i16::MAX as f32) as i16).collect();
+    let samples: Vec<i16> = mix.iter().map(|s| (s / peak * 0.055 * i16::MAX as f32) as i16).collect();
     let data = samples.len() as u32 * 2;
     let mut out = Vec::with_capacity(44 + data as usize);
     out.extend(b"RIFF");
@@ -381,14 +374,13 @@ fn chime(notes: &[(u32, f32, f32)], length_ms: u32) -> Vec<u8> {
 }
 
 static QUIET_UNTIL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-static SAYING: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 fn now_ms() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
 }
 
 pub fn quiet() -> bool {
-    SAYING.load(Ordering::Relaxed) > 0 || now_ms() < QUIET_UNTIL.load(Ordering::Relaxed)
+    now_ms() < QUIET_UNTIL.load(Ordering::Relaxed)
 }
 
 #[cfg(test)]
@@ -398,9 +390,9 @@ mod tests {
     #[test]
     fn chimes_are_valid_wav_files() {
         let sets: [(&str, &[(u32, f32, f32)], u32); 3] = [
-            ("grabando", &[(0, 659.3, 0.9), (85, 987.8, 0.8), (170, 1318.5, 0.75), (255, 1975.5, 0.5)], 900),
-            ("guardado", &[(0, 1568.0, 0.6), (95, 1174.7, 0.75), (190, 784.0, 0.85), (300, 523.3, 1.0)], 1100),
-            ("repeticion", &[(0, 1760.0, 0.7), (0, 2637.0, 0.35), (120, 2093.0, 0.6)], 650),
+            ("grabando", &[(0, 329.6, 0.9), (90, 493.9, 0.8), (180, 659.3, 0.75), (270, 987.8, 0.5)], 900),
+            ("guardado", &[(0, 784.0, 0.6), (100, 587.3, 0.75), (200, 392.0, 0.85), (310, 261.6, 1.0)], 1100),
+            ("repeticion", &[(0, 880.0, 0.7), (0, 1318.5, 0.3), (120, 1046.5, 0.6)], 650),
         ];
         for (name, notes, length) in sets {
             let sound = chime(notes, length);

@@ -1294,7 +1294,7 @@ class SettingsPage implements Page {
              <label class="srow"><div><b>Micrófono</b><small>Tu voz encima de todo lo demás.</small></div><input type="checkbox" class="switch" id="s-rec-mic"></label>
              <div class="srow chips flat" id="s-rec-mics"></div>
              <div class="srow stack" id="s-rec-mic-row"><div><b>Volumen del micrófono</b><small id="s-rec-mic-text"></small></div><input type="range" class="range" id="s-rec-mic-vol" min="0" max="200" step="5" /></div>
-             <div class="srow stack" id="s-rec-noise-row"><div><b>Quitar el ruido</b><small>El ventilador, el zumbido o el soplido de fondo. Lo hace Cocuyo mismo y casi no gasta.</small></div>${segmented("s-rec-noise", [["", "Apagado"], ["suave", "Suave"], ["fuerte", "Fuerte"]])}</div>
+             <div class="srow stack" id="s-rec-noise-row"><div><b>Quitar el ruido</b><small>Suave y Fuerte limpian el ventilador, el zumbido y el soplido. RNNoise, el más completo, es una red neuronal que además quita el teclado y el ruido de la calle. Todo corre dentro de Cocuyo, sin internet.</small></div>${segmented("s-rec-noise", [["", "Apagado"], ["suave", "Suave"], ["fuerte", "Fuerte"], ["rnnoise", "RNNoise"]])}</div>
              <div class="srow stack"><div><b>Calidad del sonido</b><small>AAC estéreo a 48 kHz.</small></div>${segmented("s-rec-audio", [[128, "128 kb/s"], [160, "160 kb/s"], [192, "192 kb/s"]])}</div>
            </div>
            <div class="card">
@@ -1304,7 +1304,6 @@ class SettingsPage implements Page {
            <div class="card">
              <label class="srow"><div><b>Preguntar dónde guardar</b><small>Apagado: cada captura va directo a la carpeta.</small></div><input type="checkbox" class="switch" id="s-ask"></label>
              <label class="srow"><div><b>Copiar al portapapeles</b><small>La captura queda lista para pegar.</small></div><input type="checkbox" class="switch" id="s-copy"></label>
-           </div>
            </div>
            </div>`,
         ) +
@@ -2148,7 +2147,7 @@ class SettingsPage implements Page {
     q("#s-rec-mics").innerHTML = chip("", tr("El mismo de Voz"), !s.recMicId || !mics.some((m) => m.id === s.recMicId)) + mics.map((m) => chip(m.id, m.nombre, m.id === s.recMicId)).join("");
     q("#s-rec-mics").classList.toggle("off", !s.recMic);
     const folder = await call<string | null>("current_record_dir", undefined, null);
-    q("#s-rec-folder").textContent = folder ?? "";
+    q("#s-rec-folder").textContent = folder ? folder + "\\" + tr("un juego o Escritorio") : "";
     q("#s-rec-reset").hidden = !s.recDir;
   }
 

@@ -92,6 +92,7 @@ impl Wanted {
             noise: match settings.rec_noise.as_str() {
                 "suave" => 1,
                 "fuerte" => 2,
+                "rnnoise" => 3,
                 _ => 0,
             },
         }
@@ -447,7 +448,7 @@ struct Ear {
     right: crate::talk::Resampler,
     rate: u32,
     gain: f32,
-    clean: Option<crate::ruido::Denoiser>,
+    clean: Option<crate::ruido::Cleaner>,
     system: bool,
 }
 
@@ -505,7 +506,7 @@ impl Ears {
             let (Some(gain), Some(device)) = (gain, device) else { continue };
             if let Some((stream, rate)) = listen_to(&device, ears.len(), feed.clone()) {
                 let name = device.description().map(|about| about.name().to_string()).unwrap_or_default();
-                let clean = (what == "micrófono" && noise > 0).then(|| crate::ruido::Denoiser::new(noise > 1));
+                let clean = if what == "micrófono" { crate::ruido::Cleaner::new(noise) } else { None };
                 names.push(format!("{what}: {name}{}", if clean.is_some() { " (sin ruido)" } else { "" }));
                 streams.push(stream);
                 ears.push(Ear { queue: VecDeque::new(), left: crate::talk::Resampler::new(rate as f64, RATE as f64), right: crate::talk::Resampler::new(rate as f64, RATE as f64), rate, gain, clean, system: what == "PC" });
@@ -1090,6 +1091,7 @@ fn announce() {
     let state = estado_of(ENGINE.lock().unwrap().as_ref());
     *STATE.lock().unwrap() = Some(state.clone());
     if let Some(app) = APP.get() {
+        crate::gamelayer::recording(app, state.grabando.then_some(state.desde));
         let _ = app.emit_to(crate::overlay::LABEL, "grabadora", state);
     }
 }
@@ -1474,9 +1476,64 @@ pub fn record(path: &Path, wanted: Wanted, seconds: u64) -> Result<Stats, String
     done
 }
 
+pub fn folder_name(raw: &str) -> String {
+    let clean: String = raw.chars().map(|c| if "<>:\"/\\|?*".contains(c) || c.is_control() { ' ' } else { c }).collect();
+    let clean = clean.split_whitespace().collect::<Vec<_>>().join(" ");
+    let clean: String = clean.chars().take(60).collect();
+    let clean = clean.trim_end_matches(['.', ' ']).to_string();
+    if clean.is_empty() || matches!(clean.to_uppercase().as_str(), "CON" | "PRN" | "AUX" | "NUL") {
+        "Escritorio".into()
+    } else {
+        clean
+    }
+}
+
+fn what_is_in_front() -> String {
+    use windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION};
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId};
+    if !crate::placement::fullscreen() && !crate::placement::exclusive() {
+        return "Escritorio".into();
+    }
+    unsafe {
+        let window = GetForegroundWindow();
+        if window.is_invalid() {
+            return "Escritorio".into();
+        }
+        let mut process = 0;
+        GetWindowThreadProcessId(window, Some(&mut process));
+        let mut path = String::new();
+        if let Ok(handle) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process) {
+            let mut buffer = [0u16; 520];
+            let mut length = buffer.len() as u32;
+            if QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, windows::core::PWSTR(buffer.as_mut_ptr()), &mut length).is_ok() {
+                path = String::from_utf16_lossy(&buffer[..length as usize]);
+            }
+            let _ = windows::Win32::Foundation::CloseHandle(handle);
+        }
+        if path.to_lowercase().contains("\\windows\\") {
+            return "Escritorio".into();
+        }
+        let generic = |name: &str| {
+            let lower = name.to_lowercase();
+            lower.len() < 2 || ["launcher", "game", "unreal", "unity", "application", "client", "win64", "shipping"].iter().any(|w| lower == *w || lower.ends_with(&format!(" {w}")))
+        };
+        if let Some(described) = crate::system::description(&path).filter(|d| !generic(d)) {
+            return folder_name(&described);
+        }
+        let mut title = [0u16; 256];
+        let length = GetWindowTextW(window, &mut title);
+        let title = String::from_utf16_lossy(&title[..length.max(0) as usize]);
+        let title = title.split(['(', '|', '-', '—']).next().unwrap_or("").trim().to_string();
+        if !title.is_empty() && !generic(&title) {
+            return folder_name(&title);
+        }
+        folder_name(Path::new(&path).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default().as_str())
+    }
+}
+
 fn dir_for(app: &AppHandle) -> Result<PathBuf, String> {
     let settings = crate::settings::load(app);
-    let dir = crate::settings::record_dir(app, &settings).ok_or("No encontré la carpeta de videos.")?;
+    let dir = crate::settings::record_dir(app, &settings).ok_or("No encontré la carpeta de videos.")?.join(what_is_in_front());
     std::fs::create_dir_all(&dir).map_err(|e| format!("No pude crear {}: {e}", dir.display()))?;
     Ok(dir)
 }
@@ -1801,6 +1858,10 @@ mod tests {
         assert_eq!(bitrate((640, 360), 30, 0.07, Codec::H264), 1_500_000);
         assert_eq!(soft(0.5), 0.5);
         assert_eq!(tidy_cpu("Intel(R) Core(TM) i3-7100 CPU @ 3.90GHz"), "Core i3-7100");
+        assert_eq!(folder_name("Rocket League"), "Rocket League");
+        assert_eq!(folder_name("Grand Theft Auto: San Andreas"), "Grand Theft Auto San Andreas");
+        assert_eq!(folder_name("  ...  "), "Escritorio");
+        assert_eq!(folder_name("Juego?*"), "Juego");
         assert_eq!(tidy_cpu("AMD Ryzen 5 5600G with Radeon Graphics"), "AMD Ryzen 5 5600G");
         assert!(soft(3.0) <= 1.0 && soft(3.0) > 0.99 && soft(-3.0) >= -1.0 && soft(0.95) < 0.95);
     }

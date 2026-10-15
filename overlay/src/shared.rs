@@ -1,4 +1,4 @@
-pub const MAP_NAME: &str = "Local\\CocuyoOverlay.v2";
+pub const MAP_NAME: &str = "Local\\CocuyoOverlay.v3";
 pub const TEXT_LEN: usize = 300;
 
 pub const PILL_HIDDEN: u32 = 0;
@@ -23,4 +23,7 @@ pub struct Shared {
     pub inset_bottom: f32,
     pub who: [u16; 16],
     pub text: [u16; TEXT_LEN],
+    pub recording: u32,
+    pub rec_spare: u32,
+    pub rec_since: u64,
 }

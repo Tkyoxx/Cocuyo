@@ -22,6 +22,8 @@ cpal = "0.18"
 # Para abrir las voces locales: el tar de Windows 10 no entiende bzip2. Las dos son Rust puro.
 bzip2-rs = "0.1"
 tar = { version = "0.4", default-features = false }
+# RNNoise en Rust puro para limpiar el micrófono de la grabadora. Suma ~1 MB al exe y 1,5 % de un núcleo del i3 mientras graba.
+nnnoiseless = { version = "0.5", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 # La macro que implementa interfaces COM (el aviso del reproductor de fondos) la busca por este nombre.

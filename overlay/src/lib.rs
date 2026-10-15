@@ -16,7 +16,7 @@ use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TY
 use windows::Win32::Graphics::Direct3D11::{
     D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D, D3D11_BIND_SHADER_RESOURCE, D3D11_BOX,
     D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_FLAG, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_SDK_VERSION,
-    D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
+    D3D11_SUBRESOURCE_DATA, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_TYPELESS, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
@@ -198,8 +198,17 @@ struct Stage {
     text: Option<Text>,
     settled: Option<(u32, Vec<Paint>)>,
     caption_slot: Option<Slot>,
+    badge: Option<Badge>,
 }
 unsafe impl Send for Stage {}
+
+struct Badge {
+    device: usize,
+    format: DXGI_FORMAT,
+    second: u64,
+    size: (u32, u32),
+    texture: ID3D11Texture2D,
+}
 
 static STAGE: Mutex<Option<Stage>> = Mutex::new(None);
 
@@ -215,7 +224,7 @@ unsafe fn draw(chain: *mut c_void) {
         return;
     }
     if guard.is_none() {
-        if shared.pill == PILL_HIDDEN && shared.caption == CAPTION_NONE {
+        if shared.pill == PILL_HIDDEN && shared.caption == CAPTION_NONE && shared.recording == 0 {
             return;
         }
         *guard = Some(Stage {
@@ -234,6 +243,7 @@ unsafe fn draw(chain: *mut c_void) {
             text: None,
             settled: None,
             caption_slot: None,
+            badge: None,
         });
     }
     let Some(stage) = guard.as_mut() else { return };
@@ -275,7 +285,11 @@ unsafe fn draw(chain: *mut c_void) {
         }
     }
     let caption_alive = stage.caption_shown || now - stage.caption_since < 0.24;
-    if !pill_alive && !caption_alive {
+    let recording = shared.recording != 0;
+    if !recording {
+        stage.badge = None;
+    }
+    if !pill_alive && !caption_alive && !recording {
         return;
     }
 
@@ -294,6 +308,9 @@ unsafe fn draw(chain: *mut c_void) {
     let fit = if shared.screen_h > 100.0 { screen_h / shared.screen_h } else { 1.0 };
     let scale = shared.scale.clamp(0.5, 4.0) * fit;
     let inset = shared.inset_bottom.max(0.0) * fit;
+    if recording {
+        badge(&device, &context, &back, &target, layout, &mut stage.badge, shared.rec_since, scale);
+    }
 
     if pill_alive {
         let since = now - stage.pill_since;
@@ -508,6 +525,117 @@ unsafe fn blend(
     context.CopySubresourceRegion(back, 0, left, top, 0, &slot.write, 0, None);
 }
 
+fn pack(layout: Layout, r: f32, g: f32, b: f32) -> u32 {
+    let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u32;
+    let ten = |v: f32| (v.clamp(0.0, 1.0) * 1023.0 + 0.5) as u32;
+    match layout {
+        Layout::Rgba => byte(r) | byte(g) << 8 | byte(b) << 16 | 0xFF00_0000,
+        Layout::Bgra => byte(b) | byte(g) << 8 | byte(r) << 16 | 0xFF00_0000,
+        Layout::Rgb10 => ten(r) | ten(g) << 10 | ten(b) << 20 | 0xC000_0000,
+    }
+}
+
+unsafe fn label(text: &str, pixels: f32) -> Option<(u32, u32, Vec<u8>)> {
+    let dc = CreateCompatibleDC(None);
+    if dc.is_invalid() {
+        return None;
+    }
+    let face = font(dc, pixels);
+    let old_font = SelectObject(dc, HGDIOBJ(face.0));
+    let units: Vec<u16> = text.encode_utf16().collect();
+    let mut size = SIZE::default();
+    let _ = GetTextExtentPoint32W(dc, &units, &mut size);
+    let (width, height) = (size.cx.max(1), size.cy.max(1));
+    let info = BITMAPINFO {
+        bmiHeader: BITMAPINFOHEADER { biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32, biWidth: width, biHeight: -height, biPlanes: 1, biBitCount: 32, ..Default::default() },
+        ..Default::default()
+    };
+    let mut bits: *mut c_void = std::ptr::null_mut();
+    let Ok(bitmap) = CreateDIBSection(Some(dc), &info, DIB_RGB_COLORS, &mut bits, None, 0) else {
+        SelectObject(dc, old_font);
+        let _ = DeleteObject(HGDIOBJ(face.0));
+        let _ = DeleteDC(dc);
+        return None;
+    };
+    let old_bitmap = SelectObject(dc, HGDIOBJ(bitmap.0));
+    std::ptr::write_bytes(bits as *mut u8, 0, (width * height * 4) as usize);
+    SetBkMode(dc, TRANSPARENT);
+    SetTextColor(dc, COLORREF(0x00FF_FFFF));
+    let _ = TextOutW(dc, 0, 0, &units);
+    let _ = GdiFlush();
+    let cover = std::slice::from_raw_parts(bits as *const u32, (width * height) as usize).iter().map(|p| ((p >> 8) & 0xFF) as u8).collect();
+    SelectObject(dc, old_bitmap);
+    SelectObject(dc, old_font);
+    let _ = DeleteObject(HGDIOBJ(bitmap.0));
+    let _ = DeleteObject(HGDIOBJ(face.0));
+    let _ = DeleteDC(dc);
+    Some((width as u32, height as u32, cover))
+}
+
+unsafe fn badge(device: &ID3D11Device, context: &ID3D11DeviceContext, back: &ID3D11Texture2D, target: &D3D11_TEXTURE2D_DESC, layout: Layout, slot: &mut Option<Badge>, since: u64, scale: f32) {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64);
+    let second = now.saturating_sub(since) / 1000;
+    let same = slot.as_ref().is_some_and(|b| b.device == device.as_raw() as usize && b.format == target.Format);
+    if !same || slot.as_ref().is_some_and(|b| b.second != second) {
+        let clock = if second >= 3600 { format!("{}:{:02}:{:02}", second / 3600, second / 60 % 60, second % 60) } else { format!("{}:{:02}", second / 60, second % 60) };
+        let Some((text_w, text_h, cover)) = label(&clock, 12.5 * scale) else { return };
+        let (pad, dot, gap) = ((8.0 * scale).round() as u32, 8.0 * scale, (6.0 * scale).round() as u32);
+        let height = ((22.0 * scale).round() as u32).max(text_h + 4);
+        let width = pad + dot.ceil() as u32 + gap + text_w + pad;
+        let (cx, cy) = (pad as f32 + dot / 2.0, height as f32 / 2.0);
+        let top = (height - text_h) / 2;
+        let left = pad + dot.ceil() as u32 + gap;
+        let mut pixels = Vec::with_capacity((width * height) as usize);
+        for y in 0..height {
+            for x in 0..width {
+                let (mut r, mut g, mut b) = (0.07, 0.07, 0.08);
+                let distance = ((x as f32 + 0.5 - cx).powi(2) + (y as f32 + 0.5 - cy).powi(2)).sqrt();
+                let red = (dot / 2.0 - distance + 0.5).clamp(0.0, 1.0);
+                r += (1.0 - r) * red;
+                g += (0.27 - g) * red;
+                b += (0.23 - b) * red;
+                if x >= left && y >= top && x - left < text_w && y - top < text_h {
+                    let ink = cover[((y - top) * text_w + x - left) as usize] as f32 / 255.0 * 0.92;
+                    r += (1.0 - r) * ink;
+                    g += (1.0 - g) * ink;
+                    b += (1.0 - b) * ink;
+                }
+                pixels.push(pack(layout, r, g, b));
+            }
+        }
+        let fits = same && slot.as_ref().is_some_and(|b| b.size == (width, height));
+        if fits {
+            if let Some(made) = slot.as_mut() {
+                context.UpdateSubresource(&made.texture, 0, None, pixels.as_ptr().cast(), width * 4, 0);
+                made.second = second;
+            }
+        } else {
+            let desc = D3D11_TEXTURE2D_DESC {
+                Width: width,
+                Height: height,
+                MipLevels: 1,
+                ArraySize: 1,
+                Format: target.Format,
+                SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+                Usage: D3D11_USAGE_DEFAULT,
+                ..Default::default()
+            };
+            let data = D3D11_SUBRESOURCE_DATA { pSysMem: pixels.as_ptr().cast(), SysMemPitch: width * 4, SysMemSlicePitch: 0 };
+            let mut texture = None;
+            if device.CreateTexture2D(&desc, Some(&data), Some(&mut texture)).is_err() {
+                return;
+            }
+            let Some(texture) = texture else { return };
+            *slot = Some(Badge { device: device.as_raw() as usize, format: target.Format, second, size: (width, height), texture });
+        }
+    }
+    let Some(made) = slot.as_ref() else { return };
+    let margin = (14.0 * scale).round() as u32;
+    if margin + made.size.0 <= target.Width && margin + made.size.1 <= target.Height {
+        context.CopySubresourceRegion(back, 0, margin, margin, 0, &made.texture, 0, None);
+    }
+}
+
 unsafe fn font(dc: HDC, pixels: f32) -> HFONT {
     for face in [w!("Segoe UI Variable Display"), w!("Segoe UI")] {
         let font = CreateFontW(
@@ -701,4 +829,51 @@ unsafe fn compose_raw(who: &str, said: &str, dark: bool, scale: f32, most: f32) 
     let _ = DeleteObject(HGDIOBJ(label.0));
     let _ = DeleteDC(dc);
     Some(Text { width: width as usize, height: height as usize, cover, word: word_of, words: pieces.len(), dark })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows::Win32::Graphics::Direct3D11::D3D11CreateDevice;
+
+    #[test]
+    fn the_recording_badge_lands_on_the_frame() {
+        unsafe {
+            let (mut device, mut context) = (None, None);
+            D3D11CreateDevice(None, D3D_DRIVER_TYPE_WARP, HMODULE::default(), D3D11_CREATE_DEVICE_FLAG(0), None, D3D11_SDK_VERSION, Some(&mut device), None, Some(&mut context)).unwrap();
+            let (device, context): (ID3D11Device, ID3D11DeviceContext) = (device.unwrap(), context.unwrap());
+            let target = D3D11_TEXTURE2D_DESC {
+                Width: 640,
+                Height: 360,
+                MipLevels: 1,
+                ArraySize: 1,
+                Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+                Usage: D3D11_USAGE_DEFAULT,
+                ..Default::default()
+            };
+            let mut back = None;
+            device.CreateTexture2D(&target, None, Some(&mut back)).unwrap();
+            let back = back.unwrap();
+            let since = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64 - 75_000;
+            let mut slot = None;
+            badge(&device, &context, &back, &target, Layout::Rgba, &mut slot, since, 1.0);
+            let made = slot.as_ref().unwrap();
+            assert_eq!(made.second, 75);
+            let mut read = None;
+            let staging = D3D11_TEXTURE2D_DESC { Usage: D3D11_USAGE_STAGING, CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32, ..target };
+            device.CreateTexture2D(&staging, None, Some(&mut read)).unwrap();
+            let read = read.unwrap();
+            context.CopyResource(&read, &back);
+            let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+            context.Map(&read, 0, D3D11_MAP_READ, 0, Some(&mut mapped)).unwrap();
+            let pixel = |x: usize, y: usize| *((mapped.pData as *const u8).add(y * mapped.RowPitch as usize + x * 4) as *const u32);
+            let dot = pixel(14 + 8 + 4, 14 + 11);
+            assert!(dot & 0xFF > 200 && (dot >> 8) & 0xFF < 100, "punto {dot:08x}");
+            let text = (14 + 30..14 + made.size.0 as usize).flat_map(|x| (14..14 + 22).map(move |y| (x, y))).filter(|(x, y)| pixel(*x, *y) & 0xFF > 180).count();
+            assert!(text > 20, "texto {text}");
+            assert_eq!(pixel(5, 5), 0);
+            context.Unmap(&read, 0);
+        }
+    }
 }

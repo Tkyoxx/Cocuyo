@@ -34,6 +34,7 @@ const NOT_GAMES: &[&str] = &[
 static ENABLED: AtomicBool = AtomicBool::new(false);
 static LISTENING: AtomicBool = AtomicBool::new(false);
 static TURN: AtomicU32 = AtomicU32::new(0);
+static RECORDING_SINCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 struct Link {
     shared: *mut Shared,
@@ -144,6 +145,9 @@ fn with_link(app: &AppHandle, target: Option<HWND>, change: impl FnOnce(*mut Sha
             (*shared).view_h = height as f32;
             (*shared).inset_bottom = ((*shared).screen_h - top as f32 - height as f32).max(0.0);
         }
+        let since = RECORDING_SINCE.load(Ordering::Relaxed);
+        (*shared).recording = u32::from(since != 0);
+        (*shared).rec_since = since;
         change(shared);
         attach(link, target.unwrap_or_else(|| GetForegroundWindow()));
     }
@@ -160,6 +164,24 @@ fn after(ms: u64, turn: u32, change: impl FnOnce(*mut Shared) + Send + 'static) 
             change(link.shared);
         }
     });
+}
+
+pub fn recording(app: &AppHandle, since: Option<u64>) {
+    RECORDING_SINCE.store(since.unwrap_or(0), Ordering::Relaxed);
+    if !with_link(app, None, |_| {}) {
+        if let Some(link) = LINK.lock().unwrap().as_mut() {
+            unsafe {
+                (*link.shared).recording = u32::from(since.is_some());
+                (*link.shared).rec_since = since.unwrap_or(0);
+            }
+        }
+    }
+}
+
+pub fn still_recording(app: &AppHandle) {
+    if RECORDING_SINCE.load(Ordering::Relaxed) != 0 {
+        with_link(app, None, |_| {});
+    }
 }
 
 pub fn listening(app: &AppHandle) {

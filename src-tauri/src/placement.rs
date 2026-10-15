@@ -141,6 +141,9 @@ fn decide_now() {
     if place != state.place {
         state.place = place;
         let _ = app.emit_to(overlay::LABEL, "place", place);
+        if fullscreen() {
+            crate::gamelayer::still_recording(app);
+        }
     }
     drop(state);
     crate::live::set_covered(app, desktop_covered());
