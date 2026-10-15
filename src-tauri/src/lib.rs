@@ -76,6 +76,8 @@ fn demo(app: tauri::AppHandle) {
                 if let Ok(code) = code {
                     let _ = std::fs::write(file, code);
                 }
+            } else if step == "panico" {
+                let _ = std::thread::Builder::new().name("prueba".into()).spawn(|| panic!("prueba del registro de cierres")).map(|hilo| hilo.join());
             } else if step == "remoto-estado" {
                 eprintln!("[remoto] {}", serde_json::to_string(&remoto::remoto_estado(app.clone())).unwrap_or_default());
             } else if let Some(wav) = step.strip_prefix("dictado=") {
@@ -180,7 +182,30 @@ fn demo(app: tauri::AppHandle) {
     });
 }
 
+fn note_crashes() {
+    let before = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let what = info.payload().downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| info.payload().downcast_ref::<String>().cloned()).unwrap_or_default();
+        let place = info.location().map(|at| format!("{}:{}", at.file(), at.line())).unwrap_or_default();
+        let thread = std::thread::current().name().unwrap_or("sin nombre").to_string();
+        if let Ok(base) = std::env::var("LOCALAPPDATA") {
+            let dir = std::path::Path::new(&base).join("io.github.tkyoxx.cocuyo");
+            let now = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
+            let line = format!(
+                "{}-{:02}-{:02} {:02}:{:02}:{:02} v{} [{thread}] {place}: {what}\r\n",
+                now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond, env!("CARGO_PKG_VERSION")
+            );
+            let _ = std::fs::create_dir_all(&dir);
+            if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(dir.join("cierres.txt")) {
+                let _ = std::io::Write::write_all(&mut file, line.as_bytes());
+            }
+        }
+        before(info);
+    }));
+}
+
 pub fn run() {
+    note_crashes();
     if std::env::args().any(|arg| arg == "--uninstall") {
         return install::uninstall();
     }

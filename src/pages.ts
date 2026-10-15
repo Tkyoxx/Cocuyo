@@ -1098,9 +1098,18 @@ class SettingsPage implements Page {
     for (const node of this.el.querySelectorAll<HTMLElement>("[data-sec]")) node.classList.toggle("on", node.dataset.sec === section);
     const measure = () => {
       for (const node of this.el.querySelectorAll<HTMLElement>(".ssec.on")) node.classList.toggle("long", node.scrollHeight > node.clientHeight + 4);
+      this.navEdges();
     };
     setTimeout(measure, 60);
     setTimeout(measure, 600);
+  }
+
+  private navEdges() {
+    const nav = this.el.querySelector<HTMLElement>("#s-nav");
+    if (nav) {
+      nav.classList.toggle("arriba", nav.scrollTop > 4);
+      nav.classList.toggle("abajo", nav.scrollHeight - nav.scrollTop - nav.clientHeight > 4);
+    }
   }
 
   private el!: HTMLElement;
@@ -1317,6 +1326,8 @@ class SettingsPage implements Page {
     for (const button of el.querySelectorAll<HTMLElement>("#s-nav button")) {
       button.addEventListener("click", () => this.open(button.dataset.sec!));
     }
+    q("#s-nav").addEventListener("scroll", () => this.navEdges(), { passive: true });
+    new ResizeObserver(() => this.navEdges()).observe(q("#s-nav"));
     this.open(this.section);
 
     for (const button of el.querySelectorAll<HTMLElement>("#s-dock button")) {
