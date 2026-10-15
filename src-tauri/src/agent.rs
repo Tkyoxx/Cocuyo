@@ -158,7 +158,7 @@ fn toolbox(app: &AppHandle) -> (Vec<Value>, HashMap<String, Doer>) {
     tools.push(function(
         "cocuyo_orden",
         "Una orden de Cocuyo, como la diría una persona: música en Spotify («pon Bad Bunny», «pausa», «sube el volumen»), abrir o cerrar apps y webs, \
-         buscar en Google o YouTube, recordatorios y horarios («recuérdame en 10 minutos…», «a las 8 pon música»), el clima, capturas, grabar la pantalla («graba la pantalla», «para de grabar», «guarda lo último»), bloquear, \
+         buscar en Google o YouTube, recordatorios y horarios («recuérdame en 10 minutos…», «a las 8 pon música»), el clima, capturas, grabar la pantalla («graba la pantalla», «para de grabar», «guarda lo último»), Discord («silénciame en Discord», «métete al canal General», «sal del canal»), bloquear, \
          notas («anota…»). Devuelve lo que respondió Cocuyo.",
         object(json!({ "orden": { "type": "string" } }), &["orden"]),
     ));

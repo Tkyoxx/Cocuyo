@@ -588,6 +588,84 @@ fn like(app: &AppHandle) -> Result<String, String> {
     Ok(format!("Guardada en tus Me gusta: «{name}»."))
 }
 
+fn unlike(app: &AppHandle) -> Result<String, String> {
+    let token = session(app)?;
+    let now = outcome(api(&token, "GET", "/me/player/currently-playing", None))?;
+    let (Some(id), Some(name)) = (now["item"]["id"].as_str(), now["item"]["name"].as_str()) else {
+        return Err("Spotify no tiene nada sonando en ningún dispositivo.".into());
+    };
+    outcome(api(&token, "DELETE", &format!("/me/tracks?ids={id}"), None))?;
+    Ok(format!("Quitada de tus Me gusta: «{name}»."))
+}
+
+fn find_track(token: &str, query: &str) -> Result<(String, String), String> {
+    let found = outcome(api(token, "GET", &format!("/search?type=track&limit=5&q={}", url_encode(query)), None))?;
+    found["tracks"]["items"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|track| Some((track["uri"].as_str()?, track["name"].as_str()?, track["artists"][0]["name"].as_str().unwrap_or(""))))
+        .max_by(|a, b| {
+            let score = |(_, name, artist): &(&str, &str, &str)| crate::intent::similarity(query, name).max(crate::intent::covers(query, &format!("{name} {artist}")));
+            score(a).total_cmp(&score(b))
+        })
+        .map(|(uri, name, _)| (uri.to_string(), name.to_string()))
+        .ok_or_else(|| format!("No encontré «{query}» en Spotify."))
+}
+
+fn my_lists(token: &str) -> Result<Vec<Value>, String> {
+    let me = outcome(api(token, "GET", "/me", None))?;
+    let mine = me["id"].as_str().unwrap_or_default().to_string();
+    let lists = outcome(api(token, "GET", "/me/playlists?limit=50", None))?;
+    Ok(lists["items"].as_array().into_iter().flatten().filter(|list| list["owner"]["id"].as_str() == Some(mine.as_str()) || list["collaborative"].as_bool() == Some(true)).cloned().collect())
+}
+
+fn add_to_list(app: &AppHandle, what: &str, list: &str) -> Result<String, String> {
+    let token = session(app)?;
+    let (uri, name) = if what.is_empty() {
+        let now = outcome(api(&token, "GET", "/me/player/currently-playing", None))?;
+        match (now["item"]["uri"].as_str(), now["item"]["name"].as_str()) {
+            (Some(uri), Some(name)) => (uri.to_string(), name.to_string()),
+            _ => return Err("Spotify no tiene nada sonando en ningún dispositivo.".into()),
+        }
+    } else {
+        find_track(&token, what)?
+    };
+    let lists = my_lists(&token)?;
+    let best = lists
+        .iter()
+        .filter_map(|item| Some((similarity(list, item["name"].as_str()?), item)))
+        .filter(|(score, _)| *score >= 0.72)
+        .max_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(_, item)| item)
+        .ok_or_else(|| format!("No encontré ninguna lista tuya llamada «{list}». Dime «crea una lista {list}» y la hago."))?;
+    let id = best["id"].as_str().unwrap_or_default();
+    outcome(api(&token, "POST", &format!("/playlists/{id}/tracks"), Some(&serde_json::json!({ "uris": [uri] }).to_string())))?;
+    Ok(format!("Agregada «{name}» a tu lista «{}».", best["name"].as_str().unwrap_or(list)))
+}
+
+fn create_list(app: &AppHandle, name: &str) -> Result<String, String> {
+    let token = session(app)?;
+    let me = outcome(api(&token, "GET", "/me", None))?;
+    let id = me["id"].as_str().ok_or("Spotify no dijo quién eres.")?;
+    let made = outcome(api(&token, "POST", &format!("/users/{id}/playlists"), Some(&serde_json::json!({ "name": name, "public": false }).to_string())))?;
+    Ok(format!("Lista «{}» creada.", made["name"].as_str().unwrap_or(name)))
+}
+
+pub fn playlist_order(spoken: &str) -> Option<(String, String)> {
+    let clean = crate::intent::normalize(spoken);
+    const MARKS: [&str; 10] = [" a la lista ", " a mi lista ", " en la lista ", " en mi lista ", " a la playlist ", " a mi playlist ", " to my playlist ", " to the playlist ", " na lista ", " na minha playlist "];
+    let (at, mark) = MARKS.iter().filter_map(|mark| clean.find(mark).map(|at| (at, *mark))).min_by_key(|(at, _)| *at)?;
+    let before = &clean[..at];
+    let list = clean[at + mark.len()..].trim().trim_start_matches("llamada ").trim_start_matches("que se llama ").trim().to_string();
+    const VERBS: &[&str] = &["agrega", "agregala", "anade", "anadela", "añade", "añadela", "mete", "metela", "guarda", "guardala", "suma", "add", "adiciona", "salva"];
+    let verb = VERBS.iter().filter(|verb| before.starts_with(**verb)).max_by_key(|verb| verb.len())?;
+    let what = before[verb.len()..].trim();
+    const CURRENT: [&str; 14] = ["", "la", "esta", "esta cancion", "la cancion", "esta rola", "este tema", "lo que suena", "la que suena", "esta musica", "this", "this song", "essa", "essa musica"];
+    let what = if CURRENT.contains(&what) { String::new() } else { what.to_string() };
+    (!list.is_empty()).then_some((what, list))
+}
+
 fn player(app: &AppHandle, path: &str, done: &str) -> Result<String, String> {
     outcome(api(&session(app)?, "PUT", path, None)).map(|_| done.to_string())
 }
@@ -618,6 +696,15 @@ pub fn spoken(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
     if let Some(query) = queued.filter(|query| !query.is_empty()) {
         return Some(queue(app, &query));
     }
+    if let Some((what, list)) = playlist_order(spoken) {
+        return Some(add_to_list(app, &what, &list));
+    }
+    if let Some(name) = after(&["crea una lista llamada ", "crea una lista ", "crea una playlist llamada ", "crea una playlist ", "haz una lista llamada ", "haz una lista ", "create a playlist called ", "create a playlist ", "cria uma playlist "]).filter(|name| !name.is_empty()) {
+        return Some(create_list(app, &name));
+    }
+    if has(&["quita esta de me gusta", "quitala de me gusta", "quita de mis me gusta", "ya no me gusta esta", "quita el me gusta", "unlike this", "descurti"]) {
+        return Some(unlike(app));
+    }
     if has(&["me gusta esta", "guarda esta cancion", "a mis me gusta", "dale like", "dale me gusta", "like this song", "curti essa"]) {
         return Some(like(app));
     }
@@ -633,4 +720,18 @@ pub fn spoken(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
         });
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn playlist_orders_are_understood() {
+        assert_eq!(playlist_order("Agrega esta canción a mi lista Gym"), Some((String::new(), "gym".into())));
+        assert_eq!(playlist_order("añádela a la lista para el carro"), Some((String::new(), "para el carro".into())));
+        assert_eq!(playlist_order("mete despacito en la lista fiesta"), Some(("despacito".into(), "fiesta".into())));
+        assert_eq!(playlist_order("add this song to my playlist chill"), Some((String::new(), "chill".into())));
+        assert_eq!(playlist_order("pon salsa"), None);
+    }
 }

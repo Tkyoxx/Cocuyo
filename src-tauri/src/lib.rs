@@ -11,6 +11,7 @@ mod codificador;
 mod cue;
 mod agent;
 mod dialogs;
+mod discord;
 mod extensions;
 mod grabadora;
 mod gamelayer;
@@ -354,6 +355,9 @@ pub fn run() {
             grabadora::grabar_estado,
             grabadora::grabar_equipo,
             grabadora::grabar_ultimo,
+            discord::discord_estado,
+            discord::discord_conectar,
+            discord::discord_quitar,
             settings::current_record_dir,
             settings::open_record_dir,
         ])

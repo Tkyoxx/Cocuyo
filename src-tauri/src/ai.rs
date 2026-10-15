@@ -105,6 +105,16 @@ abre <app o página web>
 busca <algo> en youtube
 busca <algo> en google
 anota <texto>
+pon en cola <canción>
+dale me gusta a esta canción
+agrega esta canción a mi lista <nombre>
+agrega <canción> a mi lista <nombre>
+crea una lista <nombre>
+silénciame en discord
+desmutéame en discord
+ensordéceme en discord
+métete al canal <nombre del canal de voz>
+sal del canal
 toma una captura
 graba la pantalla
 para de grabar

@@ -24,7 +24,7 @@ use crate::{notes, overlay, settings};
 
 const REDIRECT_PORT: u16 = 5173;
 const REDIRECT_URI: &str = "http://127.0.0.1:5173/";
-const SCOPES: &str = "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative user-library-modify";
+const SCOPES: &str = "user-read-playback-state user-modify-playback-state user-read-currently-playing playlist-read-private playlist-read-collaborative user-library-modify user-library-read playlist-modify-public playlist-modify-private";
 const WAIT_FOR_USER: Duration = Duration::from_secs(180);
 
 struct Access {

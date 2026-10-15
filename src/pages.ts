@@ -1271,6 +1271,11 @@ class SettingsPage implements Page {
              <label class="srow"><div><b>Hablarle desde el mando</b><small id="s-pad-status">Mantén la combinación para dar una orden sin soltar el mando. Xbox, DualShock 4 y DualSense.</small></div><input type="checkbox" class="switch" id="s-pad"></label>
              <div class="srow stack"><div class="segmented" id="s-pad-combo"><span class="thumb"></span><button data-value="0">L3 + R3</button><button data-value="1">Select + Start</button><button data-value="2">Botón PS</button><button data-value="3">Panel táctil</button></div><button class="ghost" id="s-pad-rec">Otros botones</button></div>
              <label class="srow"><div><b>Dibujar el aviso dentro del juego</b><small>Carga una pequeña librería en el juego para pintar ahí la píldora y los subtítulos, igual que fuera (Direct3D 11, 64 bits).</small><small class="warn">No lo actives en juegos con anti-trampas: pueden cerrarse o sancionar tu cuenta.</small></div><input type="checkbox" class="switch" id="s-layer"></label>
+           </div>
+           <div class="card">
+             <div class="srow"><div><b>Discord</b><small id="s-dc-state">Silénciate, ensordécete y entra o sal de canales de voz hablándole a Cocuyo, también con el juego abierto.</small></div><button class="ghost" id="s-dc-go">Conectar</button></div>
+             <div class="srow slim"><div><small>Usa tu propia app de Discord, gratis: crea una con «New Application», en OAuth2 copia el Client ID y el Client Secret y agrega el redirect http://127.0.0.1. Al conectar, Discord te pide permiso una vez.</small></div><button class="ghost" id="s-dc-portal">Abrir el portal</button></div>
+             <div class="srow slim pair"><input id="s-dc-id" placeholder="Client ID" spellcheck="false" autocomplete="off" /><input id="s-dc-secret" type="password" placeholder="Client Secret" spellcheck="false" autocomplete="off" /></div>
            </div>`,
         ) +
         section(
@@ -1641,6 +1646,37 @@ class SettingsPage implements Page {
       else if (input.id === "s-rec-cursor") void this.save({ recCursor: input.checked });
       else if (input.id === "s-rec-show") void this.save({ recShowCocuyo: input.checked });
       else if (input.id === "s-rec-replay") void this.save({ recReplay: input.checked });
+    });
+    const dcId = q<HTMLInputElement>("#s-dc-id");
+    const dcSecret = q<HTMLInputElement>("#s-dc-secret");
+    for (const input of [dcId, dcSecret]) input.addEventListener("pointerdown", () => host.focus(input));
+    const paintDiscord = async () => {
+      const state = await call<{ configurado: boolean; conectado: boolean }>("discord_estado", undefined, { configurado: false, conectado: false });
+      q("#s-dc-go").textContent = state.conectado ? "Desconectar" : "Conectar";
+      q("#s-dc-state").textContent = state.conectado
+        ? "Conectado. Dile «silénciame en Discord», «métete al canal General» o «sal del canal»."
+        : "Silénciate, ensordécete y entra o sal de canales de voz hablándole a Cocuyo, también con el juego abierto.";
+      dcId.closest<HTMLElement>(".srow")!.hidden = state.conectado;
+    };
+    void paintDiscord();
+    q("#s-dc-portal").addEventListener("click", () => void call("script_action", { action: { abrir: "https://discord.com/developers/applications" } }).catch(() => {}));
+    q("#s-dc-go").addEventListener("click", async () => {
+      const button = q<HTMLButtonElement>("#s-dc-go");
+      const state = await call<{ conectado: boolean }>("discord_estado", undefined, { conectado: false });
+      if (state.conectado) {
+        await call("discord_quitar");
+        return void paintDiscord();
+      }
+      button.disabled = true;
+      this.note("Mira Discord: te va a pedir permiso para Cocuyo.");
+      try {
+        this.note(await call<string>("discord_conectar", { id: dcId.value, secreto: dcSecret.value }));
+        dcSecret.value = "";
+      } catch (error) {
+        this.note(String(error));
+      }
+      button.disabled = false;
+      void paintDiscord();
     });
     q("#s-rec-save").addEventListener("click", async () => {
       try {

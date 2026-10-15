@@ -405,7 +405,7 @@ pub fn transcribe_clip(app: &AppHandle, wav: &Path) -> Result<Option<String>, St
     transcribe(app, mic::Recording { samples, rate })
 }
 
-fn url_encode(text: &str) -> String {
+pub(crate) fn url_encode(text: &str) -> String {
     text.bytes()
         .map(|b| match b {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' => (b as char).to_string(),
@@ -432,6 +432,9 @@ fn first_things(app: &AppHandle, spoken: &str) -> Option<Result<String, String>>
         if let Ok(said) = &done {
             crate::cue::answer(&crate::i18n::tr(said));
         }
+        return Some(done);
+    }
+    if let Some(done) = crate::discord::spoken(app, spoken) {
         return Some(done);
     }
     if let Some(done) = crate::media::spoken(app, spoken) {
