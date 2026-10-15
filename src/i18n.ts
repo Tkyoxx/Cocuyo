@@ -591,6 +591,7 @@ const EXACT: Record<string, [string, string]> = {
   "Temas y extensiones de la comunidad. Cada una dice qué usa; pasa el mouse por encima para ver qué significa. Instala solo lo que entiendas.": ["Community themes and extensions. Each one says what it uses; hover over it to see what that means. Only install what you understand.", "Temas e extensões da comunidade. Cada uma diz o que usa; passe o mouse por cima para ver o que significa. Instale só o que você entende."],
   "Esa extensión pide más permisos de los que muestra la galería. No se instala.": ["That extension asks for more permissions than the gallery shows. It won't be installed.", "Essa extensão pede mais permissões do que a galeria mostra. Não será instalada."],
   Remoto: ["Remote", "Remoto"],
+  "Panel táctil": ["Touchpad", "Touchpad"],
   "El de Windows": ["Windows default", "O do Windows"],
   "El que usa Cocuyo para oírte. Si no te escucha, prueba con otro.": ["The one Cocuyo uses to hear you. If it doesn't hear you, try another.", "O que o Cocuyo usa para te ouvir. Se ele não te ouvir, tente outro."],
   "No encuentro ningún micrófono conectado.": ["I can't find any microphone plugged in.", "Não encontro nenhum microfone conectado."],

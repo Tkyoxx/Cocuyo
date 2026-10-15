@@ -771,6 +771,7 @@ fn live_turn(app: &AppHandle, link: &Link, for_live: std::sync::mpsc::Receiver<V
                 let _ = link.send(JSON, json!({ "tipo": "oido", "texto": said }).to_string().as_bytes());
             }
             let answer = if answer.is_empty() { crate::i18n::tr("Hecho.") } else { answer };
+            crate::ai::talked(&said, &answer);
             let _ = link.send(JSON, json!({ "tipo": "respuesta", "texto": answer, "acciones": actions, "hablada": voiced }).to_string().as_bytes());
             if voiced {
                 let _ = link.send(JSON, json!({ "tipo": "voz-fin" }).to_string().as_bytes());
@@ -795,6 +796,7 @@ fn order(app: &AppHandle, link: &Link, text: &str) {
         return;
     }
     let _ = app.emit_to(crate::overlay::LABEL, "note", crate::i18n::tr("Orden desde tu celular."));
+    crate::ai::maybe_distill(app);
     if let Some((said, actions)) = for_the_phone(text) {
         return reply(app, link, Some(crate::i18n::tr(&said)), None, actions);
     }
@@ -804,6 +806,9 @@ fn order(app: &AppHandle, link: &Link, text: &str) {
     let done = crate::voice::run_order(app, &text);
     let actions = ASKED.with(|asked| asked.borrow_mut().take()).unwrap_or_default();
     crate::cue::hold_voice(false);
+    if let Ok(said) = &done {
+        crate::ai::talked(&text, said);
+    }
     match done {
         Ok(said) => reply(app, link, Some(crate::i18n::tr(if said.trim().is_empty() { "Hecho." } else { &said })), None, actions),
         Err(why) => reply(app, link, None, Some(crate::i18n::tr(&why)), actions),

@@ -521,7 +521,13 @@ fn shell_image(target: String, side: i32) -> Option<String> {
 #[tauri::command]
 pub async fn app_icon(app: AppHandle, id: String) -> Option<String> {
     let found = apps::list(&app).into_iter().find(|a| a.id == id)?;
-    let target = if found.custom { found.id } else { format!("shell:AppsFolder\\{}", found.id) };
+    let target = if !found.icon.is_empty() {
+        found.icon
+    } else if found.custom || found.id.contains(":\\") {
+        found.id
+    } else {
+        format!("shell:AppsFolder\\{}", found.id)
+    };
     shell_image(target, 32)
 }
 

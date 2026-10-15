@@ -10,6 +10,7 @@ mod cue;
 mod agent;
 mod dialogs;
 mod extensions;
+mod grabadora;
 mod gamelayer;
 mod hotkeys;
 mod i18n;
@@ -76,6 +77,14 @@ fn demo(app: tauri::AppHandle) {
                 if let Ok(code) = code {
                     let _ = std::fs::write(file, code);
                 }
+            } else if let Some(plan) = step.strip_prefix("grabar=") {
+                let parts: Vec<&str> = plan.split('|').collect();
+                let seconds = parts.get(1).and_then(|n| n.parse().ok()).unwrap_or(10);
+                let height = parts.get(2).and_then(|n| n.parse().ok()).unwrap_or(1080);
+                let fps = parts.get(3).and_then(|n| n.parse().ok()).unwrap_or(60);
+                let stop = std::sync::atomic::AtomicBool::new(false);
+                let done = grabadora::record(std::path::Path::new(parts[0]), height, fps, (true, true), &stop, Some(std::time::Duration::from_secs(seconds)));
+                eprintln!("[grabar] {}", done.map(|stats| serde_json::to_string(&stats).unwrap_or_default()).unwrap_or_else(|why| format!("falló: {why}")));
             } else if step == "panico" {
                 let _ = std::thread::Builder::new().name("prueba".into()).spawn(|| panic!("prueba del registro de cierres")).map(|hilo| hilo.join());
             } else if step == "remoto-estado" {

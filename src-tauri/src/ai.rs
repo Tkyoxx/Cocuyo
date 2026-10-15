@@ -139,7 +139,7 @@ pub fn maybe_distill(app: &AppHandle) {
         *distilled = Some(*last);
         talk.iter().filter(|(when, _, _)| since.is_none_or(|since| *when > since)).map(|(_, said, answer)| (said.clone(), answer.clone())).collect()
     };
-    if pending.len() < 2 || mode(app).is_none() {
+    if pending.is_empty() || mode(app).is_none() {
         return;
     }
     let app = app.clone();

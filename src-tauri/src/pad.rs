@@ -25,17 +25,19 @@ pub const R3: u16 = 1 << 9;
 pub const HOME: u16 = 1 << 10;
 pub const LT: u16 = 1 << 11;
 pub const RT: u16 = 1 << 12;
+pub const TOUCHPAD: u16 = 1 << 13;
+pub const MUTE: u16 = 1 << 14;
 
-const NAMES: [(u16, &str); 13] = [
+const NAMES: [(u16, &str); 15] = [
     (A, "A"), (B, "B"), (X, "X"), (Y, "Y"), (LB, "LB"), (RB, "RB"), (LT, "LT"), (RT, "RT"),
-    (SELECT, "Select"), (START, "Start"), (L3, "L3"), (R3, "R3"), (HOME, "PS"),
+    (SELECT, "Select"), (START, "Start"), (L3, "L3"), (R3, "R3"), (HOME, "PS"), (TOUCHPAD, "Panel táctil"), (MUTE, "Silenciar"),
 ];
 
 pub fn label(buttons: u16) -> String {
     NAMES.iter().filter(|(bit, _)| buttons & bit != 0).map(|(_, name)| *name).collect::<Vec<_>>().join(" + ")
 }
 
-const COMBOS: [u16; 3] = [L3 | R3, SELECT | START, HOME];
+const COMBOS: [u16; 4] = [L3 | R3, SELECT | START, HOME, TOUCHPAD];
 const HOLD: Duration = Duration::from_millis(280);
 const LOOK_EVERY: Duration = Duration::from_millis(60);
 const SEARCH_EVERY: Duration = Duration::from_secs(2);
@@ -80,8 +82,10 @@ fn from_sony(report: &[u8], at: usize) -> u16 {
             all |= ours;
         }
     }
-    if extra & 0x01 != 0 {
-        all |= HOME;
+    for (bit, ours) in [(0x01, HOME), (0x02, TOUCHPAD), (0x04, MUTE)] {
+        if extra & bit != 0 {
+            all |= ours;
+        }
     }
     all
 }
@@ -317,6 +321,10 @@ mod tests {
         assert_eq!(from_sony(&triggers, 5), LT | RT);
         assert_eq!(label(L3 | R3), "L3 + R3");
         assert_eq!(label(LB | RT | A), "A + LB + RT");
+        let mut pad = [0u8; 16];
+        pad[7] = 0x02 | 0x04;
+        assert_eq!(from_sony(&pad, 5), TOUCHPAD | MUTE);
+        assert_eq!(label(TOUCHPAD), "Panel táctil");
     }
 
     #[test]

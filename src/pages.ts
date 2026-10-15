@@ -1219,7 +1219,7 @@ class SettingsPage implements Page {
            </div>
            <div class="card">
              <label class="srow"><div><b>Hablarle desde el mando</b><small id="s-pad-status">Mantén la combinación para dar una orden sin soltar el mando. Xbox, DualShock 4 y DualSense.</small></div><input type="checkbox" class="switch" id="s-pad"></label>
-             <div class="srow stack"><div class="segmented" id="s-pad-combo"><span class="thumb"></span><button data-value="0">L3 + R3</button><button data-value="1">Select + Start</button><button data-value="2">Botón PS</button></div><button class="ghost" id="s-pad-rec">Otros botones</button></div>
+             <div class="srow stack"><div class="segmented" id="s-pad-combo"><span class="thumb"></span><button data-value="0">L3 + R3</button><button data-value="1">Select + Start</button><button data-value="2">Botón PS</button><button data-value="3">Panel táctil</button></div><button class="ghost" id="s-pad-rec">Otros botones</button></div>
              <label class="srow"><div><b>Dibujar el aviso dentro del juego</b><small>Carga una pequeña librería en el juego para pintar ahí la píldora y los subtítulos, igual que fuera (Direct3D 11, 64 bits).</small><small class="warn">No lo actives en juegos con anti-trampas: pueden cerrarse o sancionar tu cuenta.</small></div><input type="checkbox" class="switch" id="s-layer"></label>
            </div>`,
         ) +
@@ -1632,6 +1632,9 @@ class SettingsPage implements Page {
       void this.paintMemory();
     });
     toggle("#s-ai", "aiOn");
+    q<HTMLInputElement>("#s-ai").addEventListener("change", (e) => {
+      if ((e.target as HTMLInputElement).checked) void this.save({ aiOn: true, aiAlways: true, aiDictation: true, aiHear: true, aiAgent: true, aiLive: true });
+    });
     toggle("#s-ai-polish", "aiDictation");
     toggle("#s-ai-hear", "aiHear");
     q("#s-ai-pick").addEventListener("click", () => void this.openModels());
