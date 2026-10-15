@@ -187,11 +187,11 @@ pub struct MfVideo {
 }
 
 impl MfVideo {
-    pub unsafe fn open(device: &ID3D11Device, manager: &IMFDXGIDeviceManager, adapter: Option<i64>, tuning: Tuning, hardware: bool) -> Result<MfVideo, String> {
+    pub unsafe fn open(device: &ID3D11Device, manager: &IMFDXGIDeviceManager, adapter: Option<i64>, tuning: Tuning, hardware: bool, skip: &[String]) -> Result<MfVideo, String> {
         let flags = if hardware { MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SORTANDFILTER } else { MFT_ENUM_FLAG_SYNCMFT | MFT_ENUM_FLAG_SORTANDFILTER };
         let candidates = find(MFT_CATEGORY_VIDEO_ENCODER, flags, MFVideoFormat_NV12, subtype(tuning.codec), MFMediaType_Video, adapter.filter(|_| hardware));
         let mut why = String::from("no hay codificador");
-        for found in candidates {
+        for found in candidates.into_iter().filter(|found| !skip.contains(&found.name)) {
             match Self::try_one(device, manager, &found, tuning, hardware) {
                 Ok(encoder) => return Ok(encoder),
                 Err(e) => why = format!("{}: {e}", found.name),
@@ -335,6 +335,9 @@ impl MfVideo {
                     let header = blob(&kind, &MF_MT_MPEG_SEQUENCE_HEADER);
                     if !header.is_empty() {
                         self.header = header;
+                    }
+                    if self.events.is_some() {
+                        return Ok(false);
                     }
                 }
                 Err(e) if e.code() == MF_E_TRANSFORM_NEED_MORE_INPUT => return Ok(false),

@@ -24,6 +24,7 @@ const THRIFTY_FROM: f32 = 0.6;
 static NO_EFFORT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static PLAIN_ONLY: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static TURN: AtomicUsize = AtomicUsize::new(0);
+static CALLS: AtomicUsize = AtomicUsize::new(0);
 static RESTING: Mutex<Vec<(String, Instant, usize)>> = Mutex::new(Vec::new());
 static USAGE: Mutex<(String, Vec<(String, u32)>)> = Mutex::new((String::new(), Vec::new()));
 static TALK: Mutex<Vec<(Instant, String, String)>> = Mutex::new(Vec::new());
@@ -102,8 +103,17 @@ sube el volumen
 baja el volumen
 silencia
 abre <app o página web>
+cierra <app>
+cierra <app>, <app> y <app>
+cierra todo
+cierra todo menos <app>
+abre la carpeta de errores
 busca <algo> en youtube
 busca <algo> en google
+busca <juego> en steam
+busca <algo> en internet
+busca <algo> en <wikipedia, amazon, github, twitch, reddit, epic games, gog, mapas, imágenes, noticias, tiktok o mercado libre>
+investiga a fondo <tema>
 anota <texto>
 pon en cola <canción>
 dale me gusta a esta canción
@@ -324,6 +334,7 @@ fn instructions(scripts: &[Script], agent: bool) -> String {
         "Eres el intérprete de órdenes de un asistente de voz para Windows. Recibes lo que la persona dijo, transcrito por una máquina: \
          puede traer errores de oído, palabras pegadas, nombres mal escritos, o venir en otro idioma.\n\
          Responde con UNA sola línea y nada más: la orden que quiso dar, escrita con una de las formas de abajo. \
+         Si pidió varias cosas a la vez, escríbelas todas en esa línea separadas por « ; » (hasta 6). \
          Escribe los nombres de canciones, artistas y apps como se escriben de verdad. Sin explicaciones y sin comillas.\n\n",
     );
     text.push_str(FORMS);
@@ -459,6 +470,7 @@ fn with_usage<T>(app: &AppHandle, change: impl FnOnce(&mut Vec<(String, u32)>) -
 }
 
 pub(crate) fn count(app: &AppHandle, model: &str) {
+    CALLS.fetch_add(1, Ordering::Relaxed);
     with_usage(app, |counts| match counts.iter_mut().find(|(name, _)| name == model) {
         Some((_, used)) => *used += 1,
         None => counts.push((model.to_string(), 1)),
@@ -488,6 +500,14 @@ enum Extra<'a> {
     None,
     Image(&'a [u8]),
     Audio(&'a [u8]),
+}
+
+pub(crate) fn calls() -> usize {
+    CALLS.load(Ordering::Relaxed)
+}
+
+pub(crate) fn ask(app: &AppHandle, system: &str, said: &str, room: u32) -> Result<String, String> {
+    chat_up_to(app, system, said, Extra::None, room)
 }
 
 fn chat(app: &AppHandle, system: &str, said: &str, extra: Extra) -> Result<String, String> {

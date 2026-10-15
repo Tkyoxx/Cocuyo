@@ -36,6 +36,7 @@ const SLOTS: usize = 6;
 
 const H264: GUID = GUID::from_u128(0x6bc82762_4e63_4ca4_aa85_1e50f321f6bf);
 const HEVC: GUID = GUID::from_u128(0x790cdc88_4522_4d7b_9425_bda9975f7603);
+const AV1: GUID = GUID::from_u128(0x0a352289_0aa7_4759_862d_5d15cd16d254);
 const P3: GUID = GUID::from_u128(0x36850110_3a07_441f_94d5_3670631f91f6);
 const P4: GUID = GUID::from_u128(0x90a7b826_df06_4862_b9d2_cd6d73a08681);
 const P6: GUID = GUID::from_u128(0x8e75c279_6299_4ab6_8302_0b215a335cf5);
@@ -271,7 +272,7 @@ impl Nvenc {
         let guid = match tuning.codec {
             Codec::H264 => H264,
             Codec::Hevc => HEVC,
-            Codec::Av1 => return Err("NVENC directo hace H.264 y HEVC".into()),
+            Codec::Av1 => AV1,
         };
         let library = LoadLibraryW(w!("nvEncodeAPI64.dll")).map_err(|_| "no está nvEncodeAPI64.dll")?;
         let mut made = Nvenc { library, calls: zeroed(), encoder: std::ptr::null_mut(), slots: Vec::new(), order: VecDeque::new(), header: Vec::new(), tuning, frame: 0 };
@@ -326,9 +327,13 @@ impl Nvenc {
             let bits = u32::from_le_bytes(config[codec..codec + 4].try_into().unwrap_or_default()) | 1 << 12;
             put(config, codec, bits);
             put(config, codec + 8, tuning.fps);
-        } else {
+        } else if tuning.codec == Codec::Hevc {
             let bits = u32::from_le_bytes(config[codec + 16..codec + 20].try_into().unwrap_or_default()) | 1 << 7;
             put(config, codec + 16, bits);
+            put(config, codec + 20, tuning.fps);
+        } else {
+            let bits = u32::from_le_bytes(config[codec + 16..codec + 20].try_into().unwrap_or_default());
+            put(config, codec + 16, (bits & !(1 | 1 << 4 | 3 << 7)) | 1 << 5 | 1 << 7);
             put(config, codec + 20, tuning.fps);
         }
         let mut init = zeroed::<InitParams>();
@@ -438,7 +443,7 @@ impl Nvenc {
 
 impl Encoder for Nvenc {
     fn name(&self) -> String {
-        format!("NVENC {}", if self.tuning.codec == Codec::Hevc { "HEVC" } else { "H.264" })
+        format!("NVENC {}", crate::mp4::label(self.tuning.codec))
     }
 
     fn hardware(&self) -> bool {
@@ -551,5 +556,6 @@ mod tests {
         assert_eq!(std::mem::offset_of!(LockBitstream, display), 128);
         assert_eq!(std::mem::offset_of!(MapInput, mapped), 24);
         assert_eq!(std::mem::offset_of!(CreateBitstream, buffer), 16);
+        assert_eq!(AV1, GUID::from_values(0x0a352289, 0x0aa7, 0x4759, [0x86, 0x2d, 0x5d, 0x15, 0xcd, 0x16, 0xd2, 0x54]));
     }
 }

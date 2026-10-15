@@ -851,6 +851,41 @@ fn probe_key(kind: &str, codec: Codec, card: &Card) -> String {
     format!("{kind}-{codec:?}-{:x}-{version:x}", card.luid)
 }
 
+fn card_key(card: &Card) -> String {
+    let version = unsafe { card.adapter.CheckInterfaceSupport(&IDXGIDevice::IID) }.unwrap_or(0);
+    format!("{:x}-{version:x}", card.vendor)
+}
+
+fn failed_before(app: Option<&AppHandle>, card: &Card) -> Vec<String> {
+    let Some(app) = app else { return Vec::new() };
+    memory(app)["fallidos"][card_key(card)].as_array().map(|list| list.iter().filter_map(|name| name.as_str().map(str::to_string)).collect()).unwrap_or_default()
+}
+
+fn plain_failure(why: &str) -> String {
+    let what = if why.starts_with("codificar") || why.starts_with("muestra") || why.starts_with("codificador") || why.starts_with("AMF") || why.starts_with("NVENC") {
+        "La grabadora se detuvo porque falló el codificador de la gráfica. Guardé el video hasta ahí y la próxima vez grabo con otro."
+    } else if why.starts_with("captura") {
+        "La grabadora se detuvo porque Windows dejó de entregar la imagen de la pantalla. Guardé el video hasta ahí."
+    } else if why.starts_with("conversión") {
+        "La grabadora se detuvo porque la gráfica no pudo convertir la imagen. Guardé el video hasta ahí."
+    } else if why.starts_with("no hay con qué codificar") {
+        "No pude grabar: ningún codificador de este PC arrancó."
+    } else {
+        "La grabadora se detuvo por un error."
+    };
+    what.to_string()
+}
+
+#[cfg(debug_assertions)]
+pub fn fake_failure(app: &AppHandle) {
+    crate::errores::note("grabadora", "codificar: Error catastrófico · prueba");
+    crate::errores::tell(app, &plain_failure("codificar: Error catastrófico"));
+}
+
+pub fn nothing_in_front() -> bool {
+    what_is_in_front() == "Escritorio"
+}
+
 fn probed(app: Option<&AppHandle>, kind: &str, codec: Codec, card: &Card) -> bool {
     let Some(app) = app else { return true };
     let key = probe_key(kind, codec, card);
@@ -884,26 +919,32 @@ fn probed(app: Option<&AppHandle>, kind: &str, codec: Codec, card: &Card) -> boo
 }
 
 unsafe fn open_encoder(app: Option<&AppHandle>, screen: &Screen, manager: Option<&IMFDXGIDeviceManager>, tuning: Tuning, notes: &mut Vec<String>) -> Result<Box<dyn Encoder>, String> {
-    let direct = tuning.codec != Codec::Av1 && !(cfg!(debug_assertions) && std::env::var_os("COCUYO_SIN_DIRECTO").is_some());
-    if direct && screen.card.vendor == 0x1002 && crate::amf::Amf::available() && probed(app, "amf", tuning.codec, &screen.card) {
+    let direct = !(cfg!(debug_assertions) && std::env::var_os("COCUYO_SIN_DIRECTO").is_some());
+    let failed = failed_before(app, &screen.card);
+    let label = crate::mp4::label(tuning.codec);
+    let gone = |kind: &str| failed.iter().any(|name| name.starts_with(kind) && name.ends_with(label));
+    if !failed.is_empty() {
+        notes.push(format!("fallaron antes: {}", failed.join(", ")));
+    }
+    if direct && !gone("AMF") && screen.card.vendor == 0x1002 && crate::amf::Amf::available() && probed(app, "amf", tuning.codec, &screen.card) {
         match crate::amf::Amf::open(&screen.device, tuning) {
             Ok(encoder) => return Ok(Box::new(encoder)),
             Err(e) => notes.push(e),
         }
     }
-    if direct && screen.card.vendor == 0x10DE && crate::nvenc::Nvenc::available() && probed(app, "nvenc", tuning.codec, &screen.card) {
+    if direct && !gone("NVENC") && screen.card.vendor == 0x10DE && crate::nvenc::Nvenc::available() && probed(app, "nvenc", tuning.codec, &screen.card) {
         match crate::nvenc::Nvenc::open(&screen.device, tuning) {
             Ok(encoder) => return Ok(Box::new(encoder)),
             Err(e) => notes.push(e),
         }
     }
     if let Some(manager) = manager {
-        match MfVideo::open(&screen.device, manager, Some(screen.card.luid), tuning, true) {
+        match MfVideo::open(&screen.device, manager, Some(screen.card.luid), tuning, true, &failed) {
             Ok(encoder) => return Ok(Box::new(encoder)),
             Err(e) => notes.push(e),
         }
         if tuning.codec == Codec::H264 {
-            match MfVideo::open(&screen.device, manager, None, tuning, false) {
+            match MfVideo::open(&screen.device, manager, None, tuning, false, &failed) {
                 Ok(encoder) => return Ok(Box::new(encoder)),
                 Err(e) => notes.push(e),
             }
@@ -914,7 +955,11 @@ unsafe fn open_encoder(app: Option<&AppHandle>, screen: &Screen, manager: Option
 
 pub fn probe_main(args: &[String]) -> i32 {
     let kind = args.first().map(String::as_str).unwrap_or("");
-    let codec = if args.get(1).is_some_and(|c| c == "Hevc") { Codec::Hevc } else { Codec::H264 };
+    let codec = match args.get(1).map(String::as_str) {
+        Some("Hevc") => Codec::Hevc,
+        Some("Av1") => Codec::Av1,
+        _ => Codec::H264,
+    };
     let luid: i64 = args.get(2).and_then(|l| l.parse().ok()).unwrap_or(0);
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
@@ -925,7 +970,8 @@ pub fn probe_main(args: &[String]) -> i32 {
             return 3;
         }
         let Some(device) = device else { return 3 };
-        let tuning = Tuning { codec, size: (640, 360), fps: 30, bitrate: 2_000_000, speed: 100 };
+        let size = if codec == Codec::Av1 { (1280, 720) } else { (640, 360) };
+        let tuning = Tuning { codec, size, fps: 30, bitrate: 2_000_000, speed: 100 };
         let mut encoder: Box<dyn Encoder> = match kind {
             "amf" => match crate::amf::Amf::open(&device, tuning) {
                 Ok(e) => Box::new(e),
@@ -950,7 +996,7 @@ pub fn probe_main(args: &[String]) -> i32 {
             let _ = encoder.collect(&mut packets);
         }
         encoder.finish(&mut packets);
-        let good = packets.iter().any(|p| p.key && crate::mp4::Video::from_key(codec, (640, 360), &p.data).is_some());
+        let good = packets.iter().any(|p| p.key && crate::mp4::Video::from_key(codec, size, &p.data).is_some());
         if good { 0 } else { 7 }
     }
 }
@@ -1250,6 +1296,7 @@ unsafe fn engine(job: Run, media: bool) -> Result<Stats, String> {
     let mut dirty = true;
     let mut quitting = false;
     let mut fatal = None;
+    let mut fault = false;
     loop {
         while let Ok(order) = orders.try_recv() {
             match order {
@@ -1361,6 +1408,7 @@ unsafe fn engine(job: Run, media: bool) -> Result<Stats, String> {
                 continue;
             }
             Err(e) => {
+                fault = true;
                 fatal = Some(e);
                 break;
             }
@@ -1395,10 +1443,12 @@ unsafe fn engine(job: Run, media: bool) -> Result<Stats, String> {
             break;
         }
         if let Err(e) = encoder.submit(input, index as i64 * frame, frame) {
+            fault = true;
             fatal = Some(e);
             break;
         }
         if let Err(e) = encoder.collect(&mut packets) {
+            fault = true;
             fatal = Some(e);
             break;
         }
@@ -1435,6 +1485,25 @@ unsafe fn engine(job: Run, media: bool) -> Result<Stats, String> {
     stats.segundos = begin.elapsed().as_secs_f64();
     stats.cpu_pct = (process_cpu() - cpu_before) / stats.segundos.max(0.001) / threads() as f64 * 100.0;
     stats.ms_por_cuadro = spent.as_secs_f64() * 1000.0 / stats.cuadros.max(1) as f64;
+    if let Some(e) = &fatal {
+        crate::errores::note(
+            "grabadora",
+            &format!("{e} · codificador {} · gráfica {} · {}x{} a {fps} fps · {} cuadros, {} tarde · {}", stats.codificador, stats.grafica, size.0, size.1, stats.cuadros, stats.tarde, notes.join("; ")),
+        );
+        if let (true, Some(app)) = (fault, app) {
+            let (card, name) = (card_key(&screen.card), stats.codificador.clone());
+            remember(app, |all| {
+                if !all["fallidos"][&card].is_array() {
+                    all["fallidos"][&card] = serde_json::json!([]);
+                }
+                if let Some(list) = all["fallidos"][&card].as_array_mut() {
+                    if !list.iter().any(|known| known == &serde_json::json!(name)) {
+                        list.push(serde_json::json!(name));
+                    }
+                }
+            });
+        }
+    }
     if let Some(Err(e)) = closed {
         return Err(e);
     }
@@ -1581,7 +1650,10 @@ fn spawn_engine(app: &AppHandle, wanted: Wanted) -> Result<Engine, String> {
             };
             if ended_alone {
                 if let Err(e) = &done {
-                    let _ = handle.emit_to(crate::overlay::LABEL, "note", crate::i18n::tr(&format!("La grabadora se detuvo: {e}")));
+                    if !["codificar", "muestra", "codificador", "captura", "conversión"].iter().any(|from| e.starts_with(from)) {
+                        crate::errores::note("grabadora", e);
+                    }
+                    crate::errores::tell(&handle, &plain_failure(e));
                 }
                 announce();
             }

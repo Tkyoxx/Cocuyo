@@ -416,6 +416,12 @@ pub(crate) fn url_encode(text: &str) -> String {
 }
 
 fn first_things(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
+    if let Some(done) = crate::buscar::spoken(app, spoken) {
+        return Some(done);
+    }
+    if let Some(done) = crate::errores::spoken(spoken) {
+        return Some(done);
+    }
     if let Some(done) = crate::minutes::spoken(app, spoken) {
         return Some(done);
     }
@@ -572,8 +578,28 @@ fn pieces(spoken: &str) -> Vec<String> {
     parts
 }
 
+const CARRIED: [&str; 14] = ["abre", "abreme", "abrir", "cierra", "cierrame", "cerrar", "open", "close", "quit", "abra", "fecha", "feche", "busca", "buscame"];
+
+fn carry_verbs(parts: &mut [String]) {
+    let mut verb: Option<String> = None;
+    for part in parts.iter_mut() {
+        let first = part.split_whitespace().next().unwrap_or("").to_string();
+        if CARRIED.contains(&intent::normalize(&first).trim()) {
+            verb = Some(first);
+            continue;
+        }
+        match &verb {
+            Some(lead) if matches!(intent::parse(part), Intent::Unknown) && crate::notes::note_text(part).is_none() && clock(part).is_none() => {
+                *part = format!("{lead} {part}");
+            }
+            _ => verb = None,
+        }
+    }
+}
+
 fn several(app: &AppHandle, spoken: &str) -> Option<Vec<String>> {
-    let parts = pieces(spoken);
+    let mut parts = pieces(spoken);
+    carry_verbs(&mut parts);
     (parts.len() >= 2 && parts.len() <= 6 && parts.iter().all(|part| clock(part).is_some() || understood(app, part))).then_some(parts)
 }
 
@@ -590,6 +616,9 @@ pub fn run_order(app: &AppHandle, spoken: &str) -> Result<String, String> {
         return Ok(said);
     }
     if let Some(done) = quick(app, spoken) {
+        return done;
+    }
+    if let Some(done) = crate::investiga::spoken(app, spoken) {
         return done;
     }
     if let Some(task) = task_for(app, spoken) {
@@ -674,12 +703,18 @@ fn has_names(app: &AppHandle, spoken: &str) -> bool {
 }
 
 fn understood(app: &AppHandle, spoken: &str) -> bool {
-    crate::notes::note_text(spoken).is_some()
+    apps::wants_close(spoken)
+        || crate::notes::note_text(spoken).is_some()
         || !matches!(intent::parse(spoken), Intent::Unknown)
         || (spoken.split_whitespace().count() <= 4 && apps::find(app, spoken, 0.9).is_some())
 }
 
 fn follow(app: &AppHandle, spoken: &str, order: &str) -> Result<String, String> {
+    let orders: Vec<&str> = order.split(" ; ").map(str::trim).filter(|order| !order.is_empty()).take(6).collect();
+    if orders.len() > 1 {
+        let said: Vec<String> = orders.iter().map(|order| follow(app, order, order).unwrap_or_else(|why| why)).filter(|said| !said.trim().is_empty()).collect();
+        return Ok(said.join(" "));
+    }
     let order = order.trim();
     let lower = order.to_lowercase();
     if let Some(task) = lower.strip_prefix("agente").filter(|rest| rest.is_empty() || rest.starts_with([' ', ':'])) {
@@ -1018,7 +1053,7 @@ pub fn finish(app: &AppHandle, chord: Chord, cancelled: bool) {
                 inject::paste(&text).map(|()| String::new())
             } else {
                 let outcome = match &order {
-                    Some(order) => match crate::scripts::answered(app, &text).or_else(|| quick(app, &text)).or_else(|| crate::extensions::spoken(app, &text)) {
+                    Some(order) => match crate::scripts::answered(app, &text).or_else(|| crate::investiga::spoken(app, &text)).or_else(|| quick(app, &text)).or_else(|| crate::extensions::spoken(app, &text)) {
                         Some(done) => done,
                         None if task_for(app, &text).is_some() => agent(app, &task_for(app, &text).unwrap_or_else(|| text.clone())),
                         None if crate::ai::asking() => follow(app, &text, order),

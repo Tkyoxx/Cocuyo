@@ -490,11 +490,120 @@ fn image_of(process: u32) -> Option<String> {
     }
 }
 
+const EVERYTHING: [&str; 14] = [
+    "todo", "todas", "todas las apps", "todas las aplicaciones", "todas las ventanas", "todos los programas", "todo lo abierto", "todo lo que tengo abierto",
+    "everything", "all", "all apps", "all windows", "tudo", "todos os apps",
+];
+const BUT: [&str; 6] = [" menos ", " excepto ", " salvo ", " except ", " but ", " exceto "];
+
+fn names_in(list: &str) -> Vec<String> {
+    let mut list = format!(" {} ", list.replace(',', " , "));
+    for joiner in [" y ", " e ", " and ", " tambien ", " , "] {
+        list = list.replace(joiner, "|");
+    }
+    list.split('|').map(str::trim).filter(|name| !name.is_empty()).map(str::to_string).collect()
+}
+
 pub fn close(name: &str) -> Result<String, String> {
+    let name = name.trim();
+    let (what, keep) = match BUT.iter().find_map(|but| format!(" {name} ").split_once(but).map(|(what, keep)| (what.trim().to_string(), keep.to_string()))) {
+        Some((what, keep)) => (what, names_in(&keep)),
+        None => (name.to_string(), Vec::new()),
+    };
+    if EVERYTHING.contains(&what.as_str()) {
+        return close_all(&keep);
+    }
+    let names = names_in(&what);
+    if names.len() < 2 {
+        return close_one(&what);
+    }
+    let mut closed = Vec::new();
+    let mut missing = Vec::new();
+    for name in &names {
+        match close_one(name) {
+            Ok(said) => closed.push(said.trim_start_matches("Cerrando ").trim_end_matches('.').to_string()),
+            Err(_) => missing.push(name.clone()),
+        }
+    }
+    match (closed.is_empty(), missing.is_empty()) {
+        (true, _) => Err(format!("No veo abierta ninguna de esas apps: {}.", missing.join(", "))),
+        (false, true) => Ok(format!("Cerrando {}.", list_of(&closed))),
+        (false, false) => Ok(format!("Cerrando {}. No vi abierta {}.", list_of(&closed), list_of(&missing))),
+    }
+}
+
+fn list_of(names: &[String]) -> String {
+    match names {
+        [] => String::new(),
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{} y {last}", rest.join(", ")),
+    }
+}
+
+fn on_screen(hwnd: isize) -> bool {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindow, GetWindowLongPtrW, IsWindowVisible, GWL_EXSTYLE, GW_OWNER, WS_EX_TOOLWINDOW};
+    let hwnd = HWND(hwnd as _);
+    unsafe {
+        let mut cloaked = 0u32;
+        let _ = DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, (&mut cloaked as *mut u32).cast(), 4);
+        IsWindowVisible(hwnd).as_bool()
+            && GetWindow(hwnd, GW_OWNER).is_err()
+            && GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32 & WS_EX_TOOLWINDOW.0 == 0
+            && cloaked == 0
+    }
+}
+
+fn close_all(keep: &[String]) -> Result<String, String> {
+    use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+    use windows::Win32::System::Threading::GetCurrentProcessId;
+    use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE};
+    let own = unsafe { GetCurrentProcessId() };
+    let windows: Vec<(isize, u32, bool)> = top_windows().into_iter().filter(|(hwnd, _, titled)| *titled && on_screen(*hwnd)).collect();
+    let mut picked: Vec<(String, String)> = Vec::new();
+    let mut skipped: Vec<u32> = Vec::new();
+    for (_, process, titled) in &windows {
+        if !titled || *process == own || skipped.contains(process) || picked.iter().any(|(path, _)| image_of(*process).as_deref() == Some(path.as_str())) {
+            continue;
+        }
+        let Some(path) = image_of(*process) else {
+            skipped.push(*process);
+            continue;
+        };
+        let stem = std::path::Path::new(&path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        let described = crate::system::description(&path).unwrap_or_default();
+        let kept = keep.iter().any(|name| intent::similarity(name, &stem).max(intent::similarity(name, &described)).max(intent::covers(name, &described)) >= 0.75);
+        if NOT_APPS.contains(&stem.to_lowercase().as_str()) || kept {
+            skipped.push(*process);
+            continue;
+        }
+        picked.push((path, if described.is_empty() { stem } else { described }));
+    }
+    if picked.is_empty() {
+        return Err("No hay apps abiertas que cerrar.".into());
+    }
+    for (hwnd, process, titled) in &windows {
+        if *titled && image_of(*process).is_some_and(|path| picked.iter().any(|(chosen, _)| *chosen == path)) {
+            unsafe {
+                let _ = PostMessageW(Some(HWND(*hwnd as _)), WM_CLOSE, WPARAM(0), LPARAM(0));
+            }
+        }
+    }
+    let names: Vec<String> = picked.into_iter().map(|(_, label)| label).collect();
+    Ok(match names.len() {
+        1 => format!("Cerrando {}.", names[0]),
+        count if count <= 5 => format!("Cerrando {count} apps: {}.", list_of(&names)),
+        count => format!("Cerrando {count} apps."),
+    })
+}
+
+const NOT_APPS: [&str; 12] = ["explorer", "dwm", "csrss", "winlogon", "svchost", "searchui", "searchapp", "shellexperiencehost", "startmenuexperiencehost", "textinputhost", "applicationframehost", "systemsettings"];
+
+fn close_one(name: &str) -> Result<String, String> {
     use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
     use windows::Win32::System::Threading::GetCurrentProcessId;
     use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId, PostMessageW, WM_CLOSE};
-    const NOT_APPS: [&str; 12] = ["explorer", "dwm", "csrss", "winlogon", "svchost", "searchui", "searchapp", "shellexperiencehost", "startmenuexperiencehost", "textinputhost", "applicationframehost", "systemsettings"];
     let own = unsafe { GetCurrentProcessId() };
     let ask = |hwnd: isize| unsafe {
         let _ = PostMessageW(Some(HWND(hwnd as _)), WM_CLOSE, WPARAM(0), LPARAM(0));
@@ -542,10 +651,16 @@ pub fn close(name: &str) -> Result<String, String> {
     Ok(format!("Cerrando {label}."))
 }
 
-pub fn close_spoken(spoken: &str) -> Option<Result<String, String>> {
+pub fn wants_close(spoken: &str) -> bool {
     let clean = intent::normalize(spoken);
-    const LEADS: [&str; 11] = ["cierra ", "cierrame ", "cierren ", "cerrar ", "cierre ", "cierrate ", "close ", "fecha ", "feche ", "fechar ", "quit "];
-    let lead = LEADS.iter().find(|lead| clean.starts_with(**lead))?;
+    CLOSE_LEADS.iter().any(|lead| clean.starts_with(lead)) && clean.split_whitespace().count() >= 2
+}
+
+const CLOSE_LEADS: [&str; 11] = ["cierra ", "cierrame ", "cierren ", "cerrar ", "cierre ", "cierrate ", "close ", "fecha ", "feche ", "fechar ", "quit "];
+
+pub fn close_spoken(spoken: &str) -> Option<Result<String, String>> {
+    let clean = intent::normalize(&spoken.replace(',', " y "));
+    let lead = CLOSE_LEADS.iter().find(|lead| clean.starts_with(**lead))?;
     let mut name = clean[lead.len()..].trim();
     for filler in ["la aplicacion ", "la app ", "el programa ", "el ", "la ", "los ", "las ", "mi ", "the ", "o ", "a "] {
         name = name.strip_prefix(filler).unwrap_or(name);
@@ -566,6 +681,9 @@ mod close_tests {
         assert!(close_spoken("cierra sesión").is_none());
         assert!(close_spoken("cierra").is_none());
         assert_eq!(close_spoken("ciérrame la app programaquenoexiste123"), Some(Err("No veo ninguna app abierta llamada «programaquenoexiste123».".into())));
+        assert_eq!(close_spoken("cierra programaquenoexiste1, programaquenoexiste2 y programaquenoexiste3"), Some(Err("No veo abierta ninguna de esas apps: programaquenoexiste1, programaquenoexiste2, programaquenoexiste3.".into())));
+        assert_eq!(names_in("spotify y discord e opera"), vec!["spotify", "discord", "opera"]);
+        assert!(wants_close("cierra todo") && !wants_close("cierra") && !wants_close("pon música"));
     }
 
     #[test]

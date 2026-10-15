@@ -85,9 +85,6 @@ impl Amf {
     }
 
     pub unsafe fn open(device: &ID3D11Device, tuning: Tuning) -> Result<Amf, String> {
-        if tuning.codec == Codec::Av1 {
-            return Err("AMF directo solo hace H.264 y HEVC".into());
-        }
         let library = LoadLibraryW(w!("amfrt64.dll")).map_err(|_| "no está amfrt64.dll")?;
         let mut made = Amf { library, context: std::ptr::null_mut(), component: std::ptr::null_mut(), textures: Vec::new(), busy: VecDeque::new(), parked: Vec::new(), codec: tuning.codec, name: String::new(), drained: false };
         let init = GetProcAddress(library, s!("AMFInit")).ok_or("amfrt64.dll sin AMFInit")?;
@@ -112,15 +109,35 @@ impl Amf {
         if init_dx11(made.context, device.as_raw(), DX11) != OK {
             return Err("AMF no tomó la gráfica".into());
         }
-        let id = if tuning.codec == Codec::Hevc { w!("AMFVideoEncoderHW_HEVC") } else { w!("AMFVideoEncoderVCE_AVC") };
+        let id = match tuning.codec {
+            Codec::Hevc => w!("AMFVideoEncoderHW_HEVC"),
+            Codec::Av1 => w!("AMFVideoEncoderHW_AV1"),
+            Codec::H264 => w!("AMFVideoEncoderVCE_AVC"),
+        };
         let create_component: extern "system" fn(Object, Object, PCWSTR, *mut Object) -> i32 = slot(factory, 1);
         if create_component(factory, made.context, id, &mut made.component) != OK || made.component.is_null() {
-            return Err(format!("esta gráfica no codifica {} con AMF", if tuning.codec == Codec::Hevc { "HEVC" } else { "H.264" }));
+            return Err(format!("esta gráfica no codifica {} con AMF", crate::mp4::label(tuning.codec)));
         }
         let c = made.component;
         let (w, h) = tuning.size;
         let bitrate = tuning.bitrate as i64;
-        if tuning.codec == Codec::Hevc {
+        if tuning.codec == Codec::Av1 {
+            set(c, w!("Av1Usage"), int(0));
+            set(c, w!("Av1EncodingLatencyMode"), int(1));
+            set(c, w!("Av1QualityPreset"), int(match tuning.speed { 67.. => 100, 34..=66 => 70, _ => 30 }));
+            set(c, w!("Av1Profile"), int(1));
+            set(c, w!("Av1FrameSize"), pair(5, w, h));
+            set(c, w!("Av1FrameRate"), pair(7, tuning.fps, 1));
+            set(c, w!("Av1RateControlMethod"), int(3));
+            set(c, w!("Av1TargetBitrate"), int(bitrate));
+            set(c, w!("Av1PeakBitrate"), int(bitrate));
+            set(c, w!("Av1VBVBufferSize"), int(bitrate));
+            set(c, w!("Av1GOPSize"), int(tuning.fps as i64));
+            set(c, w!("Av1HeaderInsertionMode"), int(2));
+            set(c, w!("Av1FillerData"), flag(false));
+            set(c, w!("Av1BPicturesPattern"), int(0));
+            set(c, w!("Av1AlignmentMode"), int(3));
+        } else if tuning.codec == Codec::Hevc {
             set(c, w!("HevcUsage"), int(0));
             set(c, w!("HevcQualityPreset"), int(match tuning.speed { 67.. => 10, 34..=66 => 5, _ => 0 }));
             set(c, w!("HevcProfile"), int(1));
@@ -150,7 +167,15 @@ impl Amf {
             set(c, w!("FillerDataEnable"), flag(false));
         }
         let start: extern "system" fn(Object, i32, i32, i32) -> i32 = slot(c, 17);
-        let started = start(c, NV12, w as i32, h as i32);
+        let mut started = start(c, NV12, w as i32, h as i32);
+        if started != OK && tuning.codec == Codec::Av1 && h == 1080 {
+            set(c, w!("Av1AlignmentMode"), int(2));
+            started = start(c, NV12, w as i32, h as i32);
+        }
+        if started != OK && tuning.codec == Codec::Av1 && w % 64 == 0 && h % 16 == 0 {
+            set(c, w!("Av1AlignmentMode"), int(1));
+            started = start(c, NV12, w as i32, h as i32);
+        }
         if started != OK {
             return Err(format!("AMF no aceptó {w}×{h} (código {started})"));
         }
@@ -174,7 +199,7 @@ impl Amf {
         if made.name.is_empty() {
             made.name = "AMF".into();
         }
-        made.name = format!("{} {}", made.name, if tuning.codec == Codec::Hevc { "HEVC" } else { "H.264" });
+        made.name = format!("{} {}", made.name, crate::mp4::label(tuning.codec));
         Ok(made)
     }
 

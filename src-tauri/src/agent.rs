@@ -147,6 +147,7 @@ enum Doer {
     Look,
     Hands,
     Phone,
+    Research,
     Extension(String),
     Mcp(String, String),
 }
@@ -195,6 +196,12 @@ fn toolbox(app: &AppHandle) -> (Vec<Value>, HashMap<String, Doer>) {
         object(json!({ "accion": { "type": "string", "enum": ["empezar", "terminar"] } }), &["accion"]),
     ));
     doers.insert("cocuyo_apuntes".to_string(), Doer::Minutes);
+    tools.push(function(
+        "cocuyo_investigar",
+        "Investiga a fondo un tema en internet: hace varias búsquedas, lee las mejores páginas, cruza lo que dicen y abre un informe con sus fuentes.          Tarda uno o dos minutos y trabaja solo; úsala cuando la persona pida investigar, averiguar a fondo o comparar algo con fuentes.",
+        object(json!({ "tema": { "type": "string", "description": "La pregunta o el tema completo, con todos los detalles que dio la persona" } }), &["tema"]),
+    ));
+    doers.insert("cocuyo_investigar".to_string(), Doer::Research);
     tools.push(function("cocuyo_portapapeles", "Lee el texto que la persona tiene copiado.", object(json!({}), &[])));
     doers.insert("cocuyo_portapapeles".to_string(), Doer::Clipboard);
     tools.push(function("cocuyo_pantalla", "Lee todo el texto que se ve en la pantalla.", object(json!({}), &[])));
@@ -382,6 +389,7 @@ fn act(app: &AppHandle, doer: &Doer, args: &Value) -> Result<Done, String> {
         Doer::Look => crate::pc::look(args.get("imagen").and_then(Value::as_bool).unwrap_or(false)).map(|(text, image)| Done { text, image }),
         Doer::Hands => hands(app, args),
         Doer::Phone => crate::remoto::to_phone(args).map(Done::from),
+        Doer::Research => crate::investiga::start(app, &text(args, "tema")).map(Done::from),
         Doer::Extension(name) => ask_extension(app, name, args).map(Done::from),
         Doer::Mcp(server, tool) => crate::mcp::call(server, tool, args.clone()).map(Done::from),
     }
@@ -404,6 +412,7 @@ fn label(name: &str, args: &Value) -> String {
         "cocuyo_apuntes" => if text(args, "accion") == "terminar" { "Cerrando los apuntes".into() } else { "Empezando los apuntes".into() },
         "cocuyo_mirar" => "Mirando la ventana".into(),
         "cocuyo_celular" => "Dejándolo en el celular".into(),
+        "cocuyo_investigar" => "Empezando la investigación".into(),
         "cocuyo_hacer" => {
             let actions = args.get("acciones").and_then(Value::as_array).map_or(0, Vec::len);
             if actions == 1 { "Usando el mouse".into() } else { format!("Usando el mouse ({actions} pasos)") }

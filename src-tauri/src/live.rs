@@ -232,6 +232,7 @@ pub fn apply(app: &AppHandle) -> Result<(), String> {
         let handle = app.clone();
         player::play(plan, move |file, why| {
             eprintln!("[fondo] sin reproductor nativo para {}: {why}", file.display());
+            crate::errores::note("fondo", &format!("el reproductor nativo no pudo con {}: {why}; sigue en la página", file.display()));
             let Some((_, original)) = sources.iter().find(|(played, _)| *played == file) else { return };
             if wanted(original) {
                 FALLEN.lock().unwrap().push(original.clone());

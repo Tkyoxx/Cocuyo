@@ -4,6 +4,7 @@ mod agenda;
 mod ai;
 mod amf;
 mod apps;
+mod buscar;
 mod candado;
 mod capture;
 mod clip;
@@ -11,6 +12,7 @@ mod codificador;
 mod cue;
 mod agent;
 mod dialogs;
+mod errores;
 mod discord;
 mod extensions;
 mod grabadora;
@@ -19,6 +21,7 @@ mod hotkeys;
 mod i18n;
 mod inject;
 mod install;
+mod investiga;
 mod intent;
 mod live;
 mod mcp;
@@ -142,6 +145,11 @@ fn demo(app: tauri::AppHandle) {
                 let started = std::time::Instant::now();
                 eprintln!("[vivo] {:?} en {:?}", talk::probe(&app, text), started.elapsed());
                 talk::forget();
+            } else if let Some(text) = step.strip_prefix("orden=") {
+                let started = std::time::Instant::now();
+                eprintln!("[orden] {text} -> {:?} en {:?}", voice::run_order(&app, text), started.elapsed());
+            } else if step == "error-prueba" {
+                grabadora::fake_failure(&app);
             } else if step == "ia" {
                 let started = std::time::Instant::now();
                 let order = ai::rewrite(&app, "oye ponme la de beibi dol de dominic faik porfa", &scripts::list(&app));

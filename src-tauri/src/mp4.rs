@@ -14,6 +14,14 @@ pub enum Codec {
     Av1,
 }
 
+pub fn label(codec: Codec) -> &'static str {
+    match codec {
+        Codec::H264 => "H.264",
+        Codec::Hevc => "HEVC",
+        Codec::Av1 => "AV1",
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Sound {
     Aac(u32),

@@ -123,6 +123,10 @@ No hay frases que aprenderse: dilo como te salga. Estos son ejemplos, no la list
 | «abre el bloc de notas», «ábreme Discord y Spotify», «entra a WhatsApp» | Abre la app, o la web si es YouTube, Gmail, WhatsApp… |
 | «busca recetas en YouTube», «quiero ver videos de gatos» | Busca en YouTube |
 | «busca el clima de mañana» | Busca en Google |
+| «busca Hollow Knight en Steam» | Los primeros juegos con su precio en tu moneda, y botones para verlo o jugarlo si ya lo tienes |
+| «busca cómo cambiar la pasta térmica en internet» | Una tarjeta con los primeros resultados |
+| «busca Simón Bolívar en Wikipedia», «busca restaurantes en mapas», «busca un mouse en Amazon» | Abre la búsqueda en esa página (también GitHub, Twitch, Reddit, Epic, GOG, imágenes, noticias, TikTok y Mercado Libre) |
+| «investiga a fondo si vale la pena cambiar mi RX 580» | Una investigación de verdad: varias búsquedas, lee las páginas, cruza lo que dicen y te abre un informe con sus fuentes |
 | «anota comprar pan y leche», «toma nota de que…» | Guarda una nota en [Mis Notas](https://github.com/Tkyoxx/mis-notas); si está cerrada, la abre |
 | «recuérdame en 10 minutos sacar la pizza», «pon un temporizador de 5 minutos» | Te avisa, con un tono y en voz alta |
 | «a las 6 de la tarde pon música», «mañana a las 8 recuérdame la cita» | Lo hace o te lo recuerda a esa hora |
@@ -133,6 +137,9 @@ No hay frases que aprenderse: dilo como te salga. Estos son ejemplos, no la list
 | Con un texto seleccionado: «corrígelo», «hazlo más formal», «tradúcelo al inglés» | Reescribe lo seleccionado ahí mismo. Necesita tu modelo de IA |
 | «¿qué me está poniendo lento el PC?» | Te dice quién se está comiendo el procesador y la memoria |
 | «cierra Spotify», «ciérrame Discord», «cierra esto» | Le pide a la app que se cierre, como al pulsar su X (si hay algo sin guardar, pregunta ella) |
+| «cierra Spotify, Discord y Opera», «cierra todo», «cierra todo menos Spotify» | Varias de una, o todo lo que tengas abierto menos lo que digas |
+| «abre Chrome y Discord y pon Bad Bunny» | Varias cosas en una sola frase, en orden |
+| «abre la carpeta de errores» | Te muestra el registro de lo que ha fallado (si algo detiene la grabadora, Cocuyo te lo dice y lo abre solo) |
 | «pon en cola De Música Ligera», «¿qué suena?», «activa el aleatorio», «ponla en bucle», «me gusta esta canción» | Más Spotify: la cola, qué suena, aleatorio, repetir y Me gusta |
 | «¿qué clima hace?», «¿va a llover hoy?» | El clima de tu ciudad |
 | «recuerda que mi talla es la M», «olvida lo de la talla» | Datos que el modelo de IA tendrá presentes al responderte |
@@ -235,6 +242,8 @@ Todo explicado, con ejemplos, en [`sdk/`](sdk/README.md).
 ### El modo agente: tu Jarvis
 
 Le hablas normal y Cocuyo decide: lo simple lo hace al instante y lo que tiene pasos lo piensa. Para eso usa herramientas: sus propias órdenes, tus scripts, lo que copiaste, lo que hay en pantalla, las extensiones, cualquier **servidor MCP** (los mismos de Claude Desktop: archivos, GitHub, el navegador, tu casa…) y **el mouse y el teclado**.
+
+**Investiga a fondo.** «Investiga a fondo qué gráfica me conviene para jugar en 1080p» parte la pregunta en varias búsquedas, las hace él mismo en DuckDuckGo (sin servicios de pago y respetando el robots.txt de cada sitio), lee las mejores páginas, toma notas, mira qué le falta, cruza las fuentes y te abre un informe con resumen, secciones, dónde se contradicen las fuentes y qué creer, conclusiones y cada fuente numerada con su enlace. Queda guardado en `Documentos\Cocuyo\Investigaciones`. Mientras trabaja ves el avance en la isla, y al final te dice cuántas llamadas a la IA gastó (suelen ser entre 8 y 15, nada para los planes gratis).
 
 Con las manos encendidas, «mándale a Angela por WhatsApp que llego en 10 minutos» abre WhatsApp, busca el chat, comprueba que es Angela, escribe y te pregunta «¿Lo hago?» antes de enviar. No adivina píxeles: lee los botones de la ventana con la accesibilidad de Windows, así que funciona en cualquier resolución y monitor. Si mueves el mouse, suelta todo. Cómo funciona y cómo darle herramientas nuevas, en [`sdk/`](sdk/README.md#el-modo-agente).
 
