@@ -13,7 +13,7 @@
   --lime: #b9f56a;
   --violet: #7b5cff;
   --red: #ff5f57;
-  --glass: rgb(18 16 28 / 0.55);
+  --glass: rgb(18 16 28 / 0.84);
   --font: -apple-system, "Segoe UI Variable Display", "Segoe UI", Roboto, system-ui, sans-serif;
   --ui: cubic-bezier(0.25, 1, 0.5, 1);
   --pop: cubic-bezier(0.3, 1.8, 0.55, 1);
@@ -61,7 +61,7 @@ button {
   cursor: pointer;
 }
 
-/* el cielo: auroras difuminadas y cocuyos que flotan. solo transform y opacity, para que lo pinte la grafica */
+/* el cielo: auroras y cocuyos quietos. se pinta una vez y ya, el celular no se calienta por un fondo */
 
 .cielo {
   position: fixed;
@@ -75,46 +75,25 @@ button {
   width: 70vmax;
   height: 70vmax;
   border-radius: 50%;
-  filter: blur(70px);
   opacity: 0.55;
-  will-change: transform;
 }
 .mancha.uno {
   top: -30vmax;
   left: -25vmax;
-  background: radial-gradient(circle, rgb(123 92 255 / 0.75), transparent 65%);
-  animation: deriva-uno 26s ease-in-out infinite alternate;
+  background: radial-gradient(circle, rgb(123 92 255 / 0.75), transparent 70%);
 }
 .mancha.dos {
   right: -30vmax;
   bottom: -20vmax;
-  background: radial-gradient(circle, rgb(242 184 75 / 0.5), transparent 65%);
-  animation: deriva-dos 32s ease-in-out infinite alternate;
+  background: radial-gradient(circle, rgb(242 184 75 / 0.5), transparent 70%);
 }
 .mancha.tres {
   top: 30%;
   left: 20%;
   width: 50vmax;
   height: 50vmax;
-  background: radial-gradient(circle, rgb(92 184 255 / 0.4), transparent 65%);
-  opacity: calc(0.25 + var(--lv) * 0.6);
-  animation: deriva-tres 22s ease-in-out infinite alternate;
-  transition: opacity 0.2s linear;
-}
-@keyframes deriva-uno {
-  to {
-    transform: translate(18vmax, 22vmax) scale(1.15);
-  }
-}
-@keyframes deriva-dos {
-  to {
-    transform: translate(-20vmax, -16vmax) scale(1.2);
-  }
-}
-@keyframes deriva-tres {
-  to {
-    transform: translate(-14vmax, 10vmax) scale(0.85);
-  }
+  background: radial-gradient(circle, rgb(92 184 255 / 0.4), transparent 70%);
+  opacity: 0.3;
 }
 
 .cielo b {
@@ -128,35 +107,20 @@ button {
   box-shadow:
     0 0 8px 2px rgb(185 245 106 / 0.9),
     0 0 22px 6px rgb(185 245 106 / 0.35);
-  opacity: 0;
-  animation:
-    vuela var(--d) ease-in-out infinite alternate,
-    titila var(--t) ease-in-out infinite;
-  animation-delay: var(--w), var(--w);
+  opacity: 0.55;
 }
-.cielo b:nth-of-type(1) { --x: 12%; --y: 18%; --d: 9s; --t: 3.1s; --w: -1s; }
-.cielo b:nth-of-type(2) { --x: 78%; --y: 12%; --d: 12s; --t: 4.3s; --w: -3s; }
-.cielo b:nth-of-type(3) { --x: 64%; --y: 38%; --d: 10s; --t: 2.7s; --w: -5s; }
-.cielo b:nth-of-type(4) { --x: 22%; --y: 52%; --d: 14s; --t: 3.8s; --w: -2s; }
-.cielo b:nth-of-type(5) { --x: 86%; --y: 61%; --d: 11s; --t: 5.2s; --w: -7s; }
-.cielo b:nth-of-type(6) { --x: 40%; --y: 74%; --d: 13s; --t: 3.4s; --w: -4s; }
-.cielo b:nth-of-type(7) { --x: 8%; --y: 84%; --d: 9.5s; --t: 4.6s; --w: -6s; }
-.cielo b:nth-of-type(8) { --x: 55%; --y: 8%; --d: 15s; --t: 2.9s; --w: -8s; }
-.cielo b:nth-of-type(9) { --x: 32%; --y: 30%; --d: 12.5s; --t: 6s; --w: -2.5s; }
-.cielo b:nth-of-type(10) { --x: 70%; --y: 86%; --d: 10.5s; --t: 3.6s; --w: -9s; }
-.cielo b:nth-of-type(11) { --x: 92%; --y: 34%; --d: 16s; --t: 4.1s; --w: -1.5s; }
-.cielo b:nth-of-type(12) { --x: 48%; --y: 56%; --d: 11.5s; --t: 5.6s; --w: -6.5s; }
-@keyframes vuela {
-  0% {
-    transform: translate(0, 0);
-  }
-  50% {
-    transform: translate(26px, -34px);
-  }
-  100% {
-    transform: translate(-18px, -70px);
-  }
-}
+.cielo b:nth-of-type(1) { --x: 12%; --y: 18%; }
+.cielo b:nth-of-type(2) { --x: 78%; --y: 12%; }
+.cielo b:nth-of-type(3) { --x: 64%; --y: 38%; }
+.cielo b:nth-of-type(4) { --x: 22%; --y: 52%; }
+.cielo b:nth-of-type(5) { --x: 86%; --y: 61%; }
+.cielo b:nth-of-type(6) { --x: 40%; --y: 74%; }
+.cielo b:nth-of-type(7) { --x: 8%; --y: 84%; }
+.cielo b:nth-of-type(8) { --x: 55%; --y: 8%; }
+.cielo b:nth-of-type(9) { --x: 32%; --y: 30%; }
+.cielo b:nth-of-type(10) { --x: 70%; --y: 86%; }
+.cielo b:nth-of-type(11) { --x: 92%; --y: 34%; }
+.cielo b:nth-of-type(12) { --x: 48%; --y: 56%; }
 @keyframes titila {
   0%,
   100% {
@@ -182,13 +146,11 @@ button {
   margin-top: calc(var(--top) + 8px);
   padding: 0 17px 0 14px;
   border-radius: 999px;
-  background: rgb(0 0 0 / 0.72);
+  background: rgb(0 0 0 / 0.86);
   border: 1px solid rgb(255 255 255 / 0.1);
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 0.08),
     0 12px 34px rgb(0 0 0 / 0.6);
-  backdrop-filter: blur(18px) saturate(1.4);
-  -webkit-backdrop-filter: blur(18px) saturate(1.4);
   font-size: 13px;
   font-weight: 600;
   transition:
@@ -201,7 +163,6 @@ button {
   from {
     opacity: 0;
     transform: translateY(-30px) scale(0.6);
-    filter: blur(8px);
   }
 }
 .isla[data-estado="conectado"] {
@@ -232,7 +193,6 @@ button {
 .isla[data-estado="conectado"] .luz {
   background: #7ee08a;
   box-shadow: 0 0 10px rgb(126 224 138 / 0.8);
-  animation: respira 3.2s ease-in-out infinite;
 }
 .isla[data-estado="controlando"] {
   border-color: rgb(255 95 87 / 0.6);
@@ -246,11 +206,6 @@ button {
 @keyframes latido {
   50% {
     opacity: 0.3;
-  }
-}
-@keyframes respira {
-  50% {
-    box-shadow: 0 0 16px 2px rgb(126 224 138 / 0.5);
   }
 }
 .isla[data-estado="pensando"] .isla-texto {
@@ -340,7 +295,6 @@ button {
   from {
     opacity: 0;
     transform: translateY(18px);
-    filter: blur(10px);
   }
 }
 .hola {
@@ -356,8 +310,7 @@ button {
   position: absolute;
   inset: -30%;
   border-radius: 50%;
-  background: radial-gradient(circle, rgb(185 245 106 / 0.45), transparent 62%);
-  filter: blur(14px);
+  background: radial-gradient(circle, rgb(185 245 106 / 0.4), transparent 68%);
   animation: farol 3.4s ease-in-out infinite;
 }
 @keyframes farol {
@@ -401,8 +354,6 @@ button {
   border: 1px solid rgb(255 255 255 / 0.08);
   background: var(--glass);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
-  backdrop-filter: blur(22px) saturate(1.3);
-  -webkit-backdrop-filter: blur(22px) saturate(1.3);
 }
 .pasos {
   display: grid;
@@ -428,9 +379,7 @@ button {
   padding: 0 16px;
   border: 1px solid var(--hair);
   border-radius: 17px;
-  background: rgb(18 16 28 / 0.6);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgb(18 16 28 / 0.88);
   font-size: 21px;
   font-weight: 650;
   letter-spacing: 0.14em;
@@ -485,9 +434,7 @@ button {
   padding: 4px;
   border-radius: 999px;
   border: 1px solid rgb(255 255 255 / 0.07);
-  background: rgb(18 16 28 / 0.5);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  background: rgb(18 16 28 / 0.86);
   animation: aparece 0.8s var(--soft) 0.15s both;
 }
 .pestana-luz {
@@ -559,7 +506,7 @@ button {
   color: transparent;
   animation:
     aparece 1s var(--soft) both,
-    brillo-lento 6s ease-in-out 1s infinite;
+    brillo-lento 2.4s ease-in-out 1s 1;
 }
 @keyframes brillo-lento {
   50% {
@@ -584,9 +531,7 @@ button {
   padding: 10px 15px;
   border: 1px solid rgb(255 255 255 / 0.1);
   border-radius: 999px;
-  background: rgb(18 16 28 / 0.55);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: rgb(18 16 28 / 0.84);
   font-size: 13.5px;
   animation: aparece 0.8s var(--soft) both;
   transition:
@@ -636,10 +581,8 @@ button {
   border-bottom-left-radius: 7px;
   border: 1px solid transparent;
   background:
-    linear-gradient(rgb(16 14 26 / 0.78), rgb(16 14 26 / 0.78)) padding-box,
+    linear-gradient(rgb(16 14 26 / 0.92), rgb(16 14 26 / 0.92)) padding-box,
     linear-gradient(140deg, rgb(185 245 106 / 0.45), rgb(123 92 255 / 0.25) 45%, rgb(255 255 255 / 0.08)) border-box;
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
   box-shadow: 0 12px 30px rgb(0 0 0 / 0.4);
   transform-origin: 0 100%;
 }
@@ -653,7 +596,7 @@ button {
   border-radius: 50%;
   background: #f4ffd6;
   box-shadow: 0 0 10px 3px rgb(185 245 106 / 0.7);
-  animation: titila 2.8s ease-in-out infinite;
+  opacity: 0.85;
 }
 .dicho.error {
   background:
@@ -675,7 +618,6 @@ button {
   from {
     opacity: 0;
     transform: translateY(14px) scale(0.9);
-    filter: blur(10px);
   }
 }
 
@@ -691,10 +633,8 @@ button {
   border-radius: 24px;
   background:
     radial-gradient(130% 100% at 0% 0%, color-mix(in srgb, var(--tint) 20%, transparent), transparent 60%) padding-box,
-    linear-gradient(rgb(14 12 22 / 0.82), rgb(14 12 22 / 0.82)) padding-box,
+    linear-gradient(rgb(14 12 22 / 0.93), rgb(14 12 22 / 0.93)) padding-box,
     linear-gradient(150deg, color-mix(in srgb, var(--tint) 60%, transparent), rgb(255 255 255 / 0.06) 40%, rgb(255 255 255 / 0.04)) border-box;
-  backdrop-filter: blur(22px);
-  -webkit-backdrop-filter: blur(22px);
   box-shadow: 0 18px 44px rgb(0 0 0 / 0.5), 0 0 40px color-mix(in srgb, var(--tint) 10%, transparent);
   animation: entra-tarjeta 0.9s var(--soft) both;
 }
@@ -702,7 +642,7 @@ button {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(105deg, transparent 35%, rgb(255 255 255 / 0.09) 50%, transparent 65%);
+  background: linear-gradient(105deg, transparent 35%, rgb(255 255 255 / 0.09) 50%, transparent 70%);
   transform: translateX(-100%);
   animation: barrido 1.6s var(--ui) 0.35s both;
   pointer-events: none;
@@ -711,7 +651,6 @@ button {
   from {
     opacity: 0;
     transform: translateY(22px) scale(0.92);
-    filter: blur(12px);
   }
 }
 @keyframes barrido {
@@ -810,9 +749,7 @@ button {
   border-radius: 20px;
   background:
     radial-gradient(80% 80% at 50% 0%, rgb(123 92 255 / 0.18), transparent 70%),
-    rgb(18 16 28 / 0.6);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+    rgb(18 16 28 / 0.88);
   box-shadow: 0 18px 44px rgb(0 0 0 / 0.5);
   transition:
     border-color 0.4s var(--ui),
@@ -861,9 +798,7 @@ button {
   padding: 0 14px;
   border: 1px solid rgb(255 255 255 / 0.08);
   border-radius: 14px;
-  background: rgb(18 16 28 / 0.55);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: rgb(18 16 28 / 0.84);
   font-size: 14px;
   font-weight: 650;
   transition: transform 0.4s var(--pop);
@@ -960,7 +895,6 @@ button {
   from {
     opacity: 0;
     transform: translateY(30px);
-    filter: blur(8px);
   }
 }
 .escribir {
@@ -972,9 +906,7 @@ button {
   padding: 0 5px 0 18px;
   border: 1px solid rgb(255 255 255 / 0.1);
   border-radius: 999px;
-  background: rgb(18 16 28 / 0.6);
-  backdrop-filter: blur(22px) saturate(1.3);
-  -webkit-backdrop-filter: blur(22px) saturate(1.3);
+  background: rgb(18 16 28 / 0.9);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 12px 30px rgb(0 0 0 / 0.4);
   transition:
     border-color 0.3s var(--ui),
@@ -1048,14 +980,6 @@ button {
     transform 0.5s var(--pop),
     background 0.3s var(--ui),
     box-shadow 0.3s var(--ui);
-  animation: llama 4s ease-in-out infinite;
-}
-@keyframes llama {
-  50% {
-    box-shadow:
-      0 10px 30px rgb(0 0 0 / 0.45),
-      0 0 44px rgb(255 255 255 / 0.22);
-  }
 }
 .mic svg {
   stroke: #000;

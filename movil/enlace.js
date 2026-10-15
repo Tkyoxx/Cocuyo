@@ -6,6 +6,8 @@ const PUNTO_DE_FABRICA = "";
 const JSON_ = 1;
 const AUDIO = 2;
 const VOZ = 3;
+const TROZO_VOZ = 4;
+const TROZO_AUDIO = 5;
 const MAXIMO = 1_900_000;
 const PING = '{"t":"ping"}';
 
@@ -163,11 +165,12 @@ class Enlace {
     ws.addEventListener("message", (e) => {
       this.entrada = this.entrada.then(() => this.mensaje(ws, e.data)).catch(() => {});
     });
-    ws.addEventListener("close", () => {
+    ws.addEventListener("close", (e) => {
       if (this.ws !== ws) return;
       this.ws = null;
       this.sesion = null;
       this.latir();
+      if (e.code === 4000) return this.avisar("en-otra");
       this.luego();
     });
     this.espera = 1000;
@@ -232,6 +235,8 @@ class Enlace {
       } catch {}
     } else if (tipo === VOZ) {
       this.recibir({ tipo: "voz", wav: cuerpo.slice() });
+    } else if (tipo === TROZO_VOZ) {
+      this.recibir({ tipo: "trozo", pcm: cuerpo.slice() });
     }
   }
 
@@ -250,8 +255,13 @@ class Enlace {
     const prueba = await abrir(llaves.pcACel, 0, deB64(dicho.prueba ?? ""));
     if (!prueba || new TextDecoder().decode(prueba) !== "acepto") return;
     this.saludo = null;
+    this.puede = new Set(Array.isArray(dicho.puede) ? dicho.puede : []);
     this.sesion = { sale: llaves.celAPc, entra: llaves.pcACel, siguiente: 1, ultimo: 0 };
     this.avisar("conectado");
+  }
+
+  sabe(cosa) {
+    return !!this.sesion && !!this.puede?.has(cosa);
   }
 
   enviar(mensaje) {
@@ -264,7 +274,8 @@ class Enlace {
     const sesion = this.sesion;
     const ws = this.ws;
     if (!sesion || ws?.readyState !== WebSocket.OPEN) throw new Error(`${this.datos.nombre} no está conectado ahora. Revisa que esté prendido con Cocuyo abierto.`);
-    const cuerpo = mensaje.tipo === "voz" ? bytes(Uint8Array.of(AUDIO), mensaje.pcm) : bytes(Uint8Array.of(JSON_), utf8(JSON.stringify(mensaje)));
+    const cuerpo =
+      mensaje.tipo === "voz" ? bytes(Uint8Array.of(AUDIO), mensaje.pcm) : mensaje.tipo === "trozo" ? bytes(Uint8Array.of(TROZO_AUDIO), mensaje.pcm) : bytes(Uint8Array.of(JSON_), utf8(JSON.stringify(mensaje)));
     if (cuerpo.length > MAXIMO) throw new Error("Eso es muy largo para mandarlo de una. Habla menos de un minuto.");
     const contador = sesion.siguiente++;
     ws.send(marco(contador, await sellar(sesion.sale, contador, cuerpo)));

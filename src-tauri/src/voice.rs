@@ -493,9 +493,98 @@ fn task_for(app: &AppHandle, spoken: &str) -> Option<String> {
     crate::agent::called(spoken).or_else(|| (crate::agent::asked() || crate::agent::needs_steps(spoken)).then(|| spoken.to_string()))
 }
 
+const ASK_HOUR: [&str; 8] = ["que hora es", "que horas son", "dime la hora", "me das la hora", "what time is it", "whats the time", "que horas sao", "me diz as horas"];
+const ASK_DAY: [&str; 9] = ["que dia es hoy", "que fecha es hoy", "a cuanto estamos", "que dia es", "what day is it", "whats the date", "what is the date", "que dia e hoje", "que dia e"];
+
+fn clock(spoken: &str) -> Option<String> {
+    let said = intent::normalize(spoken);
+    let said = said.trim();
+    let asks = |list: &[&str]| list.iter().any(|ask| said.contains(ask) && said.len() <= ask.len() + 16);
+    let (hour, day) = (asks(&ASK_HOUR), asks(&ASK_DAY));
+    if !hour && !day {
+        return None;
+    }
+    let now = unsafe { windows::Win32::System::SystemInformation::GetLocalTime() };
+    Some(clock_text(crate::cue::language().0, hour, now.wHour, now.wMinute, now.wDayOfWeek, now.wDay, now.wMonth))
+}
+
+fn clock_text(language: &str, hour: bool, h: u16, m: u16, weekday: u16, day: u16, month: u16) -> String {
+    let (weekday, month) = (usize::from(weekday % 7), usize::from(month.clamp(1, 12) - 1));
+    match (language, hour) {
+        ("en", true) => format!("It's {}:{m:02} {}.", if h % 12 == 0 { 12 } else { h % 12 }, if h < 12 { "AM" } else { "PM" }),
+        ("pt", true) => format!("{} {h}:{m:02}.", if h == 1 { "É" } else { "São" }),
+        (_, true) => {
+            let twelve = if h % 12 == 0 { 12 } else { h % 12 };
+            let part = match h {
+                0..=5 => "de la madrugada",
+                6..=11 => "de la mañana",
+                12..=18 => "de la tarde",
+                _ => "de la noche",
+            };
+            format!("{} {twelve}:{m:02} {part}.", if twelve == 1 { "Es la" } else { "Son las" })
+        }
+        ("en", false) => {
+            const DAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+            const MONTHS: [&str; 12] = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+            format!("Today is {}, {} {day}.", DAYS[weekday], MONTHS[month])
+        }
+        ("pt", false) => {
+            const DAYS: [&str; 7] = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"];
+            const MONTHS: [&str; 12] = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+            format!("Hoje é {}, {day} de {}.", DAYS[weekday], MONTHS[month])
+        }
+        _ => {
+            const DAYS: [&str; 7] = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+            const MONTHS: [&str; 12] = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+            format!("Hoy es {} {day} de {}.", DAYS[weekday], MONTHS[month])
+        }
+    }
+}
+
+const JOINERS: [&str; 9] = ["y", "luego", "despues", "tambien", "and", "then", "also", "e", "depois"];
+
+fn pieces(spoken: &str) -> Vec<String> {
+    let mut parts = vec![String::new()];
+    for word in spoken.split_whitespace() {
+        let (word, cut) = match word.strip_suffix([',', ';']) {
+            Some(bare) => (bare, true),
+            None => (word, false),
+        };
+        if JOINERS.contains(&intent::normalize(word).as_str()) {
+            if !parts.last().is_some_and(String::is_empty) {
+                parts.push(String::new());
+            }
+            continue;
+        }
+        let last = parts.last_mut().unwrap();
+        if !last.is_empty() {
+            last.push(' ');
+        }
+        last.push_str(word);
+        if cut {
+            parts.push(String::new());
+        }
+    }
+    parts.retain(|part| !part.is_empty());
+    parts
+}
+
+fn several(app: &AppHandle, spoken: &str) -> Option<Vec<String>> {
+    let parts = pieces(spoken);
+    (parts.len() >= 2 && parts.len() <= 6 && parts.iter().all(|part| clock(part).is_some() || understood(app, part))).then_some(parts)
+}
+
 pub fn run_order(app: &AppHandle, spoken: &str) -> Result<String, String> {
     if let Some(done) = crate::scripts::answered(app, spoken) {
         return done;
+    }
+    if let Some(parts) = several(app, spoken) {
+        let said: Vec<String> = parts.iter().map(|part| run_order(app, part).unwrap_or_else(|why| why)).filter(|said| !said.trim().is_empty()).collect();
+        return Ok(said.join(" "));
+    }
+    if let Some(said) = clock(spoken) {
+        crate::cue::answer(&said);
+        return Ok(said);
     }
     if let Some(done) = quick(app, spoken) {
         return done;
@@ -966,6 +1055,29 @@ pub fn finish(app: &AppHandle, chord: Chord, cancelled: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn one_order_can_carry_several() {
+        assert_eq!(pieces("pon salsa y sube el volumen"), ["pon salsa", "sube el volumen"]);
+        assert_eq!(pieces("abre Chrome, luego Spotify y después bloquea"), ["abre Chrome", "Spotify", "bloquea"]);
+        assert_eq!(pieces("pon Simon y Garfunkel"), ["pon Simon", "Garfunkel"]);
+        assert_eq!(pieces("open Spotify and then turn it up"), ["open Spotify", "turn it up"]);
+        assert_eq!(pieces("pausa"), ["pausa"]);
+        assert!(matches!(intent::parse("Garfunkel"), Intent::Unknown));
+    }
+
+    #[test]
+    fn the_clock_answers_without_ai() {
+        assert!(clock("¿Qué hora es?").is_some());
+        assert!(clock("oye que horas son").is_some());
+        assert!(clock("pon la canción que hora es de un artista larguísimo").is_none());
+        assert_eq!(clock_text("es", true, 21, 5, 2, 14, 10), "Son las 9:05 de la noche.");
+        assert_eq!(clock_text("es", true, 13, 0, 2, 14, 10), "Es la 1:00 de la tarde.");
+        assert_eq!(clock_text("en", true, 0, 30, 2, 14, 10), "It's 12:30 AM.");
+        assert_eq!(clock_text("pt", true, 21, 5, 2, 14, 10), "São 21:05.");
+        assert_eq!(clock_text("es", false, 9, 0, 2, 14, 10), "Hoy es martes 14 de octubre.");
+        assert_eq!(clock_text("en", false, 9, 0, 2, 14, 10), "Today is Tuesday, October 14.");
+    }
 
     #[test]
     fn silence_never_reaches_the_model() {

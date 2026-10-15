@@ -23,6 +23,10 @@ const MOST_PHONES: usize = 5;
 const JSON: u8 = 1;
 const AUDIO: u8 = 2;
 const VOICE: u8 = 3;
+const VOICE_PIECE: u8 = 4;
+const AUDIO_PIECE: u8 = 5;
+const CAN: [&str; 2] = ["trozos", "oido-vivo"];
+const PIECE_BYTES: usize = 9_600;
 const MOST_VOICE: usize = 1_800_000;
 const CLOUDFLARE: &str = "https://api.cloudflare.com/client/v4";
 const WORKER: &str = include_str!("../../remoto/worker.js");
@@ -438,6 +442,9 @@ struct Link {
     stop: AtomicBool,
     talking: AtomicBool,
     voice: AtomicBool,
+    pieces: AtomicBool,
+    warm: Mutex<Option<std::thread::JoinHandle<Result<Socket, String>>>>,
+    hearing: Mutex<Option<(std::sync::mpsc::Sender<Vec<f32>>, Arc<AtomicBool>)>>,
     socket: Mutex<Option<Arc<Socket>>>,
     session: Mutex<Option<Session>>,
 }
@@ -500,7 +507,7 @@ pub fn sync(app: &AppHandle) {
         if links.contains_key(&phone.id) {
             continue;
         }
-        let link = Arc::new(Link { stop: AtomicBool::new(false), talking: AtomicBool::new(false), voice: AtomicBool::new(true), socket: Mutex::new(None), session: Mutex::new(None) });
+        let link = Arc::new(Link { stop: AtomicBool::new(false), talking: AtomicBool::new(false), voice: AtomicBool::new(true), pieces: AtomicBool::new(false), warm: Mutex::new(None), hearing: Mutex::new(None), socket: Mutex::new(None), session: Mutex::new(None) });
         links.insert(phone.id.clone(), link.clone());
         let app = app.clone();
         std::thread::Builder::new().name(format!("remoto-{}", phone.id)).spawn(move || keep_up(&app, &phone, &link)).ok();
@@ -575,6 +582,27 @@ fn listen(app: &AppHandle, phone: &Phone, link: &Arc<Link>, socket: &Socket) {
         }
         let Some(plain) = open_frame(link, &frame) else { continue };
         let Some((&kind, body)) = plain.split_first() else { continue };
+        if kind == AUDIO_PIECE {
+            if let Some((pieces, _)) = link.hearing.lock().unwrap().as_ref() {
+                let _ = pieces.send(samples_of(body));
+            }
+            continue;
+        }
+        if kind == JSON {
+            match serde_json::from_slice::<Value>(body).ok().and_then(|said| said["tipo"].as_str().map(str::to_string)).as_deref() {
+                Some("voz-empieza") => {
+                    start_hearing(app, link);
+                    continue;
+                }
+                Some(end @ ("voz-termina" | "voz-cancelada")) => {
+                    if let Some((_, cancelled)) = link.hearing.lock().unwrap().take() {
+                        cancelled.store(end == "voz-cancelada", Ordering::Relaxed);
+                    }
+                    continue;
+                }
+                _ => {}
+            }
+        }
         let (app, link, body) = (app.clone(), link.clone(), body.to_vec());
         std::thread::spawn(move || handle(&app, &link, kind, &body));
     }
@@ -597,7 +625,7 @@ fn greet(pc: &Pair, cel: &[u8], said: &Value) -> Result<(Session, Value), String
     let keys = candado::hkdf(&ikm, &salt, b"cocuyo-sesion-1", 64);
     let session = Session { incoming: keys[..32].to_vec(), outgoing: keys[32..].to_vec(), last_in: 0, next_out: 1 };
     let proof = candado::seal(&session.outgoing, &nonce(0), AAD, b"acepto")?;
-    Ok((session, json!({ "t": "acepto", "e": b64(&mine.public()), "prueba": b64(&proof) })))
+    Ok((session, json!({ "t": "acepto", "e": b64(&mine.public()), "prueba": b64(&proof), "puede": CAN })))
 }
 
 fn open_frame(link: &Link, frame: &[u8]) -> Option<Vec<u8>> {
@@ -618,50 +646,228 @@ fn open_frame(link: &Link, frame: &[u8]) -> Option<Vec<u8>> {
 fn handle(app: &AppHandle, link: &Link, kind: u8, body: &[u8]) {
     let text = match kind {
         JSON => match serde_json::from_slice::<Value>(body) {
-            Ok(asked) if asked["tipo"] == "orden" => asked["texto"].as_str().unwrap_or("").chars().take(1000).collect::<String>(),
+            Ok(asked) if asked["tipo"] == "orden" => {
+                warm_up(app, link);
+                asked["texto"].as_str().unwrap_or("").chars().take(1000).collect::<String>()
+            }
             Ok(asked) if asked["tipo"] == "prefs" => {
                 link.voice.store(asked["voz"].as_bool().unwrap_or(true), Ordering::Relaxed);
+                link.pieces.store(asked["trozos"].as_bool().unwrap_or(false), Ordering::Relaxed);
                 return;
             }
             _ => return,
         },
         AUDIO => {
-            let samples: Vec<f32> = body.chunks_exact(2).map(|pair| f32::from(i16::from_le_bytes([pair[0], pair[1]])) / 32768.0).collect();
-            match crate::voice::transcribe_samples(app, samples) {
-                Ok(Some(text)) => {
-                    let _ = link.send(JSON, json!({ "tipo": "oido", "texto": text }).to_string().as_bytes());
-                    text
-                }
-                Ok(None) => return reply(link, None, Some(crate::i18n::tr("No te escuché. Mantén el botón mientras hablas.")), Vec::new()),
-                Err(why) => return reply(link, None, Some(crate::i18n::tr(&why)), Vec::new()),
+            warm_up(app, link);
+            match heard(app, link, samples_of(body)) {
+                Some(text) => text,
+                None => return,
             }
         }
         _ => return,
     };
+    order(app, link, &text);
+}
+
+fn samples_of(body: &[u8]) -> Vec<f32> {
+    body.chunks_exact(2).map(|pair| f32::from(i16::from_le_bytes([pair[0], pair[1]])) / 32768.0).collect()
+}
+
+fn heard(app: &AppHandle, link: &Link, samples: Vec<f32>) -> Option<String> {
+    match crate::voice::transcribe_samples(app, samples) {
+        Ok(Some(text)) => {
+            let _ = link.send(JSON, json!({ "tipo": "oido", "texto": text }).to_string().as_bytes());
+            Some(text)
+        }
+        Ok(None) => {
+            reply(app, link, None, Some(crate::i18n::tr("No te escuché. Mantén el botón mientras hablas.")), Vec::new());
+            None
+        }
+        Err(why) => {
+            reply(app, link, None, Some(crate::i18n::tr(&why)), Vec::new());
+            None
+        }
+    }
+}
+
+fn start_hearing(app: &AppHandle, link: &Arc<Link>) {
+    let (pieces, arriving) = std::sync::mpsc::channel();
+    let cancelled = Arc::new(AtomicBool::new(false));
+    *link.hearing.lock().unwrap() = Some((pieces, cancelled.clone()));
+    let (app, link) = (app.clone(), link.clone());
+    std::thread::spawn(move || hear_phone(&app, &link, arriving, &cancelled));
+}
+
+fn hear_phone(app: &AppHandle, link: &Link, arriving: std::sync::mpsc::Receiver<Vec<f32>>, cancelled: &AtomicBool) {
+    let all = if crate::talk::wanted(app) {
+        let (to_live, for_live) = std::sync::mpsc::channel();
+        let (answered, kept) = std::thread::scope(|scope| {
+            let tee = scope.spawn(move || {
+                let mut all = Vec::new();
+                while let Ok(samples) = arriving.recv_timeout(Duration::from_secs(70)) {
+                    all.extend_from_slice(&samples);
+                    let _ = to_live.send(samples);
+                }
+                all
+            });
+            let answered = live_turn(app, link, for_live, cancelled);
+            (answered, tee.join().unwrap_or_default())
+        });
+        if answered {
+            return;
+        }
+        kept
+    } else {
+        let mut all = Vec::new();
+        while let Ok(samples) = arriving.recv_timeout(Duration::from_secs(70)) {
+            all.extend_from_slice(&samples);
+        }
+        all
+    };
+    if cancelled.load(Ordering::Relaxed) {
+        return;
+    }
+    if let Some(text) = heard(app, link, all) {
+        order(app, link, &text);
+    }
+}
+
+fn live_turn(app: &AppHandle, link: &Link, for_live: std::sync::mpsc::Receiver<Vec<f32>>, cancelled: &AtomicBool) -> bool {
+    let speak = link.voice.load(Ordering::Relaxed);
+    let mut piece = Vec::new();
+    let mut voiced = false;
+    let mut last_you = String::new();
+    crate::cue::hold_voice(true);
+    ASKED.with(|asked| *asked.borrow_mut() = Some(Vec::new()));
+    let outcome = crate::talk::phone_turn(app, for_live, cancelled, &mut |said| match said {
+        crate::talk::Said::You(text) => {
+            if text != last_you {
+                last_you = text.to_string();
+                let _ = link.send(JSON, json!({ "tipo": "oido", "texto": text, "parcial": true }).to_string().as_bytes());
+            }
+        }
+        crate::talk::Said::Me(text) => {
+            let _ = link.send(JSON, json!({ "tipo": "diciendo", "texto": text }).to_string().as_bytes());
+        }
+        crate::talk::Said::Voice(pcm) => {
+            if speak {
+                piece.extend_from_slice(pcm);
+                if !voiced || piece.len() >= PIECE_BYTES {
+                    voiced |= link.send(VOICE_PIECE, &piece).is_ok();
+                    piece.clear();
+                }
+            }
+        }
+    });
+    if !piece.is_empty() {
+        let _ = link.send(VOICE_PIECE, &piece);
+    }
+    let actions = ASKED.with(|asked| asked.borrow_mut().take()).unwrap_or_default();
+    crate::cue::hold_voice(false);
+    match outcome {
+        Ok((said, answer)) if !said.is_empty() || !answer.is_empty() => {
+            let _ = app.emit_to(crate::overlay::LABEL, "note", crate::i18n::tr("Orden desde tu celular."));
+            if !said.is_empty() && said != last_you {
+                let _ = link.send(JSON, json!({ "tipo": "oido", "texto": said }).to_string().as_bytes());
+            }
+            let answer = if answer.is_empty() { crate::i18n::tr("Hecho.") } else { answer };
+            let _ = link.send(JSON, json!({ "tipo": "respuesta", "texto": answer, "acciones": actions, "hablada": voiced }).to_string().as_bytes());
+            if voiced {
+                let _ = link.send(JSON, json!({ "tipo": "voz-fin" }).to_string().as_bytes());
+            }
+            true
+        }
+        Ok(_) => {
+            reply(app, link, None, Some(crate::i18n::tr("No te escuché. Mantén el botón mientras hablas.")), Vec::new());
+            true
+        }
+        Err(why) => {
+            if cfg!(debug_assertions) {
+                eprintln!("[remoto] en vivo no salió: {why}");
+            }
+            voiced || cancelled.load(Ordering::Relaxed)
+        }
+    }
+}
+
+fn order(app: &AppHandle, link: &Link, text: &str) {
     if text.trim().is_empty() {
         return;
     }
     let _ = app.emit_to(crate::overlay::LABEL, "note", crate::i18n::tr("Orden desde tu celular."));
-    if let Some((said, actions)) = for_the_phone(&text) {
-        return reply(link, Some(crate::i18n::tr(&said)), None, actions);
+    if let Some((said, actions)) = for_the_phone(text) {
+        return reply(app, link, Some(crate::i18n::tr(&said)), None, actions);
     }
-    let text = without_pc(&text);
+    let text = without_pc(text);
     crate::cue::hold_voice(true);
     ASKED.with(|asked| *asked.borrow_mut() = Some(Vec::new()));
     let done = crate::voice::run_order(app, &text);
     let actions = ASKED.with(|asked| asked.borrow_mut().take()).unwrap_or_default();
     crate::cue::hold_voice(false);
     match done {
-        Ok(said) => reply(link, Some(crate::i18n::tr(if said.trim().is_empty() { "Hecho." } else { &said })), None, actions),
-        Err(why) => reply(link, None, Some(crate::i18n::tr(&why)), actions),
+        Ok(said) => reply(app, link, Some(crate::i18n::tr(if said.trim().is_empty() { "Hecho." } else { &said })), None, actions),
+        Err(why) => reply(app, link, None, Some(crate::i18n::tr(&why)), actions),
     }
 }
 
-fn reply(link: &Link, text: Option<String>, error: Option<String>, actions: Vec<Value>) {
+fn live_voice(app: &AppHandle) -> Option<String> {
+    let config = crate::settings::load(app);
+    let voice = config.voice.trim();
+    let gemini = config.ai_url.contains("googleapis.com") && config.ai_format != "anthropic";
+    (gemini && !voice.is_empty() && !voice.contains(':') && voice != "loquendero").then(|| voice.to_string())
+}
+
+fn warm_up(app: &AppHandle, link: &Link) {
+    if !link.voice.load(Ordering::Relaxed) || !link.pieces.load(Ordering::Relaxed) {
+        return;
+    }
+    let Some(voice) = live_voice(app) else { return };
+    let app = app.clone();
+    *link.warm.lock().unwrap() = Some(std::thread::spawn(move || crate::talk::reader(&app, &voice)));
+}
+
+fn reply(app: &AppHandle, link: &Link, text: Option<String>, error: Option<String>, actions: Vec<Value>) {
+    let warm = link.warm.lock().unwrap().take();
     let said = error.clone().or_else(|| text.clone()).unwrap_or_default();
     let voiced = link.voice.load(Ordering::Relaxed) && !said.trim().is_empty();
     if link.send(JSON, json!({ "tipo": "respuesta", "texto": text, "error": error, "acciones": actions, "voz": voiced }).to_string().as_bytes()).is_err() || !voiced {
         return;
+    }
+    if let (Some(warm), Some(voice)) = (warm, live_voice(app)) {
+        let spoken = crate::i18n::tr(&said).replace(['«', '»'], "");
+        let saved = crate::ai::voice_file(app, &spoken, &voice).ok().filter(|file| file.is_file());
+        if saved.is_none() {
+            let opened = warm.join().unwrap_or_else(|_| Err("el hilo se cayó".into()));
+            if let (true, Err(why)) = (cfg!(debug_assertions), &opened) {
+                eprintln!("[remoto] no abrió el lector: {why}");
+            }
+            if let Ok(socket) = opened {
+                let (mut whole, mut piece, mut sent) = (Vec::new(), Vec::new(), true);
+                let read = crate::talk::read_aloud(socket, &spoken, |pcm| {
+                    whole.extend_from_slice(pcm);
+                    piece.extend_from_slice(pcm);
+                    if piece.len() >= PIECE_BYTES || whole.len() == piece.len() {
+                        sent &= link.send(VOICE_PIECE, &piece).is_ok();
+                        piece.clear();
+                    }
+                });
+                if !piece.is_empty() {
+                    sent &= link.send(VOICE_PIECE, &piece).is_ok();
+                }
+                if !whole.is_empty() {
+                    let _ = link.send(JSON, json!({ "tipo": "voz-fin" }).to_string().as_bytes());
+                    if read.is_ok() && sent {
+                        if let Ok(file) = crate::ai::voice_file(app, &spoken, &voice) {
+                            let _ = std::fs::write(file, crate::ai::wav_from_pcm(&whole));
+                        }
+                    }
+                    return;
+                }
+                if cfg!(debug_assertions) {
+                    eprintln!("[remoto] la voz en vivo no salió: {read:?}");
+                }
+            }
+        }
     }
     match crate::cue::wav_of(&said) {
         Ok(wav) if wav.len() <= MOST_VOICE => {
@@ -830,7 +1036,7 @@ mod tests {
     #[test]
     fn a_tampered_or_repeated_frame_is_dropped() {
         let session = Session { incoming: vec![7; 32], outgoing: vec![9; 32], last_in: 0, next_out: 1 };
-        let link = Link { stop: AtomicBool::new(false), talking: AtomicBool::new(true), voice: AtomicBool::new(true), socket: Mutex::new(None), session: Mutex::new(Some(session)) };
+        let link = Link { stop: AtomicBool::new(false), talking: AtomicBool::new(true), voice: AtomicBool::new(true), pieces: AtomicBool::new(false), warm: Mutex::new(None), hearing: Mutex::new(None), socket: Mutex::new(None), session: Mutex::new(Some(session)) };
         let sealed = candado::seal(&[7; 32], &nonce(5), AAD, b"\x01{}").unwrap();
         let mut frame = 5u64.to_be_bytes().to_vec();
         frame.extend_from_slice(&sealed);

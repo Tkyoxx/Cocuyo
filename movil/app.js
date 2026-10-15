@@ -16,6 +16,54 @@ let pcNombre = "tu PC";
 let esperando = null;
 let porDecir = "";
 const altavoz = new Audio();
+let oido = null;
+let siguiente = 0;
+let sonando = [];
+let yoVivo = null;
+let cocuyoVivo = null;
+
+function oidoListo() {
+  try {
+    oido ??= new AudioContext();
+  } catch {
+    return null;
+  }
+  if (oido.state === "suspended") void oido.resume().catch(() => {});
+  return oido;
+}
+addEventListener("pointerdown", () => oidoListo(), { capture: true });
+
+function callarTrozos() {
+  for (const fuente of sonando) {
+    try {
+      fuente.stop();
+    } catch {}
+  }
+  sonando = [];
+  siguiente = 0;
+}
+
+function sonarTrozo(pcm) {
+  porDecir = "";
+  if (!$("hablar").checked) return;
+  const ctx = oidoListo();
+  if (!ctx) return;
+  speechSynthesis?.cancel();
+  const muestras = new Int16Array(pcm.buffer, pcm.byteOffset, pcm.byteLength >> 1);
+  if (!muestras.length) return;
+  const buffer = ctx.createBuffer(1, muestras.length, 24000);
+  const canal = buffer.getChannelData(0);
+  for (let i = 0; i < muestras.length; i++) canal[i] = muestras[i] / 32768;
+  const fuente = ctx.createBufferSource();
+  fuente.buffer = buffer;
+  fuente.connect(ctx.destination);
+  if (siguiente < ctx.currentTime + 0.02) siguiente = ctx.currentTime + 0.08;
+  fuente.start(siguiente);
+  siguiente += buffer.duration;
+  sonando.push(fuente);
+  fuente.onended = () => (sonando = sonando.filter((f) => f !== fuente));
+}
+
 function despertarAltavoz() {
   if (altavoz.dataset.listo) return;
   altavoz.dataset.listo = "1";
@@ -30,7 +78,7 @@ try {
 } catch {}
 
 function preferencias() {
-  void enlace?.enviar({ tipo: "prefs", voz: $("hablar").checked }).catch(() => {});
+  void enlace?.enviar({ tipo: "prefs", voz: $("hablar").checked, trozos: true }).catch(() => {});
 }
 
 $("hablar").addEventListener("change", () => {
@@ -39,6 +87,7 @@ $("hablar").addEventListener("change", () => {
   } catch {}
   if (!$("hablar").checked) {
     altavoz.pause();
+    callarTrozos();
     speechSynthesis?.cancel();
   }
   preferencias();
@@ -49,8 +98,13 @@ function estado(cual, texto) {
   islaTexto.textContent = t(texto);
 }
 
+let ultimoNivel = "";
 function nivel(peak) {
-  document.documentElement.style.setProperty("--lv", Math.min(1, Math.sqrt(peak) * 1.7).toFixed(3));
+  const lv = Math.min(1, Math.sqrt(peak) * 1.7).toFixed(2);
+  if (lv === ultimoNivel) return;
+  ultimoNivel = lv;
+  isla.style.setProperty("--lv", lv);
+  mic.style.setProperty("--lv", lv);
 }
 
 function bajar() {
@@ -144,7 +198,23 @@ function listo() {
 
 function recibir(mensaje) {
   if (mensaje.tipo === "oido") {
-    if (mensaje.texto) dicho("yo", mensaje.texto, "por voz");
+    if (!mensaje.texto) return;
+    if (yoVivo) yoVivo.firstChild.textContent = mensaje.texto;
+    else yoVivo = dicho("yo", mensaje.texto, "por voz");
+    if (!mensaje.parcial) yoVivo = null;
+    bajar();
+    return;
+  }
+  if (mensaje.tipo === "diciendo") {
+    if (!mensaje.texto) return;
+    if (cocuyoVivo) cocuyoVivo.textContent = mensaje.texto;
+    else cocuyoVivo = dicho("cocuyo", mensaje.texto);
+    bajar();
+    return;
+  }
+  if (mensaje.tipo === "trozo") return sonarTrozo(mensaje.pcm);
+  if (mensaje.tipo === "voz-fin") {
+    porDecir = "";
     return;
   }
   if (mensaje.tipo === "voz") return sonar(mensaje.wav);
@@ -155,14 +225,19 @@ function recibir(mensaje) {
   }
   if (mensaje.tipo !== "respuesta") return;
   listo();
+  yoVivo = null;
+  const vivo = cocuyoVivo;
+  cocuyoVivo = null;
   if (mensaje.error) dicho("cocuyo error", mensaje.error);
+  else if (mensaje.texto && vivo) vivo.textContent = mensaje.texto;
   else if (mensaje.texto) dicho("cocuyo", mensaje.texto);
   for (const t of mensaje.tarjetas ?? []) pintarTarjeta({ ...t, botones: (t.botones ?? []).map((b) => [b.texto, () => b.url && window.open(b.url, "_blank", "noopener")]) });
   for (const accion of mensaje.acciones ?? []) {
     const t = tarjeta(accion);
     if (t) pintarTarjeta(t);
   }
-  if (mensaje.voz) porDecir = mensaje.error || mensaje.texto || "";
+  if (mensaje.hablada) porDecir = "";
+  else if (mensaje.voz) porDecir = mensaje.error || mensaje.texto || "";
   else hablar(mensaje.error || mensaje.texto);
 }
 
@@ -218,23 +293,42 @@ async function empezarVoz() {
   mic.classList.add("oyendo");
   estado("escuchando", "Te escucho…");
   navigator.vibrate?.(12);
+  callarTrozos();
+  altavoz.pause();
+  speechSynthesis?.cancel();
+  const enVivo = enlace.sabe("oido-vivo");
+  if (enVivo) void enlace.enviar({ tipo: "voz-empieza" }).catch(() => {});
+  grabando = { cargando: true, enVivo };
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } });
     const ctx = new AudioContext();
     const fuente = ctx.createMediaStreamSource(stream);
     const proceso = ctx.createScriptProcessor(4096, 1, 1);
     const trozos = [];
+    let porMandar = [];
     proceso.onaudioprocess = (e) => {
       const datos = e.inputBuffer.getChannelData(0);
       trozos.push(new Float32Array(datos));
+      if (enVivo) {
+        porMandar.push(trozos[trozos.length - 1]);
+        if (porMandar.reduce((n, t) => n + t.length, 0) >= ctx.sampleRate / 4) {
+          const pcm = a16k(porMandar, ctx.sampleRate);
+          porMandar = [];
+          void enlace.enviar({ tipo: "trozo", pcm: new Uint8Array(pcm.buffer) }).catch(() => {});
+        }
+      }
       let pico = 0;
       for (const v of datos) pico = Math.max(pico, Math.abs(v));
       nivel(pico);
     };
     fuente.connect(proceso);
     proceso.connect(ctx.destination);
-    grabando = { stream, ctx, proceso, trozos, rate: ctx.sampleRate, tope: setTimeout(() => void terminarVoz(false), 55000) };
+    const antes = grabando;
+    grabando = { stream, ctx, proceso, trozos, enVivo, resto: () => porMandar, rate: ctx.sampleRate, tope: setTimeout(() => void terminarVoz(false), 55000) };
+    if (antes?.soltado) void terminarVoz(antes.soltado === "cancelada");
   } catch {
+    grabando = null;
+    if (enVivo) void enlace.enviar({ tipo: "voz-cancelada" }).catch(() => {});
     mic.classList.remove("oyendo");
     estado("conectado", `Conectado a ${pcNombre}`);
     dicho("cocuyo error", "No me dejaron usar el micrófono. Dale permiso en los ajustes del navegador.");
@@ -264,6 +358,10 @@ function a16k(trozos, rate) {
 
 async function terminarVoz(cancelada) {
   const g = grabando;
+  if (g?.cargando) {
+    g.soltado = cancelada ? "cancelada" : "lista";
+    return;
+  }
   grabando = null;
   mic.classList.remove("oyendo");
   nivel(0);
@@ -272,13 +370,21 @@ async function terminarVoz(cancelada) {
   g.proceso.disconnect();
   g.stream.getTracks().forEach((t) => t.stop());
   void g.ctx.close();
-  const pcm = a16k(g.trozos, g.rate);
-  if (cancelada || pcm.length < 16000 * 0.3) {
+  const largo = g.trozos.reduce((n, t) => n + t.length, 0) / g.rate;
+  if (cancelada || largo < 0.3) {
+    if (g.enVivo) void enlace.enviar({ tipo: "voz-cancelada" }).catch(() => {});
     estado("conectado", `Conectado a ${pcNombre}`);
     return;
   }
   aguardar();
   try {
+    if (g.enVivo) {
+      const resto = g.resto();
+      if (resto.length) await enlace.enviar({ tipo: "trozo", pcm: new Uint8Array(a16k(resto, g.rate).buffer) });
+      await enlace.enviar({ tipo: "voz-termina" });
+      return;
+    }
+    const pcm = a16k(g.trozos, g.rate);
     await enlace.enviar({ tipo: "voz", pcm: new Uint8Array(pcm.buffer) });
   } catch (error) {
     listo();
@@ -371,12 +477,13 @@ async function arrancar() {
   const { abrirEnlace } = await import("./enlace.js");
   const guardado = await abrirEnlace(recibir, (cual, nombre) => {
     if (nombre) pcNombre = nombre;
-    $("pc-estado").textContent = t(cual === "conectado" ? "Conectado" : cual === "dormido" ? "Apagado o sin Cocuyo" : "Buscando…");
+    $("pc-estado").textContent = t(cual === "conectado" ? "Conectado" : cual === "dormido" ? "Apagado o sin Cocuyo" : cual === "en-otra" ? "Abierto en otra ventana" : "Buscando…");
     if (cual === "conectado") setTimeout(preferencias);
     if (esperando && cual === "conectado") return;
     if (cual === "conectado") estado("conectado", `Conectado a ${pcNombre}`);
     else if (cual === "buscando") estado("buscando", `Buscando a ${pcNombre}…`);
     else if (cual === "dormido") estado("buscando", `${pcNombre} está apagado o sin Cocuyo`);
+    else if (cual === "en-otra") estado("buscando", "Abierto en otra ventana");
   });
   $("olvidar").addEventListener("click", async () => {
     if (!confirm(t(`¿Olvidar ${pcNombre}? Tendrás que emparejar otra vez.`))) return;

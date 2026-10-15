@@ -682,13 +682,32 @@ fn audio_in(reply: &Value) -> Option<&str> {
     }
 }
 
-pub fn voice_wav(app: &AppHandle, text: &str, voice: &str) -> Result<PathBuf, String> {
+pub(crate) fn voice_file(app: &AppHandle, text: &str, voice: &str) -> Result<PathBuf, String> {
     use std::hash::{Hash, Hasher};
     let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?.join("voz").join("dichos");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     (voice, text.trim().to_lowercase()).hash(&mut hasher);
-    let file = dir.join(format!("{:016x}.wav", hasher.finish()));
+    Ok(dir.join(format!("{:016x}.wav", hasher.finish())))
+}
+
+pub(crate) fn wav_from_pcm(pcm: &[u8]) -> Vec<u8> {
+    let mut wav = Vec::with_capacity(44 + pcm.len());
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36 + pcm.len() as u32).to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    for field in [16u32, 0x0001_0001, 24_000, 48_000, 0x0010_0002] {
+        wav.extend_from_slice(&field.to_le_bytes());
+    }
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&(pcm.len() as u32).to_le_bytes());
+    wav.extend_from_slice(pcm);
+    wav
+}
+
+pub fn voice_wav(app: &AppHandle, text: &str, voice: &str) -> Result<PathBuf, String> {
+    let file = voice_file(app, text, voice)?;
+    let dir = file.parent().map(PathBuf::from).unwrap_or_default();
     if file.is_file() {
         return Ok(file);
     }
@@ -717,21 +736,7 @@ pub fn voice_wav(app: &AppHandle, text: &str, voice: &str) -> Result<PathBuf, St
             return Err(refusal(status, &reply, model));
         }
         let pcm = unbase64(audio_in(&reply).ok_or("El servicio no devolvió audio.")?);
-        let wav = if pcm.starts_with(b"RIFF") {
-            pcm
-        } else {
-            let mut wav = Vec::with_capacity(44 + pcm.len());
-            wav.extend_from_slice(b"RIFF");
-            wav.extend_from_slice(&(36 + pcm.len() as u32).to_le_bytes());
-            wav.extend_from_slice(b"WAVEfmt ");
-            for field in [16u32, 0x0001_0001, 24_000, 48_000, 0x0010_0002] {
-                wav.extend_from_slice(&field.to_le_bytes());
-            }
-            wav.extend_from_slice(b"data");
-            wav.extend_from_slice(&(pcm.len() as u32).to_le_bytes());
-            wav.extend_from_slice(&pcm);
-            wav
-        };
+        let wav = if pcm.starts_with(b"RIFF") { pcm } else { wav_from_pcm(&pcm) };
         std::fs::write(&file, wav).map_err(|e| e.to_string())?;
         let mut kept: Vec<_> = std::fs::read_dir(&dir).into_iter().flatten().flatten().filter_map(|entry| Some((entry.metadata().ok()?.modified().ok()?, entry.path()))).collect();
         kept.sort();

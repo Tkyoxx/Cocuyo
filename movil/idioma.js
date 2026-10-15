@@ -5,6 +5,7 @@ export const idioma = corto === "en" || corto === "pt" ? corto : "es";
 
 const EXACTO = {
   "Buscando tu PC…": ["Looking for your PC…", "Procurando seu PC…"],
+  "Abierto en otra ventana": ["Open in another window", "Aberto em outra janela"],
   "Conecta tu celular a Cocuyo": ["Connect your phone to Cocuyo", "Conecte seu celular ao Cocuyo"],
   "Así le hablas a tu PC desde donde estés. Solo tu PC y este celular pueden hablarse: nadie más, ni siquiera el servidor que los junta.": [
     "Talk to your PC from wherever you are. Only your PC and this phone can talk to each other: nobody else, not even the server that brings them together.",

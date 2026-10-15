@@ -354,6 +354,65 @@ fn connect(app: &AppHandle) -> Result<Arc<Live>, String> {
     opened
 }
 
+const READER: &str = "Eres un lector en voz alta. Lee exactamente el texto que te mandan, palabra por palabra y en su mismo idioma, con naturalidad.                       No respondas, no saludes, no añadas ni quites nada: solo léelo.";
+
+pub(crate) fn reader(app: &AppHandle, voice: &str) -> Result<Socket, String> {
+    let key = crate::ai::key(app).ok_or("Falta la clave de Gemini.")?;
+    let model = model(app)?;
+    let socket = Socket::open(&key)?;
+    let mut setup = json!({ "setup": {
+        "model": format!("models/{model}"),
+        "generationConfig": { "responseModalities": ["AUDIO"], "speechConfig": { "voiceConfig": { "prebuiltVoiceConfig": { "voiceName": voice } } } },
+        "systemInstruction": { "parts": [{ "text": READER }] },
+    } });
+    if cfg!(debug_assertions) {
+        setup["setup"]["outputAudioTranscription"] = json!({});
+    }
+    socket.send(&setup)?;
+    if socket.receive()?.get("setupComplete").is_none() {
+        return Err("Gemini Live no arrancó.".into());
+    }
+    crate::ai::count(app, &model);
+    Ok(socket)
+}
+
+pub(crate) fn read_aloud(socket: Socket, text: &str, mut chunk: impl FnMut(&[u8])) -> Result<(), String> {
+    let socket = Arc::new(socket);
+    let done = Arc::new(AtomicBool::new(false));
+    let watch = (socket.clone(), done.clone());
+    std::thread::spawn(move || {
+        let started = Instant::now();
+        while !watch.1.load(Ordering::Relaxed) && started.elapsed() < Duration::from_secs(45) {
+            std::thread::sleep(Duration::from_millis(250));
+        }
+        if !watch.1.load(Ordering::Relaxed) {
+            watch.0.shut();
+        }
+    });
+    let read = (|| {
+        socket.send(&json!({ "clientContent": { "turns": [{ "role": "user", "parts": [{ "text": text }] }], "turnComplete": true } }))?;
+        let mut any = false;
+        loop {
+            let message = socket.receive()?;
+            let content = &message["serverContent"];
+            if let Some(text) = content["outputTranscription"]["text"].as_str().filter(|_| cfg!(debug_assertions)) {
+                eprintln!("[lector] {text}");
+            }
+            for part in content["modelTurn"]["parts"].as_array().into_iter().flatten() {
+                if let Some(data) = part["inlineData"]["data"].as_str() {
+                    any = true;
+                    chunk(&crate::ai::unbase64(data));
+                }
+            }
+            if content["turnComplete"].as_bool() == Some(true) || content["interrupted"].as_bool() == Some(true) || message.get("goAway").is_some() {
+                return if any { Ok(()) } else { Err("Gemini Live no devolvió voz.".to_string()) };
+            }
+        }
+    })();
+    done.store(true, Ordering::Relaxed);
+    read
+}
+
 fn open_live(app: &AppHandle) -> Result<Arc<Live>, String> {
     {
         let mut live = LIVE.lock().unwrap();
@@ -561,16 +620,55 @@ fn talk(
     answer(app, live, &events, Instant::now())
 }
 
+pub(crate) enum Said<'a> {
+    You(&'a str),
+    Me(&'a str),
+    Voice(&'a [u8]),
+}
+
+pub(crate) fn phone_turn(app: &AppHandle, audio: Receiver<Vec<f32>>, cancelled: &AtomicBool, phone: &mut dyn FnMut(Said)) -> Result<(String, String), String> {
+    let live = connect(app)?;
+    GENERATION.fetch_add(1, Ordering::Relaxed);
+    let outcome = (|| {
+        live.socket.send(&json!({ "realtimeInput": { "activityStart": {} } }))?;
+        let mut ready = Vec::new();
+        while let Ok(samples) = audio.recv_timeout(Duration::from_secs(70)) {
+            ready.extend(samples);
+            while ready.len() >= CHUNK {
+                let piece: Vec<f32> = ready.drain(..CHUNK).collect();
+                live.socket.send(&json!({ "realtimeInput": { "audio": { "data": crate::ai::base64(&pcm16(&piece)), "mimeType": "audio/pcm;rate=16000" } } }))?;
+            }
+        }
+        if cancelled.load(Ordering::Relaxed) {
+            return Err("cancelado".to_string());
+        }
+        if !ready.is_empty() {
+            live.socket.send(&json!({ "realtimeInput": { "audio": { "data": crate::ai::base64(&pcm16(&ready)), "mimeType": "audio/pcm;rate=16000" } } }))?;
+        }
+        let events = live.events.lock().unwrap();
+        while events.try_recv().is_ok() {}
+        live.socket.send(&json!({ "realtimeInput": { "activityEnd": {} } }))?;
+        ANSWERING.store(true, Ordering::Relaxed);
+        let heard = listen(app, &live, &events, Instant::now(), Some(phone));
+        ANSWERING.store(false, Ordering::Relaxed);
+        heard
+    })();
+    if outcome.is_err() {
+        forget_this(&live);
+    }
+    outcome
+}
+
 fn answer(app: &AppHandle, live: &Live, events: &Receiver<Value>, asked: Instant) -> Result<(String, String), String> {
     ANSWERING.store(true, Ordering::Relaxed);
     crate::cue::hold_voice(true);
-    let heard = listen(app, live, events, asked);
+    let heard = listen(app, live, events, asked, None);
     crate::cue::hold_voice(false);
     ANSWERING.store(false, Ordering::Relaxed);
     heard
 }
 
-fn listen(app: &AppHandle, live: &Live, events: &Receiver<Value>, asked: Instant) -> Result<(String, String), String> {
+fn listen(app: &AppHandle, live: &Live, events: &Receiver<Value>, asked: Instant, mut phone: Option<&mut dyn FnMut(Said)>) -> Result<(String, String), String> {
     let mine = GENERATION.load(Ordering::Relaxed);
     let mut said = String::new();
     let mut reply = String::new();
@@ -599,14 +697,18 @@ fn listen(app: &AppHandle, live: &Live, events: &Receiver<Value>, asked: Instant
             if let Some(text) = content["inputTranscription"]["text"].as_str() {
                 heard_anything = true;
                 said.push_str(text);
-                if reply.is_empty() && !cut {
+                if let Some(phone) = phone.as_mut() {
+                    phone(Said::You(said.trim()));
+                } else if reply.is_empty() && !cut {
                     let _ = app.emit_to(crate::overlay::LABEL, "live-text", json!({ "who": "you", "text": said.trim() }));
                 }
             }
             if let Some(text) = content["outputTranscription"]["text"].as_str() {
                 heard_anything = true;
                 reply.push_str(text);
-                if !cut {
+                if let Some(phone) = phone.as_mut() {
+                    phone(Said::Me(reply.trim()));
+                } else if !cut {
                     let _ = app.emit_to(crate::overlay::LABEL, "live-text", json!({ "who": "app", "text": reply.trim() }));
                 }
             }
@@ -614,7 +716,10 @@ fn listen(app: &AppHandle, live: &Live, events: &Receiver<Value>, asked: Instant
                 heard_anything = true;
                 owed = false;
                 if let Some(data) = part["inlineData"]["data"].as_str() {
-                    if !cut {
+                    if let Some(phone) = phone.as_mut() {
+                        first_sound.get_or_insert_with(|| asked.elapsed());
+                        phone(Said::Voice(&crate::ai::unbase64(data)));
+                    } else if !cut {
                         first_sound.get_or_insert_with(|| asked.elapsed());
                         play(&crate::ai::unbase64(data), &mut to_speaker);
                     }
