@@ -994,6 +994,10 @@ button {
   opacity: 0;
   pointer-events: none;
 }
+.mic.abriendo {
+  transform: scale(1.05);
+  background: radial-gradient(circle at 35% 30%, #fff, rgb(170 176 196));
+}
 .mic.oyendo {
   transform: scale(1.12);
   background: radial-gradient(circle at 35% 30%, #a6dbff, var(--blue));

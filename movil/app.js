@@ -287,12 +287,141 @@ for (const boton of $("pestanas").querySelectorAll("button")) {
 }
 
 let grabando = null;
+let micro = null;
+const TIBIO = 60000;
+const COLA = 150;
+
+class Bajador {
+  constructor(rate) {
+    this.paso = rate / 16000;
+    this.medio = Math.ceil(16 * this.paso);
+    this.fases = 128;
+    const corte = 7300 / rate;
+    this.tabla = Array.from({ length: this.fases }, (_, f) => {
+      const h = new Float32Array(2 * this.medio + 1);
+      let suma = 0;
+      for (let i = 0; i < h.length; i++) {
+        const t = i - this.medio - f / this.fases;
+        const x = (t / (this.medio + 1) + 1) / 2;
+        const ventana = 0.42 - 0.5 * Math.cos(2 * Math.PI * x) + 0.08 * Math.cos(4 * Math.PI * x);
+        h[i] = (t === 0 ? 1 : Math.sin(2 * Math.PI * corte * t) / (2 * Math.PI * corte * t)) * ventana;
+        suma += h[i];
+      }
+      return h.map((v) => v / suma);
+    });
+    this.resto = new Float32Array(0);
+    this.pos = 0;
+  }
+
+  meter(datos) {
+    const todo = new Float32Array(this.resto.length + datos.length);
+    todo.set(this.resto);
+    todo.set(datos, this.resto.length);
+    const salida = [];
+    let p = this.pos;
+    while (Math.floor(p) + this.medio + 1 < todo.length) {
+      let k0 = Math.floor(p);
+      let f = Math.round((p - k0) * this.fases);
+      if (f === this.fases) {
+        k0++;
+        f = 0;
+      }
+      const h = this.tabla[f];
+      const desde = k0 - this.medio;
+      let s = 0;
+      for (let i = Math.max(0, -desde); i < h.length; i++) s += todo[desde + i] * h[i];
+      salida.push(Math.max(-32768, Math.min(32767, Math.round(s * 32767))));
+      p += this.paso;
+    }
+    const guardar = Math.max(0, Math.floor(p) - this.medio - 1);
+    this.resto = todo.slice(guardar);
+    this.pos = p - guardar;
+    return Int16Array.from(salida);
+  }
+
+  vaciar() {
+    return this.meter(new Float32Array(this.medio + 2));
+  }
+}
+
+function juntar(trozos) {
+  const todo = new Int16Array(trozos.reduce((n, t) => n + t.length, 0));
+  let i = 0;
+  for (const t of trozos) {
+    todo.set(t, i);
+    i += t.length;
+  }
+  return todo;
+}
+
+function alOir(datos) {
+  const g = grabando;
+  if (!g?.bajador) return;
+  if (!g.oyendo && !g.soltando) {
+    g.oyendo = true;
+    mic.classList.replace("abriendo", "oyendo");
+    estado("escuchando", "Te escucho…");
+    navigator.vibrate?.(12);
+  }
+  g.largo += datos.length;
+  const pcm = g.bajador.meter(datos);
+  if (g.enVivo) {
+    g.porMandar.push(pcm);
+    g.cuantos += pcm.length;
+    if (g.cuantos >= 4000) {
+      const junto = juntar(g.porMandar);
+      g.porMandar = [];
+      g.cuantos = 0;
+      void enlace.enviar({ tipo: "trozo", pcm: new Uint8Array(junto.buffer) }).catch(() => {});
+    }
+  } else g.listos.push(pcm);
+  let pico = 0;
+  for (const v of datos) pico = Math.max(pico, Math.abs(v));
+  g.recientes = [g.recientes[1], pico];
+  g.maximo = Math.max(g.maximo, pico);
+  if (!g.soltando) nivel(pico);
+}
+
+async function abrirMicro() {
+  if (micro) {
+    clearTimeout(micro.cierre);
+    if (micro.ctx.state === "suspended") await micro.ctx.resume().catch(() => {});
+    return micro;
+  }
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: true, autoGainControl: true, channelCount: 1 } });
+  const ctx = new AudioContext();
+  const fuente = ctx.createMediaStreamSource(stream);
+  const proceso = ctx.createScriptProcessor(2048, 1, 1);
+  proceso.onaudioprocess = (e) => alOir(e.inputBuffer.getChannelData(0));
+  fuente.connect(proceso);
+  proceso.connect(ctx.destination);
+  micro = { stream, ctx, proceso, cierre: null };
+  return micro;
+}
+
+function cerrarMicro() {
+  if (!micro || grabando) return;
+  clearTimeout(micro.cierre);
+  micro.proceso.disconnect();
+  micro.stream.getTracks().forEach((t) => t.stop());
+  void micro.ctx.close();
+  micro = null;
+}
+
+function enfriarMicro() {
+  if (!micro) return;
+  clearTimeout(micro.cierre);
+  micro.cierre = setTimeout(cerrarMicro, TIBIO);
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) cerrarMicro();
+});
 
 async function empezarVoz() {
   if (grabando || !enlace) return;
-  mic.classList.add("oyendo");
-  estado("escuchando", "Te escucho…");
-  navigator.vibrate?.(12);
+  mic.classList.add("abriendo");
+  estado("escuchando", "Abriendo el micrófono…");
   callarTrozos();
   altavoz.pause();
   speechSynthesis?.cancel();
@@ -300,60 +429,17 @@ async function empezarVoz() {
   if (enVivo) void enlace.enviar({ tipo: "voz-empieza" }).catch(() => {});
   grabando = { cargando: true, enVivo };
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } });
-    const ctx = new AudioContext();
-    const fuente = ctx.createMediaStreamSource(stream);
-    const proceso = ctx.createScriptProcessor(4096, 1, 1);
-    const trozos = [];
-    let porMandar = [];
-    proceso.onaudioprocess = (e) => {
-      const datos = e.inputBuffer.getChannelData(0);
-      trozos.push(new Float32Array(datos));
-      if (enVivo) {
-        porMandar.push(trozos[trozos.length - 1]);
-        if (porMandar.reduce((n, t) => n + t.length, 0) >= ctx.sampleRate / 4) {
-          const pcm = a16k(porMandar, ctx.sampleRate);
-          porMandar = [];
-          void enlace.enviar({ tipo: "trozo", pcm: new Uint8Array(pcm.buffer) }).catch(() => {});
-        }
-      }
-      let pico = 0;
-      for (const v of datos) pico = Math.max(pico, Math.abs(v));
-      nivel(pico);
-    };
-    fuente.connect(proceso);
-    proceso.connect(ctx.destination);
+    const m = await abrirMicro();
     const antes = grabando;
-    grabando = { stream, ctx, proceso, trozos, enVivo, resto: () => porMandar, rate: ctx.sampleRate, tope: setTimeout(() => void terminarVoz(false), 55000) };
+    grabando = { enVivo, bajador: new Bajador(m.ctx.sampleRate), listos: [], porMandar: [], cuantos: 0, largo: 0, recientes: [0, 0], maximo: 0, rate: m.ctx.sampleRate, tope: setTimeout(() => void terminarVoz(false), 55000) };
     if (antes?.soltado) void terminarVoz(antes.soltado === "cancelada");
   } catch {
     grabando = null;
     if (enVivo) void enlace.enviar({ tipo: "voz-cancelada" }).catch(() => {});
-    mic.classList.remove("oyendo");
+    mic.classList.remove("abriendo", "oyendo");
     estado("conectado", `Conectado a ${pcNombre}`);
     dicho("cocuyo error", "No me dejaron usar el micrófono. Dale permiso en los ajustes del navegador.");
   }
-}
-
-function a16k(trozos, rate) {
-  const largo = trozos.reduce((n, t) => n + t.length, 0);
-  const todo = new Float32Array(largo);
-  let i = 0;
-  for (const t of trozos) {
-    todo.set(t, i);
-    i += t.length;
-  }
-  const paso = rate / 16000;
-  const salida = new Int16Array(Math.floor(largo / paso));
-  for (let j = 0; j < salida.length; j++) {
-    const desde = Math.floor(j * paso);
-    const hasta = Math.min(largo, Math.floor((j + 1) * paso));
-    let suma = 0;
-    for (let k = desde; k < hasta; k++) suma += todo[k];
-    const v = suma / Math.max(1, hasta - desde);
-    salida[j] = Math.max(-32768, Math.min(32767, Math.round(v * 32767)));
-  }
-  return salida;
 }
 
 async function terminarVoz(cancelada) {
@@ -362,29 +448,31 @@ async function terminarVoz(cancelada) {
     g.soltado = cancelada ? "cancelada" : "lista";
     return;
   }
-  grabando = null;
-  mic.classList.remove("oyendo");
+  if (!g || g.soltando) return;
+  mic.classList.remove("abriendo", "oyendo");
   nivel(0);
-  if (!g) return;
+  if (!cancelada && Math.max(...g.recientes) > g.maximo * 0.15) {
+    g.soltando = true;
+    await new Promise((listo) => setTimeout(listo, COLA));
+  }
+  grabando = null;
   clearTimeout(g.tope);
-  g.proceso.disconnect();
-  g.stream.getTracks().forEach((t) => t.stop());
-  void g.ctx.close();
-  const largo = g.trozos.reduce((n, t) => n + t.length, 0) / g.rate;
-  if (cancelada || largo < 0.3) {
+  enfriarMicro();
+  if (cancelada || g.largo / g.rate < 0.3) {
     if (g.enVivo) void enlace.enviar({ tipo: "voz-cancelada" }).catch(() => {});
     estado("conectado", `Conectado a ${pcNombre}`);
     return;
   }
   aguardar();
   try {
+    const cola = g.bajador.vaciar();
     if (g.enVivo) {
-      const resto = g.resto();
-      if (resto.length) await enlace.enviar({ tipo: "trozo", pcm: new Uint8Array(a16k(resto, g.rate).buffer) });
+      const resto = juntar([...g.porMandar, cola]);
+      if (resto.length) await enlace.enviar({ tipo: "trozo", pcm: new Uint8Array(resto.buffer) });
       await enlace.enviar({ tipo: "voz-termina" });
       return;
     }
-    const pcm = a16k(g.trozos, g.rate);
+    const pcm = juntar([...g.listos, cola]);
     await enlace.enviar({ tipo: "voz", pcm: new Uint8Array(pcm.buffer) });
   } catch (error) {
     listo();

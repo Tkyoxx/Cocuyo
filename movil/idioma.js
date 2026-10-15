@@ -53,6 +53,7 @@ const EXACTO = {
   "Mantén para hablar": ["Hold to talk", "Segure para falar"],
   "Pensando…": ["Thinking…", "Pensando…"],
   "Te escucho…": ["Listening…", "Estou ouvindo…"],
+  "Abriendo el micrófono…": ["Opening the mic…", "Abrindo o microfone…"],
   "No me dejaron usar el micrófono. Dale permiso en los ajustes del navegador.": ["I wasn't allowed to use the microphone. Give it permission in the browser settings.", "Não me deixaram usar o microfone. Dê permissão nos ajustes do navegador."],
   "Buenos días": ["Good morning", "Bom dia"],
   "Buenas tardes": ["Good afternoon", "Boa tarde"],

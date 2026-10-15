@@ -366,6 +366,24 @@ pub fn list(app: &AppHandle) -> Vec<App> {
     all
 }
 
+pub fn names_to_hear(app: &AppHandle) -> Vec<String> {
+    let cached = CACHE.lock().unwrap().as_ref().map(|(_, apps)| apps.clone());
+    if cached.is_none() {
+        let app = app.clone();
+        std::thread::spawn(move || list(&app));
+    }
+    let rank = |a: &App| if a.custom { 0 } else if a.id.starts_with("steam://") { 1 } else if a.id.ends_with(".lnk") || a.id.ends_with(".url") { 2 } else { 3 };
+    let mut all: Vec<App> = load_custom(app).into_iter().chain(cached.unwrap_or_default()).collect();
+    all.sort_by_key(rank);
+    all.into_iter()
+        .map(|a| {
+            let name: String = a.name.split(['(', '[']).next().unwrap_or("").chars().filter(|c| !"™®©".contains(*c)).map(|c| if c == '_' { ' ' } else { c }).collect();
+            name.split_whitespace().collect::<Vec<_>>().join(" ")
+        })
+        .filter(|name| name.chars().count() >= 3 && name.split(' ').count() <= 4)
+        .collect()
+}
+
 pub fn open(target: &str) -> Result<(), String> {
     let result = unsafe { ShellExecuteW(None, w!("open"), &HSTRING::from(target), None, None, SW_SHOWNORMAL) };
     if result.0 as isize > 32 {

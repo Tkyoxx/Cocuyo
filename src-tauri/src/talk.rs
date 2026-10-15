@@ -456,7 +456,7 @@ fn open_live(app: &AppHandle) -> Result<Arc<Live>, String> {
         "generationConfig": { "responseModalities": ["AUDIO"], "speechConfig": { "voiceConfig": { "prebuiltVoiceConfig": { "voiceName": voice } } } },
         "systemInstruction": { "parts": [{ "text": crate::agent::voice_prompt(app) }] },
         "realtimeInputConfig": { "automaticActivityDetection": { "disabled": true } },
-        "inputAudioTranscription": {},
+        "inputAudioTranscription": { "languageCodes": [ear_language()] },
         "outputAudioTranscription": {}
     } });
     match THINK.lock().unwrap().as_str() {
@@ -642,37 +642,267 @@ pub(crate) enum Said<'a> {
     Voice(&'a [u8]),
 }
 
-pub(crate) fn phone_turn(app: &AppHandle, audio: Receiver<Vec<f32>>, cancelled: &AtomicBool, phone: &mut dyn FnMut(Said)) -> Result<(String, String), String> {
-    let live = connect(app)?;
-    GENERATION.fetch_add(1, Ordering::Relaxed);
-    let outcome = (|| {
-        live.socket.send(&json!({ "realtimeInput": { "activityStart": {} } }))?;
-        let mut ready = Vec::new();
-        while let Ok(samples) = audio.recv_timeout(Duration::from_secs(70)) {
-            ready.extend(samples);
-            while ready.len() >= CHUNK {
-                let piece: Vec<f32> = ready.drain(..CHUNK).collect();
-                live.socket.send(&json!({ "realtimeInput": { "audio": { "data": crate::ai::base64(&pcm16(&piece)), "mimeType": "audio/pcm;rate=16000" } } }))?;
+const EAR: &str = "gemini-3.5-transcribe-live";
+const EAR_PATIENCE: Duration = Duration::from_secs(4);
+static EAR_DOWN: Mutex<Option<Instant>> = Mutex::new(None);
+const EVERYDAY: [&str; 18] =
+    ["Cocuyo", "Spotify", "Discord", "WhatsApp", "YouTube", "Steam", "Epic Games", "Gemini", "Chrome", "Opera", "OBS", "Twitch", "TikTok", "Instagram", "Netflix", "Wikipedia", "GitHub", "Bluetooth"];
+
+struct Ear {
+    socket: Arc<Socket>,
+    heard: Receiver<Value>,
+}
+
+impl Drop for Ear {
+    fn drop(&mut self) {
+        self.socket.shut();
+    }
+}
+
+fn ear_language() -> &'static str {
+    match crate::cue::language().0 {
+        "en" => "en-US",
+        "pt" => "pt-BR",
+        _ => "es-419",
+    }
+}
+
+fn words_to_hear(app: &AppHandle) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    EVERYDAY.iter().map(|w| w.to_string()).chain(crate::apps::names_to_hear(app)).filter(|w| seen.insert(w.to_lowercase())).take(100).collect()
+}
+
+fn open_ear(app: &AppHandle) -> Result<Ear, String> {
+    if cfg!(debug_assertions) && std::env::var("COCUYO_DEMO_SIN_OIDO").is_ok() {
+        return Err("sin oído para la prueba".into());
+    }
+    if EAR_DOWN.lock().unwrap().is_some_and(|since| since.elapsed() < Duration::from_secs(10 * 60)) {
+        return Err("el oído descansa".into());
+    }
+    let key = crate::ai::key(app).ok_or("Falta la clave de Gemini.")?;
+    let socket = Arc::new(Socket::open(&key)?);
+    socket.send(&json!({ "setup": {
+        "model": format!("models/{EAR}"),
+        "generationConfig": { "responseModalities": ["TEXT"] },
+        "realtimeInputConfig": { "automaticActivityDetection": { "disabled": true } },
+        "inputAudioTranscription": { "languageCodes": [ear_language()], "customVocabulary": words_to_hear(app) }
+    } }))?;
+    let first = socket.receive()?;
+    if first.get("setupComplete").is_none() {
+        *EAR_DOWN.lock().unwrap() = Some(Instant::now());
+        return Err(format!("el oído no arrancó: {}", first.to_string().chars().take(200).collect::<String>()));
+    }
+    socket.send(&json!({ "realtimeInput": { "activityStart": {} } }))?;
+    crate::ai::count(app, EAR);
+    let (send, heard) = channel();
+    let reader = socket.clone();
+    std::thread::Builder::new()
+        .name("oido".into())
+        .spawn(move || {
+            while let Ok(message) = reader.receive() {
+                if send.send(message).is_err() {
+                    return;
+                }
+            }
+            let _ = send.send(json!({ "cerrada": true }));
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(Ear { socket, heard })
+}
+
+#[derive(Default)]
+struct Heard {
+    done: String,
+    guess: String,
+    over: bool,
+}
+
+impl Heard {
+    fn take(&mut self, message: &Value) {
+        let content = &message["serverContent"];
+        if let Some(text) = content["inputTranscription"]["text"].as_str() {
+            self.done.push_str(text);
+            self.guess.clear();
+        }
+        if let Some(text) = content["interimInputTranscription"]["text"].as_str() {
+            self.guess = text.to_string();
+        }
+        if message.get("cerrada").is_some() || content["generationComplete"].as_bool() == Some(true) || content["turnComplete"].as_bool() == Some(true) {
+            self.over = true;
+        }
+    }
+
+    fn text(&self) -> String {
+        format!("{} {}", self.done.trim(), self.guess.trim()).trim().to_string()
+    }
+}
+
+impl Ear {
+    fn send_audio(&self, samples: &[f32]) -> bool {
+        self.socket.send(&json!({ "realtimeInput": { "audio": { "data": crate::ai::base64(&pcm16(samples)), "mimeType": "audio/pcm;rate=16000" } } })).is_ok()
+    }
+
+    fn finish(&self, heard: &mut Heard, rest: &[f32]) -> String {
+        for piece in rest.chunks(CHUNK) {
+            if !self.send_audio(piece) {
+                return heard.text();
             }
         }
-        if cancelled.load(Ordering::Relaxed) {
-            return Err("cancelado".to_string());
+        while let Ok(message) = self.heard.try_recv() {
+            heard.take(&message);
         }
-        if !ready.is_empty() {
-            live.socket.send(&json!({ "realtimeInput": { "audio": { "data": crate::ai::base64(&pcm16(&ready)), "mimeType": "audio/pcm;rate=16000" } } }))?;
+        heard.over = false;
+        if self.socket.send(&json!({ "realtimeInput": { "activityEnd": {} } })).is_err() {
+            return heard.text();
         }
-        let events = live.events.lock().unwrap();
-        while events.try_recv().is_ok() {}
-        live.socket.send(&json!({ "realtimeInput": { "activityEnd": {} } }))?;
-        ANSWERING.store(true, Ordering::Relaxed);
-        let heard = listen(app, &live, &events, Instant::now(), Some(phone));
-        ANSWERING.store(false, Ordering::Relaxed);
-        heard
-    })();
+        let asked = Instant::now();
+        while !heard.over {
+            match self.heard.recv_timeout(EAR_PATIENCE.saturating_sub(asked.elapsed())) {
+                Ok(message) => heard.take(&message),
+                Err(_) => break,
+            }
+        }
+        heard.text()
+    }
+}
+
+struct EarTurn {
+    ear: Option<Ear>,
+    opening: Receiver<Result<Ear, String>>,
+    failed: bool,
+    heard: Heard,
+    waiting: Vec<f32>,
+    shown: String,
+}
+
+impl EarTurn {
+    fn keep_up(&mut self, app: &AppHandle, phone: &mut dyn FnMut(Said)) {
+        if self.ear.is_none() && !self.failed {
+            match self.opening.try_recv() {
+                Ok(Ok(ear)) => self.ear = Some(ear),
+                Ok(Err(why)) => {
+                    self.failed = true;
+                    note(app, &format!("oído: {why}"));
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(_) => self.failed = true,
+            }
+        }
+        if self.failed {
+            self.waiting.clear();
+            return;
+        }
+        let Some(ear) = &self.ear else { return };
+        let mut broken = false;
+        while self.waiting.len() >= CHUNK && !broken {
+            let piece: Vec<f32> = self.waiting.drain(..CHUNK).collect();
+            broken = !ear.send_audio(&piece);
+        }
+        while let Ok(message) = ear.heard.try_recv() {
+            self.heard.take(&message);
+        }
+        if broken {
+            self.ear = None;
+            self.failed = true;
+        }
+        let text = self.heard.text();
+        if !text.is_empty() && text != self.shown {
+            phone(Said::You(&text));
+            self.shown = text;
+        }
+    }
+
+    fn finish(mut self) -> Option<Receiver<String>> {
+        if self.failed {
+            return None;
+        }
+        let (done, written) = channel();
+        std::thread::spawn(move || {
+            let ear = match self.ear.take() {
+                Some(ear) => ear,
+                None => match self.opening.recv_timeout(Duration::from_secs(3)) {
+                    Ok(Ok(ear)) => ear,
+                    _ => {
+                        let _ = done.send(String::new());
+                        return;
+                    }
+                },
+            };
+            let _ = done.send(ear.finish(&mut self.heard, &self.waiting));
+        });
+        Some(written)
+    }
+}
+
+pub(crate) fn phone_turn(app: &AppHandle, audio: Receiver<Vec<f32>>, cancelled: &AtomicBool, phone: &mut dyn FnMut(Said)) -> Result<(String, String), String> {
+    let (opened, opening) = channel();
+    {
+        let app = app.clone();
+        std::thread::spawn(move || {
+            let _ = opened.send(open_ear(&app));
+        });
+    }
+    let ear = EarTurn { ear: None, opening, failed: false, heard: Heard::default(), waiting: Vec::new(), shown: String::new() };
+    let live = connect(app)?;
+    GENERATION.fetch_add(1, Ordering::Relaxed);
+    let outcome = phone_listen(app, &live, audio, cancelled, phone, ear);
     if outcome.is_err() {
         forget_this(&live);
     }
     outcome
+}
+
+fn phone_listen(app: &AppHandle, live: &Live, audio: Receiver<Vec<f32>>, cancelled: &AtomicBool, phone: &mut dyn FnMut(Said), mut ear: EarTurn) -> Result<(String, String), String> {
+    live.socket.send(&json!({ "realtimeInput": { "activityStart": {} } }))?;
+    let mut ready = Vec::new();
+    let mut last = Instant::now();
+    loop {
+        match audio.recv_timeout(Duration::from_millis(60)) {
+            Ok(samples) => {
+                last = Instant::now();
+                ready.extend_from_slice(&samples);
+                ear.waiting.extend(samples);
+                while ready.len() >= CHUNK {
+                    let piece: Vec<f32> = ready.drain(..CHUNK).collect();
+                    live.socket.send(&json!({ "realtimeInput": { "audio": { "data": crate::ai::base64(&pcm16(&piece)), "mimeType": "audio/pcm;rate=16000" } } }))?;
+                }
+            }
+            Err(RecvTimeoutError::Timeout) if last.elapsed() < Duration::from_secs(70) => {}
+            Err(_) => break,
+        }
+        ear.keep_up(app, phone);
+    }
+    if cancelled.load(Ordering::Relaxed) {
+        return Err("cancelado".to_string());
+    }
+    if !ready.is_empty() {
+        live.socket.send(&json!({ "realtimeInput": { "audio": { "data": crate::ai::base64(&pcm16(&ready)), "mimeType": "audio/pcm;rate=16000" } } }))?;
+    }
+    let events = live.events.lock().unwrap();
+    while events.try_recv().is_ok() {}
+    live.socket.send(&json!({ "realtimeInput": { "activityEnd": {} } }))?;
+    let written = ear.finish();
+    let listening = written.is_some();
+    let mut wrote: Option<String> = None;
+    let mut both = |said: Said| {
+        if wrote.is_none() {
+            if let Some(text) = written.as_ref().and_then(|w| w.try_recv().ok()) {
+                if !text.is_empty() {
+                    phone(Said::You(&text));
+                }
+                wrote = Some(text);
+            }
+        }
+        match said {
+            Said::You(_) if listening && wrote.as_ref().is_none_or(|text| !text.is_empty()) => {}
+            other => phone(other),
+        }
+    };
+    ANSWERING.store(true, Ordering::Relaxed);
+    let heard = listen(app, live, &events, Instant::now(), Some(&mut both));
+    ANSWERING.store(false, Ordering::Relaxed);
+    let wrote = wrote.or_else(|| written.and_then(|w| w.recv_timeout(Duration::from_secs(1)).ok())).unwrap_or_default();
+    heard.map(|(said, reply)| (if wrote.is_empty() { said } else { wrote }, reply))
 }
 
 fn answer(app: &AppHandle, live: &Live, events: &Receiver<Value>, asked: Instant) -> Result<(String, String), String> {
@@ -946,6 +1176,25 @@ pub fn probe(app: &AppHandle, text: &str) -> Result<(String, String), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_ear_keeps_the_final_text_and_knows_when_it_is_done() {
+        let mut heard = Heard::default();
+        heard.take(&json!({ "serverContent": { "interimInputTranscription": { "text": "oye abre spoti" } } }));
+        assert_eq!(heard.text(), "oye abre spoti");
+        heard.take(&json!({ "serverContent": { "interimInputTranscription": { "text": "Oye, abre Spotify y ponme" } } }));
+        assert_eq!(heard.text(), "Oye, abre Spotify y ponme");
+        assert!(!heard.over);
+        heard.take(&json!({ "serverContent": { "inputTranscription": { "text": "Oye, abre Spotify y ponme algo de Feid." } } }));
+        heard.take(&json!({ "serverContent": { "generationComplete": true } }));
+        assert_eq!(heard.text(), "Oye, abre Spotify y ponme algo de Feid.");
+        assert!(heard.over);
+        let mut cut = Heard::default();
+        cut.take(&json!({ "serverContent": { "interimInputTranscription": { "text": "silencia a Camilo" } } }));
+        cut.take(&json!({ "cerrada": true }));
+        assert!(cut.over);
+        assert_eq!(cut.text(), "silencia a Camilo");
+    }
 
     #[test]
     fn resampling_keeps_the_length_across_chunks() {
