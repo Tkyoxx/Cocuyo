@@ -50,6 +50,7 @@
       <nav class="pestanas" id="pestanas">
         <span class="pestana-luz" aria-hidden="true"></span>
         <button class="on" data-vista="charla">Charla</button>
+        <button data-vista="informes">Informes</button>
         <button data-vista="ajustes">Ajustes</button>
       </nav>
 
@@ -66,6 +67,22 @@
           </div>
         </div>
       </main>
+
+      <main class="informes" id="informes" hidden>
+        <div class="vacio" id="informes-vacio">
+          <h2>Nada investigado todavía</h2>
+          <p>Pídele «investiga a fondo» algo y el informe te llega aquí para leerlo cuando quieras.</p>
+        </div>
+        <div class="lista-informes" id="lista-informes"></div>
+      </main>
+
+      <section class="lector" id="lector" hidden>
+        <div class="lector-barra">
+          <button type="button" class="fantasma" id="lector-volver">Volver</button>
+          <button type="button" class="fantasma peligro" id="lector-borrar">Borrar</button>
+        </div>
+        <article class="lector-texto" id="lector-texto"></article>
+      </section>
 
       <main class="ajustes" id="ajustes" hidden>
         <div class="tarjeta">

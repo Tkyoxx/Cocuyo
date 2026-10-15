@@ -1,6 +1,7 @@
 // la pagina del celular. la vista, el microfono y lo que llega del pc
 
 import { tarjeta } from "./acciones.js";
+import { borrarInforme, fecha, guardarInforme, informes, pintarInforme } from "./informes.js";
 import { idioma, t, traducirPagina } from "./idioma.js";
 
 const $ = (id) => document.getElementById(id);
@@ -223,6 +224,7 @@ function recibir(mensaje) {
     porDecir = "";
     return;
   }
+  if (mensaje.tipo === "informe") return void llegoInforme(mensaje.informe ?? {});
   if (mensaje.tipo !== "respuesta") return;
   listo();
   yoVivo = null;
@@ -278,10 +280,78 @@ function moverLuz(boton) {
   luz.style.setProperty("--w", `${boton.offsetWidth}px`);
 }
 
+let leyendo = null;
+
+function irA(vista) {
+  for (const otro of $("pestanas").querySelectorAll("button")) otro.classList.toggle("on", otro.dataset.vista === vista);
+  for (const cual of ["charla", "informes", "ajustes"]) $(cual).hidden = cual !== vista;
+  $("lector").hidden = true;
+  document.querySelector(".dock").hidden = vista !== "charla";
+  if (vista === "informes") void pintarInformes();
+}
+
+async function pintarInformes() {
+  let todos = [];
+  try {
+    todos = await informes();
+  } catch {}
+  $("informes-vacio").hidden = todos.length > 0;
+  const caja = $("lista-informes");
+  caja.replaceChildren();
+  for (const informe of todos) {
+    const fila = document.createElement("button");
+    fila.className = "informe-fila";
+    const b = document.createElement("b");
+    b.textContent = informe.titulo || informe.tema || t("Informe");
+    const small = document.createElement("small");
+    small.textContent = `${fecha(informe.en)} · ${(informe.fuentes ?? []).length} ${t("fuentes")}`;
+    fila.append(b, small);
+    fila.addEventListener("click", () => leer(informe));
+    caja.append(fila);
+  }
+}
+
+function leer(informe) {
+  leyendo = informe;
+  for (const cual of ["charla", "informes", "ajustes"]) $(cual).hidden = true;
+  document.querySelector(".dock").hidden = true;
+  pintarInforme($("lector-texto"), informe);
+  $("lector").hidden = false;
+  $("lector").scrollTop = 0;
+}
+
+$("lector-volver").addEventListener("click", () => irA("informes"));
+$("lector-borrar").addEventListener("click", async () => {
+  if (!leyendo || !confirm(t("¿Borrar este informe del celular?"))) return;
+  await borrarInforme(leyendo.en).catch(() => {});
+  leyendo = null;
+  irA("informes");
+});
+
+async function llegoInforme(informe) {
+  if (informe.error) {
+    dicho("cocuyo error", informe.error);
+    return;
+  }
+  let guardado = informe;
+  try {
+    guardado = await guardarInforme(informe);
+  } catch {}
+  const resumen = String(guardado.resumen ?? "").replace(/\s*\[\d+\]/g, "").trim();
+  pintarTarjeta({
+    icono: "🔎",
+    titulo: guardado.titulo || guardado.tema || t("Informe"),
+    sub: t("Informe listo"),
+    texto: resumen.length > 320 ? `${resumen.slice(0, 317)}…` : resumen,
+    botones: [[t("Leer el informe"), () => leer(guardado)]],
+  });
+  navigator.vibrate?.([20, 60, 20]);
+}
+
 for (const boton of $("pestanas").querySelectorAll("button")) {
   boton.addEventListener("click", () => {
     for (const otro of $("pestanas").querySelectorAll("button")) otro.classList.toggle("on", otro === boton);
-    for (const vista of ["charla", "ajustes"]) $(vista).hidden = vista !== boton.dataset.vista;
+    irA(boton.dataset.vista);
     moverLuz(boton);
   });
 }
@@ -517,6 +587,23 @@ async function arrancarMuestra() {
       recibir({ tipo: "respuesta", ...r });
     },
   };
+  if (new URLSearchParams(location.search).get("muestra") === "informe") {
+    dicho("yo", "Investiga a fondo si conviene un carro eléctrico en Colombia");
+    dicho("cocuyo", "Me pongo a investigar «si conviene un carro eléctrico en Colombia». Cuando acabe te llega aquí el informe.");
+    void llegoInforme({
+      en: Date.now(),
+      titulo: "¿Conviene un carro eléctrico en Colombia?",
+      tema: "carro eléctrico en Colombia",
+      resumen: "Sale más barato de mantener y no paga pico y placa en varias ciudades [1][2]. El precio de compra sigue siendo más alto [3].",
+      puntos: ["Exentos de pico y placa en Bogotá y Medellín [1]", "Arancel del 0 % para importarlos [2]"],
+      secciones: [{ titulo: "Costos", texto: "Cargar en casa cuesta menos que la gasolina [3].\n\n- Mantenimiento más simple [2]\n- Seguro algo más caro [3]" }],
+      contradicciones: [{ tema: "Autonomía", detalle: "[1] dice 400 km y [3] dice 300 km en uso real.", veredicto: "Creerle a [3]: mide en ciudad [3]." }],
+      conclusiones: ["Conviene si manejas en ciudad y puedes cargar en casa [1][3]."],
+      limites: "No encontré cifras oficiales de 2026.",
+      fuentes: [{ titulo: "Movilidad Bogotá", url: "https://example.com/1", sitio: "example.com" }, { titulo: "DIAN aranceles", url: "https://example.com/2", sitio: "example.com" }, { titulo: "Prueba real", url: "https://example.com/3", sitio: "example.com" }],
+      llamadas: 9,
+    });
+  }
   if (new URLSearchParams(location.search).get("muestra") === "llena") {
     dicho("yo", "¿Qué hay en mi pantalla?");
     dicho("cocuyo", "Tienes abierto Visual Studio Code con el proyecto Cocuyo, y Spotify suena de fondo.");

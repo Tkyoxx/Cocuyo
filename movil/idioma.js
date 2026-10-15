@@ -91,6 +91,21 @@ const EXACTO = {
   "Para pegar en el celular": ["To paste on your phone", "Para colar no celular"],
   Copiar: ["Copy", "Copiar"],
   Compartir: ["Share", "Compartilhar"],
+  Informes: ["Reports", "Relatórios"],
+  Informe: ["Report", "Relatório"],
+  "Informe listo": ["Report ready", "Relatório pronto"],
+  "Leer el informe": ["Read the report", "Ler o relatório"],
+  "Nada investigado todavía": ["Nothing researched yet", "Nada pesquisado ainda"],
+  "Pídele «investiga a fondo» algo y el informe te llega aquí para leerlo cuando quieras.": ["Ask it to “research” something in depth and the report lands here to read whenever you want.", "Peça para «pesquisar a fundo» algo e o relatório chega aqui para ler quando quiser."],
+  Volver: ["Back", "Voltar"],
+  Borrar: ["Delete", "Apagar"],
+  "¿Borrar este informe del celular?": ["Delete this report from the phone?", "Apagar este relatório do celular?"],
+  fuentes: ["sources", "fontes"],
+  "Lo clave": ["Key points", "O principal"],
+  "Donde no se ponen de acuerdo": ["Where they disagree", "Onde não concordam"],
+  Conclusiones: ["Conclusions", "Conclusões"],
+  "Lo que no se pudo confirmar": ["What couldn't be confirmed", "O que não deu para confirmar"],
+  Fuentes: ["Sources", "Fontes"],
 };
 
 const PATRONES = [
@@ -101,6 +116,7 @@ const PATRONES = [
   [/^¿Olvidar (.+)\? Tendrás que emparejar otra vez\.$/, "Forget $1? You'll have to pair again.", "Esquecer $1? Vai ter que parear de novo."],
   [/^(.+) no está conectado ahora\. Revisa que esté prendido con Cocuyo abierto\.$/, "$1 isn't connected right now. Make sure it's on with Cocuyo open.", "$1 não está conectado agora. Confira se está ligado com o Cocuyo aberto."],
   [/^Para \+(\d+)$/, "To +$1", "Para +$1"],
+  [/^Gastó (\d+) llamadas a la IA\.$/, "Used $1 AI calls.", "Gastou $1 chamadas à IA."],
 ];
 
 export function t(texto) {

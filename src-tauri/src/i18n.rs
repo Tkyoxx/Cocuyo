@@ -63,6 +63,7 @@ const REPLIES: &[(&str, &str, &str)] = &[
     ("Cerrando {}. No vi abierta {}.", "Closing {}. I didn't see {} open.", "Fechando {}. Não vi {} aberto."),
     ("No veo abierta ninguna de esas apps: {}.", "None of those apps are open: {}.", "Nenhum desses apps está aberto: {}."),
     ("No hay apps abiertas que cerrar.", "There are no open apps to close.", "Não há apps abertos para fechar."),
+    ("Me pongo a investigar «{}». Cuando acabe te llega aquí el informe.", "I'm on it: researching “{}”. The report will land here when it's done.", "Vou pesquisar «{}». Quando acabar, o relatório chega aqui."),
     ("Me pongo a investigar «{}». Cuando tenga el informe te lo abro.", "I'm on it: researching “{}”. I'll open the report when it's ready.", "Vou pesquisar «{}». Quando o relatório ficar pronto eu abro."),
     ("Ya estoy investigando otra cosa. Cuando acabe te aviso.", "I'm already researching something else. I'll let you know when I'm done.", "Já estou pesquisando outra coisa. Aviso quando terminar."),
     ("Para investigar a fondo hace falta la IA: conéctala en Ajustes, sección IA.", "Deep research needs the AI: connect it in Settings, AI section.", "Para pesquisar a fundo é preciso a IA: conecte em Ajustes, seção IA."),

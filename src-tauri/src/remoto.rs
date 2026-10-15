@@ -564,7 +564,11 @@ fn listen(app: &AppHandle, phone: &Phone, link: &Arc<Link>, socket: &Socket) {
                 match greet(&pc, &cel, &said) {
                     Ok((session, answer)) => {
                         *link.session.lock().unwrap() = Some(session);
-                        if send_json(socket, &answer).is_ok() && !link.talking.swap(true, Ordering::Relaxed) {
+                        let greeted = send_json(socket, &answer).is_ok();
+                        if greeted {
+                            deliver_pending(link);
+                        }
+                        if greeted && !link.talking.swap(true, Ordering::Relaxed) {
                             let _ = app.emit_to(crate::overlay::LABEL, "note", crate::i18n::tr(&format!("Tu celular «{}» se conectó a Cocuyo.", phone.nombre)));
                             changed(app);
                         }
@@ -915,12 +919,42 @@ fn clean_action(args: &Value) -> Option<Value> {
     complete.then_some(out)
 }
 
+static PENDING: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+fn deliver_pending(link: &Link) {
+    let waiting = std::mem::take(&mut *PENDING.lock().unwrap());
+    let mut left = Vec::new();
+    for message in waiting {
+        if link.send(JSON, message.as_bytes()).is_err() {
+            left.push(message);
+        }
+    }
+    PENDING.lock().unwrap().extend(left);
+}
+
+fn talking_links() -> Vec<Arc<Link>> {
+    LINKS.lock().unwrap().as_ref().map(|links| links.values().filter(|link| link.talking.load(Ordering::Relaxed)).cloned().collect()).unwrap_or_default()
+}
+
+pub fn send_report(report: &Value) -> Result<(), String> {
+    let message = json!({ "tipo": "informe", "informe": report }).to_string();
+    if talking_links().iter().filter(|link| link.send(JSON, message.as_bytes()).is_ok()).count() > 0 {
+        return Ok(());
+    }
+    let mut pending = PENDING.lock().unwrap();
+    pending.push(message);
+    if pending.len() > 5 {
+        pending.remove(0);
+    }
+    Ok(())
+}
+
 pub fn to_phone(args: &Value) -> Result<String, String> {
     let action = clean_action(args).ok_or("Faltan datos para dejarlo en el celular.")?;
     if ASKED.with(|asked| asked.borrow_mut().as_mut().map(|list| list.push(action.clone())).is_some()) {
         return Ok("Queda en el celular, junto con tu respuesta.".into());
     }
-    let links: Vec<Arc<Link>> = LINKS.lock().unwrap().as_ref().map(|links| links.values().filter(|link| link.talking.load(Ordering::Relaxed)).cloned().collect()).unwrap_or_default();
+    let links = talking_links();
     let message = json!({ "tipo": "respuesta", "acciones": [action] }).to_string();
     if links.iter().filter(|link| link.send(JSON, message.as_bytes()).is_ok()).count() == 0 {
         return Err("Tu celular no está conectado ahora. Abre Cocuyo en el celular y vuelve a pedirlo.".into());

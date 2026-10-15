@@ -1,6 +1,6 @@
 // guarda la pagina en el celular para que abra sin red y no cambie a escondidas
 const VERSION = "cocuyo-movil-dev";
-const ARCHIVOS = ["index.html", "estilo.css", "app.js", "acciones.js", "enlace.js", "cifrado.js", "idioma.js", "icono.svg", "icono-180.png", "icono-192.png", "icono-512.png", "icono-maskable-512.png", "manifest.webmanifest"];
+const ARCHIVOS = ["index.html", "estilo.css", "app.js", "acciones.js", "informes.js", "enlace.js", "cifrado.js", "idioma.js", "icono.svg", "icono-180.png", "icono-192.png", "icono-512.png", "icono-maskable-512.png", "manifest.webmanifest"];
 
 async function guardar() {
   const cache = await caches.open(VERSION);

@@ -77,14 +77,18 @@ pub fn start(app: &AppHandle, topic: &str) -> Result<String, String> {
         return Ok("Ya estoy investigando otra cosa. Cuando acabe te aviso.".into());
     }
     let (app, topic) = (app.clone(), topic.trim().to_string());
-    let said = format!("Me pongo a investigar «{topic}». Cuando tenga el informe te lo abro.");
+    let phone = crate::remoto::asking();
+    let said = if phone { format!("Me pongo a investigar «{topic}». Cuando acabe te llega aquí el informe.") } else { format!("Me pongo a investigar «{topic}». Cuando tenga el informe te lo abro.") };
     std::thread::spawn(move || {
         let outcome = run(&app, &topic);
         BUSY.store(false, Ordering::SeqCst);
         match outcome {
             Ok(done) => {
                 step(&app, 1.0, "Informe listo");
-                let _ = crate::apps::open(&done.path.to_string_lossy());
+                let sent = phone && crate::remoto::send_report(&done.report).is_ok();
+                if !sent {
+                    let _ = crate::apps::open(&done.path.to_string_lossy());
+                }
                 let calls = format!("Gasté {} llamadas a la IA.", done.calls);
                 crate::scripts::show_card(&app, "Cocuyo", &json!({
                     "titulo": done.title, "texto": format!("{} fuentes leídas. {calls}", done.sources), "icono": "🔎", "segundos": 40,
@@ -94,6 +98,9 @@ pub fn start(app: &AppHandle, topic: &str) -> Result<String, String> {
             }
             Err(why) => {
                 step(&app, 1.0, "No pude terminar");
+                if phone {
+                    let _ = crate::remoto::send_report(&json!({ "error": crate::i18n::tr(&why), "tema": topic }));
+                }
                 crate::cue::answer(&why);
             }
         }
@@ -121,6 +128,7 @@ struct Source {
 
 struct Done {
     path: PathBuf,
+    report: Value,
     title: String,
     said: String,
     sources: usize,
@@ -200,7 +208,14 @@ fn run(app: &AppHandle, topic: &str) -> Result<Done, String> {
     let said = if said.is_empty() { format!("Listo el informe sobre {topic}.") } else { said };
     let page = render(topic, &title, &report, &sources, (&searched, &missed), calls, began.elapsed());
     let path = save(app, &title, &page)?;
-    Ok(Done { path, title, said, sources: sources.len(), calls })
+    let mut sent = report.clone();
+    sent["titulo"] = json!(title);
+    sent["tema"] = json!(topic);
+    sent["llamadas"] = json!(calls);
+    sent["fuentes"] = Value::Array(sources.iter().map(|source| json!({ "titulo": source.title, "url": source.url, "sitio": source.site })).collect());
+    sent["archivo"] = json!(path.to_string_lossy());
+    sent["en"] = json!(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64));
+    Ok(Done { path, report: sent, title, said, sources: sources.len(), calls })
 }
 
 struct Plan {
