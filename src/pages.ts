@@ -1278,11 +1278,11 @@ class SettingsPage implements Page {
            <div class="card">
              <div class="srow"><div><b>Discord por voz</b><small id="s-dc-state">Silénciate, ensordécete y entra o sal de canales de voz hablándole a Cocuyo, también con el juego abierto.</small></div><button class="ghost" id="s-dc-go" hidden>Desconectar</button></div>
              <div class="dc-steps" id="s-dc-steps">
-               <div class="srow slim"><div><b>1. Crea tu app de Discord</b><small>Es gratis y solo la usas tú. En el portal pulsa «New Application», ponle de nombre Cocuyo, marca la casilla y dale «Create».</small></div><button class="ghost" id="s-dc-portal">Abrir el portal</button></div>
+               <div class="srow slim"><div><b>1. Crea tu app de Discord</b><small>Es gratis y solo la usas tú. Entra al portal con la misma cuenta que tienes abierta en Discord, pulsa «New Application», ponle de nombre Cocuyo, marca la casilla y dale «Create».</small></div><button class="ghost" id="s-dc-portal">Abrir el portal</button></div>
                <div class="srow slim"><div><b>2. Agrega la dirección de vuelta</b><small>En el menú de la izquierda entra a «OAuth2». En «Redirects» pulsa «Add Redirect», pega la dirección y dale «Save Changes» abajo. Tiene que quedar una sola dirección: si hay otras, bórralas.</small></div><button class="ghost" id="s-dc-copy">Copiar la dirección</button></div>
                <div class="srow stack"><div><b>3. Copia el Client ID</b><small>En la misma página de «OAuth2», arriba en «Client Information». Pulsa «Copy» y pégalo aquí.</small></div><input id="s-dc-id" placeholder="Client ID: solo números" spellcheck="false" autocomplete="off" /></div>
                <div class="srow stack"><div><b>4. Copia el Client Secret</b><small>Justo debajo del Client ID: pulsa «Reset Secret», confirma con «Yes, do it!» y copia el que sale (Discord lo muestra una sola vez).</small></div><input id="s-dc-secret" type="password" placeholder="Client Secret" spellcheck="false" autocomplete="off" /></div>
-               <div class="srow slim"><div><b>5. Conecta</b><small>Con Discord abierto, pulsa Conectar. Discord te muestra una ventana pidiendo permiso para Cocuyo: dale «Autorizar». La llave queda cifrada en tu PC.</small></div><button class="ghost pick" id="s-dc-connect">Conectar</button></div>
+               <div class="srow slim"><div><b>5. Conecta</b><small>Con Discord abierto, pulsa Conectar. Si la app es de la misma cuenta, se conecta solo; si no, Discord te pide permiso: dale «Autorizar». La llave queda cifrada en tu PC.</small></div><button class="ghost pick" id="s-dc-connect">Conectar</button></div>
              </div>
            </div>
            </div>`,

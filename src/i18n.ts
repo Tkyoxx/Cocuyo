@@ -623,6 +623,8 @@ const EXACT: Record<string, [string, string]> = {
   "5. Conecta": ["5. Connect", "5. Conecte"],
   "Copiar la dirección": ["Copy the address", "Copiar o endereço"],
   "1. Crea tu app de Spotify": ["1. Create your Spotify app", "1. Crie seu app do Spotify"],
+  "Es gratis y solo la usas tú. Entra al portal con la misma cuenta que tienes abierta en Discord, pulsa «New Application», ponle de nombre Cocuyo, marca la casilla y dale «Create».": ["It's free and only you use it. Sign in to the portal with the same account you have open in Discord, click “New Application”, name it Cocuyo, tick the box and click “Create”.", "É grátis e só você usa. Entre no portal com a mesma conta que está aberta no Discord, clique em «New Application», dê o nome Cocuyo, marque a caixa e clique em «Create»."],
+  "Con Discord abierto, pulsa Conectar. Si la app es de la misma cuenta, se conecta solo; si no, Discord te pide permiso: dale «Autorizar». La llave queda cifrada en tu PC.": ["With Discord open, click Connect. If the app belongs to the same account it connects by itself; if not, Discord asks for permission: click “Authorize”. The key stays encrypted on your PC.", "Com o Discord aberto, clique em Conectar. Se o app for da mesma conta, conecta sozinho; se não, o Discord pede permissão: clique em «Autorizar». A chave fica criptografada no seu PC."],
   "4. Conecta": ["4. Connect", "4. Conecte"],
   Conecta: ["Connect", "Conecte"],
   "Sin conectar. Se arma una sola vez en 4 pasos:": ["Not connected. You set it up once in 4 steps:", "Sem conectar. Configura uma vez só em 4 passos:"],

@@ -74,6 +74,32 @@ fn keep(app: &AppHandle, data: &Value) -> Result<(), String> {
     std::fs::write(path, sealed).map_err(|e| e.to_string())
 }
 
+const SCOPES: [&str; 3] = ["rpc", "rpc.voice.read", "rpc.voice.write"];
+
+fn curl_json(args: &[&str]) -> Result<Value, String> {
+    use std::os::windows::process::CommandExt;
+    let output = std::process::Command::new("curl.exe")
+        .args(["--silent", "--max-time", "15"])
+        .args(args)
+        .creation_flags(crate::apps::CREATE_NO_WINDOW)
+        .output()
+        .map_err(|_| "No pude abrir curl.exe.".to_string())?;
+    serde_json::from_slice(&output.stdout).map_err(|_| "Discord no respondió.".to_string())
+}
+
+fn owner_token(id: &str, secret: &str) -> Option<String> {
+    let scope = format!("{} identify", SCOPES.join(" "));
+    let body = format!("grant_type=client_credentials&scope={}", crate::voice::url_encode(&scope));
+    let login = format!("{id}:{secret}");
+    let answer = curl_json(&["-X", "POST", "-u", &login, "-H", "Content-Type: application/x-www-form-urlencoded", "--data", &body, "https://discord.com/api/oauth2/token"]).ok()?;
+    answer["access_token"].as_str().map(str::to_string)
+}
+
+fn owner_name(token: &str) -> String {
+    let header = format!("Authorization: Bearer {token}");
+    curl_json(&["-H", &header, "https://discord.com/api/v10/users/@me"]).ok().and_then(|me| me["username"].as_str().map(str::to_string)).unwrap_or_default()
+}
+
 fn token_request(fields: &[(&str, &str)]) -> Result<Value, String> {
     use std::os::windows::process::CommandExt;
     let body = fields.iter().map(|(k, v)| format!("{k}={}", crate::voice::url_encode(v))).collect::<Vec<_>>().join("&");
@@ -94,6 +120,12 @@ fn token_request(fields: &[(&str, &str)]) -> Result<Value, String> {
     }
 }
 
+fn other_account(owner: &str, here: &str) -> String {
+    format!(
+        "Tu app de Discord es de la cuenta «{owner}», pero Discord está abierto con «{here}». Abre Discord con «{owner}», o crea la app con «{here}». También sirve agregar a «{here}» en «App Testers» del portal y aceptar la invitación."
+    )
+}
+
 fn plain(error: &str) -> String {
     if error.contains("redirect_uri") || error.contains("Redirect URI") {
         "Discord no encontró la dirección de vuelta de tu app. En el portal, entra a «OAuth2», y en «Redirects» deja una sola: http://127.0.0.1 (borra las demás con la X). Dale «Save Changes» abajo y vuelve a pulsar Conectar.".into()
@@ -112,15 +144,37 @@ fn session(app: &AppHandle) -> Result<Pipe, String> {
     let secret = stored["secret"].as_str().unwrap_or_default().to_string();
     let mut pipe = Pipe::open()?;
     pipe.send(0, &json!({ "v": 1, "client_id": id }))?;
-    let (op, _) = pipe.receive()?;
+    let (op, ready) = pipe.receive()?;
     if op == 2 {
         return Err("Discord no aceptó el Client ID.".into());
     }
+    let here = ready["data"]["user"]["username"].as_str().unwrap_or("").to_string();
     let mut renewed = false;
     if let Some(access) = stored["access"].as_str() {
         if pipe.command("AUTHENTICATE", json!({ "access_token": access })).is_ok() {
             return Ok(pipe);
         }
+    }
+    let mut owner = String::new();
+    if let Some(token) = owner_token(&id, &secret) {
+        match pipe.command("AUTHENTICATE", json!({ "access_token": token })) {
+            Ok(_) => {
+                stored["access"] = json!(token);
+                stored["refresh"] = Value::Null;
+                keep(app, &stored)?;
+                return Ok(pipe);
+            }
+            Err(why) => {
+                if cfg!(debug_assertions) {
+                    eprintln!("[discord] llave del dueño: {why}");
+                }
+                if why.contains("does not match") {
+                    owner = owner_name(&token);
+                }
+            }
+        }
+    }
+    if stored["access"].is_string() {
         if let Some(refresh) = stored["refresh"].as_str().filter(|r| !r.is_empty()) {
             if let Ok(fresh) = token_request(&[("client_id", &id), ("client_secret", &secret), ("grant_type", "refresh_token"), ("refresh_token", refresh)]) {
                 stored["access"] = fresh["access_token"].clone();
@@ -131,11 +185,11 @@ fn session(app: &AppHandle) -> Result<Pipe, String> {
         }
     }
     if !renewed {
-        let granted = pipe.command("AUTHORIZE", json!({ "client_id": id, "scopes": ["rpc", "rpc.voice.read", "rpc.voice.write"] }));
+        let granted = pipe.command("AUTHORIZE", json!({ "client_id": id, "scopes": SCOPES }));
         if cfg!(debug_assertions) {
             eprintln!("[discord] authorize: {:?}", granted.as_ref().map(|g| g.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>())));
         }
-        let granted = granted.map_err(|e| plain(&e))?;
+        let granted = granted.map_err(|e| if owner.is_empty() { plain(&e) } else { other_account(&owner, &here) })?;
         let code = granted["code"].as_str().ok_or("Discord no dio el permiso.")?;
         let fresh = token_request(&[("client_id", &id), ("client_secret", &secret), ("grant_type", "authorization_code"), ("code", code), ("redirect_uri", REDIRECT)]).map_err(|e| plain(&e))?;
         stored["access"] = fresh["access_token"].clone();
@@ -303,5 +357,6 @@ mod tests {
         assert_eq!(understand("pon salsa"), None);
         assert!(plain("Discord: OAuth2 Error: invalid_request: Missing \"redirect_uri\" in request.").contains("deja una sola: http://127.0.0.1"));
         assert_eq!(plain("Discord no está abierto."), "Discord no está abierto.");
+        assert!(other_account("ana_x", "ana").starts_with("Tu app de Discord es de la cuenta «ana_x», pero Discord está abierto con «ana»."));
     }
 }
