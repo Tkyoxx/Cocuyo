@@ -1096,6 +1096,7 @@ class SettingsPage implements Page {
     if (section === "extensiones") void this.paintExtensions();
     if (section === "agente") void this.paintMcp();
     if (section === "remoto") void this.paintRemote();
+    if (section === "voz") void this.paintMics();
     for (const node of this.el.querySelectorAll<HTMLElement>("[data-sec]")) node.classList.toggle("on", node.dataset.sec === section);
     const measure = () => {
       for (const node of this.el.querySelectorAll<HTMLElement>(".ssec.on")) node.classList.toggle("long", node.scrollHeight > node.clientHeight + 4);
@@ -1207,6 +1208,7 @@ class SettingsPage implements Page {
              <div class="srow stack"><div><b>Su voz</b><small>Las voces en vivo de Gemini.</small></div><div class="srow chips flat" id="s-live-voice"></div></div>
              <div class="srow"><div><b>Voz local</b><small id="s-voice"></small></div><button class="ghost" id="s-voice-get">Descargar</button></div>
              <div class="bar" id="s-voice-bar"><i></i></div>
+             <div class="srow stack"><div><b>Micrófono</b><small id="s-mic-help">El que usa Cocuyo para oírte. Si no te escucha, prueba con otro.</small></div><div class="srow chips flat" id="s-mic"></div></div>
            </div>`,
         ) +
         section(
@@ -1483,6 +1485,12 @@ class SettingsPage implements Page {
     toggle("#s-agent", "aiAgent");
     toggle("#s-agent-hands", "agentHands");
     toggle("#s-live", "aiLive");
+    q("#s-mic").addEventListener("click", async (e) => {
+      const target = (e.target as HTMLElement).closest<HTMLElement>("[data-mic]");
+      if (!target) return;
+      await this.save({ mic: target.dataset.mic ?? "" });
+      void this.paintMics();
+    });
     q("#s-live-voice").addEventListener("click", (e) => {
       const target = (e.target as HTMLElement).closest<HTMLElement>("[data-live]");
       if (target) void this.save({ liveVoice: target.dataset.live ?? "Charon" });
@@ -1877,6 +1885,21 @@ class SettingsPage implements Page {
           `<div class="mcp ${server.ok ? "ok" : "bad"}"><i></i><div><b>${esc(server.name)}</b><small>${server.ok ? `${server.tools} herramientas` : esc(server.error ?? "Sin conectar")}</small></div></div>`,
       )
       .join("");
+  }
+
+  private async paintMics() {
+    const mics = await call<{ id: string; nombre: string; windows: boolean }[]>("mic_list", undefined, []);
+    const chosen = this.settings?.mic ?? "";
+    const there = mics.some((mic) => mic.id === chosen);
+    const windows = mics.find((mic) => mic.windows);
+    const chip = (id: string, label: string, on: boolean) => `<button class="chip${on ? " on" : ""}" data-mic="${esc(id)}">${esc(label)}</button>`;
+    this.el.querySelector("#s-mic")!.innerHTML =
+      chip("", windows ? `${tr("El de Windows")} · ${windows.nombre}` : tr("El de Windows"), !chosen || !there) + mics.map((mic) => chip(mic.id, mic.nombre, mic.id === chosen)).join("");
+    this.el.querySelector("#s-mic-help")!.textContent = !mics.length
+      ? "No encuentro ningún micrófono conectado."
+      : chosen && !there
+        ? "El que elegiste no está conectado; mientras tanto uso el de Windows."
+        : "El que usa Cocuyo para oírte. Si no te escucha, prueba con otro.";
   }
 
   private remoteTick = 0;

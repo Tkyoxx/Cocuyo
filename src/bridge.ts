@@ -144,6 +144,7 @@ export interface Settings {
   city: string;
   remoteOn: boolean;
   remoteRelay: string;
+  mic: string;
   name: string;
   padOn: boolean;
   padCombo: number;
@@ -250,6 +251,7 @@ const DEFAULTS: Settings = {
   city: "",
   remoteOn: false,
   remoteRelay: "",
+  mic: "",
   name: "",
   padOn: false,
   padCombo: 0,

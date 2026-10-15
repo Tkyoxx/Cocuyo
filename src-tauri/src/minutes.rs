@@ -155,7 +155,7 @@ fn listen(app: &AppHandle, model: &str, raw: &Path, stop: &AtomicBool) -> Result
             }
         }
     }
-    if let Some(mic) = host.default_input_device() {
+    if let Some(mic) = crate::mic::device(&host) {
         if let Ok(config) = mic.default_input_config() {
             if let Ok(stream) = open_ear(&mic, config, 1, feed.clone()) {
                 ears.push(stream);

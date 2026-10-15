@@ -67,6 +67,7 @@ pub struct Settings {
     pub city: String,
     pub remote_on: bool,
     pub remote_relay: String,
+    pub mic: String,
     pub capture_region: Hotkey,
     pub capture_window: Hotkey,
     pub capture_screen: Hotkey,
@@ -116,6 +117,7 @@ impl Default for Settings {
             agent_confirm: true,
             ai_live: true,
             live_voice: "Charon".into(),
+            mic: String::new(),
             live_model: String::new(),
             extensions: Vec::new(),
             ai_daily: 480,
@@ -195,6 +197,7 @@ pub fn apply(app: &AppHandle) {
     crate::gamelayer::configure(settings.game_overlay);
     crate::tray::relabel();
     crate::cue::attach(app.clone(), &settings.voice);
+    crate::mic::choose(&settings.mic);
     crate::pad::configure(app, settings.pad_on, settings.pad_combo, settings.pad_buttons);
     crate::taskbar::configure(crate::taskbar::Look {
         style: crate::taskbar::Style::from_name(&settings.bar_style),

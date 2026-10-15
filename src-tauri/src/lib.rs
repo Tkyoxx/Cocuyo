@@ -327,6 +327,7 @@ pub fn run() {
             remoto::remoto_estado,
             remoto::remoto_quitar,
             remoto::remoto_crear_punto,
+            mic::mic_list,
         ])
         .setup(|app| {
             let window = app

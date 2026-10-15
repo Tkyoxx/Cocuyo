@@ -24,6 +24,47 @@ static TX: OnceLock<Sender<Command>> = OnceLock::new();
 static LEVEL: AtomicU32 = AtomicU32::new(0);
 static TAP: Mutex<Option<Sender<(u32, Vec<f32>)>>> = Mutex::new(None);
 static RATE: AtomicU32 = AtomicU32::new(0);
+static CHOSEN: Mutex<String> = Mutex::new(String::new());
+
+pub fn choose(id: &str) {
+    *CHOSEN.lock().unwrap() = id.trim().to_string();
+}
+
+pub(crate) fn device(host: &cpal::Host) -> Option<cpal::Device> {
+    let wanted = CHOSEN.lock().unwrap().clone();
+    if !wanted.is_empty() {
+        let found = host.input_devices().ok().into_iter().flatten().find(|mic| mic.id().is_ok_and(|id| id.to_string() == wanted));
+        if found.is_some() {
+            return found;
+        }
+    }
+    host.default_input_device()
+}
+
+#[derive(serde::Serialize)]
+pub struct Mic {
+    id: String,
+    nombre: String,
+    windows: bool,
+}
+
+#[tauri::command]
+pub fn mic_list() -> Vec<Mic> {
+    let host = cpal::default_host();
+    let default = host.default_input_device().and_then(|mic| mic.id().ok()).map(|id| id.to_string());
+    let mut mics: Vec<Mic> = host
+        .input_devices()
+        .into_iter()
+        .flatten()
+        .filter_map(|mic| {
+            let id = mic.id().ok()?.to_string();
+            let nombre = mic.description().map(|about| about.name().to_string()).unwrap_or_else(|_| mic.to_string());
+            Some(Mic { windows: default.as_deref() == Some(id.as_str()), id, nombre })
+        })
+        .collect();
+    mics.sort_by(|a, b| b.windows.cmp(&a.windows).then_with(|| a.nombre.cmp(&b.nombre)));
+    mics
+}
 
 pub fn tap() -> mpsc::Receiver<(u32, Vec<f32>)> {
     let (tx, rx) = mpsc::channel();
@@ -68,9 +109,7 @@ fn push<T: Copy>(data: &[T], channels: usize, buffer: &Buffer, to_f32: impl Fn(T
 }
 
 fn open(buffer: Buffer) -> Result<(cpal::Stream, u32), String> {
-    let device = cpal::default_host()
-        .default_input_device()
-        .ok_or("No hay ningún micrófono conectado.")?;
+    let device = device(&cpal::default_host()).ok_or("No hay ningún micrófono conectado.")?;
     let config = device.default_input_config().map_err(|e| format!("El micrófono no responde: {e}"))?;
     let rate = config.sample_rate();
     RATE.store(rate, Ordering::Relaxed);
