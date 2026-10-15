@@ -56,6 +56,11 @@ const ICONS: Record<string, string> = {
   mute: "M4 10v4h3l5 4V6L7 10H4zM16 9.5l5 5M21 9.5l-5 5",
   search: "M11 4a7 7 0 100 14 7 7 0 000-14zM20 20l-4-4",
   mic: "M12 3a3 3 0 00-3 3v5a3 3 0 006 0V6a3 3 0 00-3-3zM6 11a6 6 0 0012 0M12 17v4M9 21h6",
+  headset: "M4 15v-3a8 8 0 0116 0v3M4 15a2 2 0 002 2h1v-5H6a2 2 0 00-2 2zM20 15a2 2 0 01-2 2h-1v-5h1a2 2 0 012 2z",
+  leave: "M3 14c5-5 13-5 18 0l-2 3-4-1v-3a10 10 0 00-6 0v3l-4 1-2-3z",
+  wave: "M3 12h2l2-5 3 10 3-12 3 9 2-2h3",
+  echo: "M4 15a8 8 0 0116 0M7 15a5 5 0 0110 0M10 15a2 2 0 014 0",
+  hand: "M8 13V6a1.5 1.5 0 013 0v5M11 11V4.5a1.5 1.5 0 013 0V11M14 11V6a1.5 1.5 0 013 0v8a6 6 0 01-6 6h-1a6 6 0 01-5-2.7L3 14a1.5 1.5 0 012.5-1.6L8 15",
   sun: "M12 7a5 5 0 100 10 5 5 0 000-10zM12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4",
   cloud: "M7 18a4 4 0 01-.5-7.97A5.5 5.5 0 0117.2 11.5 3.3 3.3 0 0117 18H7z",
   rain: "M7 15a4 4 0 01-.5-7.97A5.5 5.5 0 0117.2 8.5 3.3 3.3 0 0117 15H7zM8 18l-1 3M12 18l-1 3M16 18l-1 3",
@@ -1713,6 +1718,7 @@ class SettingsPage implements Page {
       try {
         this.note(await call<string>("discord_conectar", { id: dcId.value, secreto: dcSecret.value }));
         dcSecret.value = "";
+        window.dispatchEvent(new CustomEvent("cocuyo-discord"));
       } catch (error) {
         this.note(String(error));
       }
@@ -2612,5 +2618,177 @@ class SettingsPage implements Page {
 }
 
 export const settingsPage = new SettingsPage();
+
+interface DiscordPerson {
+  id: string;
+  nombre: string;
+  silenciado: boolean;
+  ensordecido: boolean;
+  volumen: number;
+  tu: boolean;
+  callado: boolean;
+}
+
+interface DiscordPanel {
+  mute: boolean;
+  deaf: boolean;
+  entrada: number;
+  salida: number;
+  ruido: boolean;
+  eco: boolean;
+  pulsar: boolean;
+  canal: string | null;
+  servidor: string;
+  gente: DiscordPerson[];
+}
+
+let discordTimer = 0;
+let discordBusy = false;
+let discordDragging = false;
+
+const DISCORD_TILES: [string, string, string][] = [
+  ["d-mute", "mic", "Micrófono"],
+  ["d-deaf", "headset", "Ensordecer"],
+  ["d-leave", "leave", "Salir del canal"],
+  ["d-ruido", "wave", "Supresión de ruido"],
+  ["d-eco", "echo", "Cancelar eco"],
+  ["d-pulsar", "hand", "Pulsar para hablar"],
+];
+
+function paintDiscord(el: HTMLElement, panel: DiscordPanel | null, problem = "") {
+  const q = (id: string) => el.querySelector<HTMLElement>(`#${id}`)!;
+  el.classList.toggle("off", !panel);
+  const state = (id: string, on: boolean, yes: string, no: string) => {
+    q(id).classList.toggle("on", on);
+    q(id).querySelector("small")!.textContent = tr(on ? yes : no);
+  };
+  if (!panel) {
+    for (const [id] of DISCORD_TILES) q(id).querySelector("small")!.textContent = "";
+    q("d-chan").textContent = tr(problem || "Discord no está abierto.");
+    q("d-guild").textContent = tr("Ábrelo y aquí verás tu canal.");
+    q("d-people").innerHTML = "";
+    return;
+  }
+  state("d-mute", panel.mute, "Silenciado", "Activo");
+  state("d-deaf", panel.deaf, "Activado", "Apagado");
+  state("d-ruido", panel.ruido, "Activada", "Apagada");
+  state("d-eco", panel.eco, "Activada", "Apagada");
+  state("d-pulsar", panel.pulsar, "Activado", "Detecta tu voz");
+  q("d-leave").classList.toggle("dim", !panel.canal);
+  q("d-leave").querySelector("small")!.textContent = panel.canal ? panel.canal : tr("No estás en un canal");
+  if (!discordDragging) {
+    setSlider(q("d-in"), panel.entrada / 100, panel.entrada);
+    setSlider(q("d-out"), Math.min(1, panel.salida / 200), panel.salida);
+  }
+  q("d-chan").textContent = panel.canal ?? tr("No estás en un canal de voz");
+  q("d-guild").textContent = panel.canal ? panel.servidor : tr("Dile «métete al canal General».");
+  q("d-people").innerHTML = panel.gente
+    .map((p) => {
+      const status = p.ensordecido ? "Ensordecido" : p.silenciado ? "Silenciado" : p.callado ? "Silenciado para ti" : "";
+      const name = p.tu ? `${esc(p.nombre)} <i>${tr("(tú)")}</i>` : esc(p.nombre);
+      const level = p.tu ? "" : `<em>${Math.round(p.volumen)} %</em>`;
+      return `<button class="dp${p.callado ? " quiet" : ""}${p.tu ? " me" : ""}" data-person="${esc(p.id)}" data-level="${p.volumen}"><b>${name}</b><small>${tr(status)}</small>${level}</button>`;
+    })
+    .join("");
+}
+
+function setSlider(slider: HTMLElement, share: number, value: number) {
+  slider.style.setProperty("--v", String(Math.min(1, Math.max(0, share))));
+  slider.querySelector("em")!.textContent = String(Math.round(value));
+}
+
+async function refreshDiscord(el: HTMLElement) {
+  if (discordBusy) return;
+  discordBusy = true;
+  try {
+    paintDiscord(el, await call<DiscordPanel | null>("discord_panel"));
+  } catch (error) {
+    paintDiscord(el, null, String(error));
+  }
+  discordBusy = false;
+}
+
+async function discordDo(el: HTMLElement, host: Host, accion: string, valor?: number, quien?: string) {
+  try {
+    paintDiscord(el, await call<DiscordPanel>("discord_hacer", { accion, valor: valor ?? null, quien: quien ?? null }));
+  } catch (error) {
+    host.say(String(error));
+  }
+}
+
+export const discordPage: Page = {
+  id: "discord",
+  label: "Discord",
+  w: 700,
+  h: 260,
+  html: () =>
+    DISCORD_TILES.map(([id, icon, title]) => `<button class="tile" id="${id}"><span class="ti">${ic(icon)}</span><span><b>${title}</b><small></small></span></button>`).join("") +
+    `<div class="vslider" id="d-in" title="Tu micrófono en Discord"><span class="fill"></span><em></em>${ic("mic")}</div>
+     <div class="vslider" id="d-out" title="Volumen de Discord"><span class="fill"></span><em></em>${ic("volume")}</div>
+     <div class="card dcard">
+       <span class="lbl">Discord</span>
+       <b id="d-chan"></b>
+       <small id="d-guild"></small>
+       <div class="dpeople" id="d-people"></div>
+     </div>`,
+  mount(el, host) {
+    const tiles: [string, string][] = [["d-mute", "mute"], ["d-deaf", "deaf"], ["d-leave", "salir"], ["d-ruido", "ruido"], ["d-eco", "eco"], ["d-pulsar", "pulsar"]];
+    for (const [id, accion] of tiles) el.querySelector(`#${id}`)!.addEventListener("click", () => void discordDo(el, host, accion));
+    for (const [id, accion, top] of [["d-in", "entrada", 100], ["d-out", "salida", 200]] as [string, string, number][]) {
+      const slider = el.querySelector<HTMLElement>(`#${id}`)!;
+      let last = 0;
+      const level = (e: PointerEvent) => {
+        const r = slider.getBoundingClientRect();
+        return Math.min(1, Math.max(0, 1 - (e.clientY - r.top) / r.height));
+      };
+      const drag = (e: PointerEvent, final: boolean) => {
+        const share = level(e);
+        setSlider(slider, share, share * top);
+        const now = performance.now();
+        if (final || now - last > 120) {
+          last = now;
+          void call("discord_hacer", { accion, valor: Math.round(share * top), quien: null }).catch(() => {});
+        }
+      };
+      slider.addEventListener("pointerdown", (e) => {
+        slider.setPointerCapture(e.pointerId);
+        discordDragging = true;
+        drag(e, false);
+      });
+      slider.addEventListener("pointermove", (e) => {
+        if (slider.hasPointerCapture(e.pointerId)) drag(e, false);
+      });
+      slider.addEventListener("pointerup", (e) => {
+        drag(e, true);
+        discordDragging = false;
+      });
+    }
+    const people = el.querySelector<HTMLElement>("#d-people")!;
+    people.addEventListener("click", (e) => {
+      const row = (e.target as HTMLElement).closest<HTMLElement>("[data-person]");
+      if (!row || row.classList.contains("me")) return;
+      void discordDo(el, host, "persona", undefined, row.dataset.person);
+    });
+    people.addEventListener(
+      "wheel",
+      (e) => {
+        const row = (e.target as HTMLElement).closest<HTMLElement>("[data-person]");
+        if (!row || row.classList.contains("me")) return;
+        e.preventDefault();
+        const next = Math.min(200, Math.max(0, Number(row.dataset.level ?? 100) + (e.deltaY < 0 ? 10 : -10)));
+        row.dataset.level = String(next);
+        const em = row.querySelector("em");
+        if (em) em.textContent = `${next} %`;
+        void call("discord_hacer", { accion: "persona", valor: next, quien: row.dataset.person }).catch(() => {});
+      },
+      { passive: false },
+    );
+  },
+  show(el) {
+    void refreshDiscord(el);
+    discordTimer = window.setInterval(() => void refreshDiscord(el), 1500);
+  },
+  hide: () => clearInterval(discordTimer),
+};
 
 export const PAGES: Page[] = [controles, hoy, equipo, red, portapapeles, appsPage, fondos, energia, settingsPage];

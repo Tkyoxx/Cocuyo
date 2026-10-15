@@ -425,7 +425,7 @@ fn words(text: &str) -> Vec<&str> {
     }
 }
 
-fn number_in(tokens: &[&str]) -> Option<(u8, bool)> {
+pub(crate) fn number_in(tokens: &[&str]) -> Option<(u8, bool)> {
     const WORDS: &[(&str, u8)] = &[
         ("cero", 0), ("dos", 2), ("tres", 3), ("cuatro", 4), ("cinco", 5), ("seis", 6), ("siete", 7), ("ocho", 8),
         ("nueve", 9), ("diez", 10), ("quince", 15), ("veinte", 20), ("veinticinco", 25), ("treinta", 30), ("cuarenta", 40),

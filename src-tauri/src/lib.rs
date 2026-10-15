@@ -368,6 +368,8 @@ pub fn run() {
             discord::discord_estado,
             discord::discord_conectar,
             discord::discord_quitar,
+            discord::discord_panel,
+            discord::discord_hacer,
             settings::current_record_dir,
             settings::open_record_dir,
         ])

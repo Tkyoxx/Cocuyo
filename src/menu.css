@@ -2392,3 +2392,98 @@ img.shop-art {
   color: var(--dim);
   font-size: 11.5px;
 }
+
+.page[data-page="discord"] {
+  grid-template-columns: 150px 150px 58px 58px 1fr;
+  grid-template-rows: repeat(3, 58px);
+}
+.page[data-page="discord"] .vslider {
+  cursor: ns-resize;
+  touch-action: none;
+}
+.page[data-page="discord"] .vslider .fill {
+  transition: height 0.12s var(--ui);
+}
+.page[data-page="discord"].off .tile,
+.page[data-page="discord"].off .vslider {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.page[data-page="discord"] .tile.dim {
+  opacity: 0.5;
+}
+.dcard {
+  grid-column: 5;
+  grid-row: 1 / span 3;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  padding: 12px 12px 10px 14px;
+  overflow: hidden;
+}
+.dcard > b {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 650;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.dcard > small {
+  margin-bottom: 6px;
+}
+.dpeople {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.dp {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 8px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--tile);
+  color: inherit;
+  text-align: left;
+  transition: background-color 0.18s var(--ui);
+}
+.dp b {
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.dp b i {
+  color: var(--dim);
+  font-style: normal;
+  font-weight: 500;
+}
+.dp small {
+  grid-column: 1;
+  font-size: 10.5px;
+}
+.dp small:empty {
+  display: none;
+}
+.dp em {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  color: var(--dim);
+  font-style: normal;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.dp.quiet {
+  opacity: 0.55;
+}
+.dp.me {
+  cursor: default;
+}

@@ -3,11 +3,14 @@
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 const REDIRECT: &str = "http://127.0.0.1";
+const LOST: &str = "Discord se desconectó";
+const CLOSED: &str = "Discord no está abierto.";
 
 struct Pipe(File);
 
@@ -16,7 +19,7 @@ impl Pipe {
         (0..10)
             .find_map(|i| OpenOptions::new().read(true).write(true).open(format!(r"\\.\pipe\discord-ipc-{i}")).ok())
             .map(Pipe)
-            .ok_or_else(|| "Discord no está abierto.".to_string())
+            .ok_or_else(|| CLOSED.to_string())
     }
 
     fn send(&mut self, op: u32, body: &Value) -> Result<(), String> {
@@ -25,16 +28,16 @@ impl Pipe {
         frame.extend(op.to_le_bytes());
         frame.extend((text.len() as u32).to_le_bytes());
         frame.extend(text.as_bytes());
-        self.0.write_all(&frame).map_err(|e| format!("Discord: {e}"))
+        self.0.write_all(&frame).map_err(|e| format!("{LOST}: {e}"))
     }
 
     fn receive(&mut self) -> Result<(u32, Value), String> {
         let mut head = [0u8; 8];
-        self.0.read_exact(&mut head).map_err(|e| format!("Discord: {e}"))?;
+        self.0.read_exact(&mut head).map_err(|e| format!("{LOST}: {e}"))?;
         let op = u32::from_le_bytes([head[0], head[1], head[2], head[3]]);
         let length = u32::from_le_bytes([head[4], head[5], head[6], head[7]]) as usize;
         let mut body = vec![0u8; length.min(1 << 20)];
-        self.0.read_exact(&mut body).map_err(|e| format!("Discord: {e}"))?;
+        self.0.read_exact(&mut body).map_err(|e| format!("{LOST}: {e}"))?;
         Ok((op, serde_json::from_slice(&body).unwrap_or(Value::Null)))
     }
 
@@ -44,7 +47,7 @@ impl Pipe {
         loop {
             let (op, message) = self.receive()?;
             if op == 2 {
-                return Err(format!("Discord cerró la conexión: {}", message["message"].as_str().unwrap_or("sin motivo")));
+                return Err(format!("{LOST}: {}", message["message"].as_str().unwrap_or("sin motivo")));
             }
             if message["nonce"].as_str() == Some(nonce.as_str()) {
                 if message["evt"].as_str() == Some("ERROR") {
@@ -149,6 +152,9 @@ fn session(app: &AppHandle) -> Result<Pipe, String> {
         return Err("Discord no aceptó el Client ID.".into());
     }
     let here = ready["data"]["user"]["username"].as_str().unwrap_or("").to_string();
+    if let (Ok(mut me), Some(id)) = (ME.lock(), ready["data"]["user"]["id"].as_str()) {
+        *me = id.to_string();
+    }
     let mut renewed = false;
     if let Some(access) = stored["access"].as_str() {
         if pipe.command("AUTHENTICATE", json!({ "access_token": access })).is_ok() {
@@ -200,11 +206,82 @@ fn session(app: &AppHandle) -> Result<Pipe, String> {
     Ok(pipe)
 }
 
+static LINK: Mutex<Option<Pipe>> = Mutex::new(None);
+static ME: Mutex<String> = Mutex::new(String::new());
+
+fn with<T>(app: &AppHandle, job: impl Fn(&mut Pipe) -> Result<T, String>) -> Result<T, String> {
+    let mut link = LINK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if link.is_none() {
+        *link = Some(session(app)?);
+    }
+    let first = job(link.as_mut().ok_or(CLOSED)?);
+    match first {
+        Err(why) if why.starts_with(LOST) => {
+            *link = None;
+            *link = Some(session(app)?);
+            let again = job(link.as_mut().ok_or(CLOSED)?);
+            if again.as_ref().is_err_and(|why| why.starts_with(LOST)) {
+                *link = None;
+                return Err(CLOSED.into());
+            }
+            again
+        }
+        done => done,
+    }
+}
+
+fn forget_link() {
+    *LINK.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+}
+
+fn pretty(name: &str) -> String {
+    let kept: String = name.chars().map(|c| if c.is_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.' | '\'') { c } else { ' ' }).collect();
+    let kept = kept.split_whitespace().collect::<Vec<_>>().join(" ");
+    if kept.is_empty() { name.trim().to_string() } else { kept }
+}
+
+fn voice(pipe: &mut Pipe) -> Result<Value, String> {
+    pipe.command("GET_VOICE_SETTINGS", json!({}))
+}
+
+fn here(pipe: &mut Pipe) -> Result<Value, String> {
+    pipe.command("GET_SELECTED_VOICE_CHANNEL", json!({}))
+}
+
+fn person_name(state: &Value) -> String {
+    let user = &state["user"];
+    let name = state["nick"].as_str().filter(|n| !n.is_empty()).or(user["global_name"].as_str()).or(user["username"].as_str()).unwrap_or("alguien");
+    pretty(name)
+}
+
+fn me() -> String {
+    ME.lock().map(|me| me.clone()).unwrap_or_default()
+}
+
+fn find_person<'a>(channel: &'a Value, name: &str) -> Option<&'a Value> {
+    let mine = me();
+    channel["voice_states"]
+        .as_array()?
+        .iter()
+        .filter(|state| state["user"]["id"].as_str() != Some(mine.as_str()))
+        .map(|state| {
+            let user = &state["user"];
+            let names = [person_name(state), user["global_name"].as_str().unwrap_or("").to_string(), user["username"].as_str().unwrap_or("").to_string()];
+            let score = names.iter().filter(|n| !n.is_empty()).map(|n| crate::intent::similarity(name, n).max(crate::intent::covers(name, n))).fold(0.0f32, f32::max);
+            (score, state)
+        })
+        .filter(|(score, _)| *score >= 0.55)
+        .max_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(_, state)| state)
+}
+
 fn toggle(app: &AppHandle, field: &str, wanted: Option<bool>) -> Result<String, String> {
-    let mut pipe = session(app)?;
-    let now = pipe.command("GET_VOICE_SETTINGS", json!({}))?;
-    let value = wanted.unwrap_or(!now[field].as_bool().unwrap_or(false));
-    pipe.command("SET_VOICE_SETTINGS", json!({ field: value }))?;
+    let value = with(app, |pipe| {
+        let now = voice(pipe)?;
+        let value = wanted.unwrap_or(!now[field].as_bool().unwrap_or(false));
+        pipe.command("SET_VOICE_SETTINGS", json!({ field: value }))?;
+        Ok(value)
+    })?;
     Ok(match (field, value) {
         ("mute", true) => "Silenciado en Discord.",
         ("mute", false) => "Micrófono activo en Discord.",
@@ -214,32 +291,264 @@ fn toggle(app: &AppHandle, field: &str, wanted: Option<bool>) -> Result<String, 
     .into())
 }
 
-fn join(app: &AppHandle, name: &str) -> Result<String, String> {
-    let mut pipe = session(app)?;
+fn guild_name(pipe: &mut Pipe, guild: &str) -> String {
+    pipe.command("GET_GUILD", json!({ "guild_id": guild })).ok().and_then(|g| g["name"].as_str().map(pretty)).unwrap_or_default()
+}
+
+fn channels(pipe: &mut Pipe, kind: u64) -> Result<Vec<(String, String, String)>, String> {
+    let current = here(pipe).ok().and_then(|c| c["guild_id"].as_str().map(str::to_string)).unwrap_or_default();
     let guilds = pipe.command("GET_GUILDS", json!({}))?;
-    let mut best: Option<(f32, String, String)> = None;
-    for guild in guilds["guilds"].as_array().into_iter().flatten().take(40) {
-        let Some(guild_id) = guild["id"].as_str() else { continue };
-        let Ok(channels) = pipe.command("GET_CHANNELS", json!({ "guild_id": guild_id })) else { continue };
-        for channel in channels["channels"].as_array().into_iter().flatten().filter(|c| c["type"].as_u64() == Some(2)) {
-            let (Some(id), Some(title)) = (channel["id"].as_str(), channel["name"].as_str()) else { continue };
-            let score = crate::intent::similarity(name, title);
-            if best.as_ref().is_none_or(|(top, _, _)| score > *top) {
-                best = Some((score, id.to_string(), title.to_string()));
+    let mut ids: Vec<String> = guilds["guilds"].as_array().into_iter().flatten().filter_map(|g| g["id"].as_str().map(str::to_string)).take(60).collect();
+    if let Some(at) = ids.iter().position(|id| *id == current) {
+        let id = ids.remove(at);
+        ids.insert(0, id);
+    }
+    let mut found = Vec::new();
+    for guild in ids {
+        let Ok(list) = pipe.command("GET_CHANNELS", json!({ "guild_id": guild })) else { continue };
+        for channel in list["channels"].as_array().into_iter().flatten().filter(|c| c["type"].as_u64() == Some(kind)) {
+            if let (Some(id), Some(name)) = (channel["id"].as_str(), channel["name"].as_str()) {
+                found.push((id.to_string(), name.to_string(), guild.clone()));
             }
         }
     }
-    let (score, id, title) = best.ok_or("No encontré canales de voz en tus servidores.")?;
-    if score < 0.6 {
-        return Err(format!("No encontré un canal de voz llamado «{name}»."));
-    }
-    pipe.command("SELECT_VOICE_CHANNEL", json!({ "channel_id": id, "force": true }))?;
-    Ok(format!("Entraste a «{title}»."))
+    Ok(found)
+}
+
+fn best_channel(list: Vec<(String, String, String)>, name: &str, current: &str) -> Option<(f32, String, String, String)> {
+    list.into_iter()
+        .map(|(id, title, guild)| {
+            let plain = pretty(&title);
+            let mut score = crate::intent::similarity(name, &plain).max(crate::intent::covers(name, &plain));
+            if guild == current {
+                score += 0.08;
+            }
+            (score, id, title, guild)
+        })
+        .max_by(|a, b| a.0.total_cmp(&b.0))
+}
+
+fn join(app: &AppHandle, name: &str) -> Result<String, String> {
+    with(app, |pipe| {
+        let current = here(pipe).ok().and_then(|c| c["guild_id"].as_str().map(str::to_string)).unwrap_or_default();
+        let (score, id, title, _) = best_channel(channels(pipe, 2)?, name, &current).ok_or("No encontré canales de voz en tus servidores.")?;
+        if score < 0.6 {
+            return Err(format!("No encontré un canal de voz llamado «{name}»."));
+        }
+        pipe.command("SELECT_VOICE_CHANNEL", json!({ "channel_id": id, "force": true }))?;
+        Ok(format!("Entraste a «{}».", pretty(&title)))
+    })
 }
 
 fn leave(app: &AppHandle) -> Result<String, String> {
-    session(app)?.command("SELECT_VOICE_CHANNEL", json!({ "channel_id": Value::Null }))?;
+    with(app, |pipe| pipe.command("SELECT_VOICE_CHANNEL", json!({ "channel_id": Value::Null })))?;
     Ok("Saliste del canal de voz.".into())
+}
+
+fn open_text(app: &AppHandle, name: &str) -> Result<String, String> {
+    let (id, title, guild) = with(app, |pipe| {
+        let current = here(pipe).ok().and_then(|c| c["guild_id"].as_str().map(str::to_string)).unwrap_or_default();
+        let (score, id, title, guild) = best_channel(channels(pipe, 0)?, name, &current).ok_or("No encontré canales de texto en tus servidores.")?;
+        if score < 0.6 {
+            return Err(format!("No encontré un canal de texto llamado «{name}»."));
+        }
+        let _ = pipe.command("SELECT_TEXT_CHANNEL", json!({ "channel_id": id }));
+        Ok((id, title, guild))
+    })?;
+    let _ = crate::apps::open(&format!("discord://-/channels/{guild}/{id}"));
+    Ok(format!("Abriendo «{}» en Discord.", pretty(&title)))
+}
+
+fn who(app: &AppHandle) -> Result<String, String> {
+    let (channel, mine, server) = with(app, |pipe| {
+        let channel = here(pipe)?;
+        let mine = voice(pipe)?;
+        let server = channel["guild_id"].as_str().map(|g| guild_name(pipe, g)).unwrap_or_default();
+        Ok((channel, mine, server))
+    })?;
+    if channel.is_null() || channel["id"].is_null() {
+        return Ok("No estás en ningún canal de voz.".into());
+    }
+    let mine_id = me();
+    let title = pretty(channel["name"].as_str().unwrap_or(""));
+    let others: Vec<&Value> = channel["voice_states"].as_array().into_iter().flatten().filter(|s| s["user"]["id"].as_str() != Some(mine_id.as_str())).collect();
+    let rows: Vec<Value> = channel["voice_states"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|state| {
+            let flags = &state["voice_state"];
+            let status = if flags["self_deaf"].as_bool() == Some(true) || flags["deaf"].as_bool() == Some(true) {
+                "Ensordecido"
+            } else if flags["self_mute"].as_bool() == Some(true) || flags["mute"].as_bool() == Some(true) || state["mute"].as_bool() == Some(true) {
+                "Silenciado"
+            } else {
+                "Hablando libre"
+            };
+            let name = if state["user"]["id"].as_str() == Some(mine_id.as_str()) { format!("{} (tú)", person_name(state)) } else { person_name(state) };
+            json!({ "texto": name, "valor": crate::i18n::tr(status) })
+        })
+        .collect();
+    crate::scripts::show_card(app, "Discord", &json!({ "titulo": title, "texto": server, "icono": "🎧", "filas": rows, "segundos": 25 }));
+    let names: Vec<String> = others.iter().map(|s| person_name(s)).collect();
+    let mut said = match names.len() {
+        0 => format!("Estás solo en «{title}»."),
+        1 => format!("Estás en «{title}» con {}.", names[0]),
+        _ => format!("Estás en «{title}» con {} y {}.", names[..names.len() - 1].join(", "), names[names.len() - 1]),
+    };
+    said.truncate(said.trim_end().len());
+    let deaf = if mine["deaf"].as_bool() == Some(true) { " Estás ensordecido." } else { "" };
+    let tail = if mine["mute"].as_bool() == Some(true) { format!(" Tienes el micrófono silenciado.{deaf}") } else { deaf.to_string() };
+    said = format!("{}{tail}", said.trim_end_matches(&['.'][..]).to_string() + ".");
+    Ok(said)
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum Side {
+    Out,
+    In,
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum Change {
+    Set(u8),
+    Up,
+    Down,
+}
+
+fn changed(now: f64, change: Change, top: f64, step: f64) -> f64 {
+    match change {
+        Change::Set(value) => f64::from(value).min(top),
+        Change::Up => (now + step).min(top),
+        Change::Down => (now - step).max(0.0),
+    }
+}
+
+fn set_volume(app: &AppHandle, side: Side, change: Change) -> Result<String, String> {
+    let level = with(app, |pipe| {
+        let now = voice(pipe)?;
+        let key = if side == Side::In { "input" } else { "output" };
+        let level = changed(now[key]["volume"].as_f64().unwrap_or(100.0), change, if side == Side::In { 100.0 } else { 200.0 }, 15.0).round();
+        pipe.command("SET_VOICE_SETTINGS", json!({ key: { "volume": level } }))?;
+        Ok(level)
+    })?;
+    Ok(match side {
+        Side::In => format!("Tu micrófono en Discord al {level} %."),
+        Side::Out => format!("Discord al {level} %."),
+    })
+}
+
+fn person(app: &AppHandle, name: &str, change: Option<Change>, mute: Option<bool>) -> Result<String, String> {
+    let (who, level, muted) = with(app, |pipe| {
+        let channel = here(pipe)?;
+        if channel.is_null() || channel["id"].is_null() {
+            return Err("No estás en ningún canal de voz.".into());
+        }
+        let state = find_person(&channel, name).ok_or_else(|| format!("No veo a «{name}» en tu canal."))?;
+        let id = state["user"]["id"].as_str().unwrap_or("").to_string();
+        let mut args = json!({ "user_id": id });
+        let mut level = state["volume"].as_f64().unwrap_or(100.0);
+        if let Some(change) = change {
+            level = changed(level, change, 200.0, 25.0).round();
+            args["volume"] = json!(level);
+        }
+        if let Some(mute) = mute {
+            args["mute"] = json!(mute);
+        }
+        pipe.command("SET_USER_VOICE_SETTINGS", args)?;
+        Ok((person_name(state), level, mute))
+    })?;
+    Ok(match muted {
+        Some(true) => format!("Silenciaste a {who} solo para ti."),
+        Some(false) => format!("Ya oyes a {who}."),
+        None => format!("{who} al {level} %, solo para ti."),
+    })
+}
+
+fn talk_mode(app: &AppHandle, push: bool) -> Result<String, String> {
+    let keys = with(app, |pipe| {
+        let now = voice(pipe)?;
+        let mut mode = now["mode"].clone();
+        if !mode.is_object() {
+            mode = json!({});
+        }
+        mode["type"] = json!(if push { "PUSH_TO_TALK" } else { "VOICE_ACTIVITY" });
+        pipe.command("SET_VOICE_SETTINGS", json!({ "mode": mode }))?;
+        Ok(now["mode"]["shortcut"].as_array().map(|keys| keys.iter().filter_map(|k| k["name"].as_str()).map(str::to_uppercase).collect::<Vec<_>>().join("+")).unwrap_or_default())
+    })?;
+    Ok(match (push, keys.is_empty()) {
+        (true, false) => format!("Pulsar para hablar activado en Discord. La tecla es {keys}."),
+        (true, true) => "Pulsar para hablar activado en Discord. Ponle una tecla en sus ajustes de voz.".into(),
+        (false, _) => "Discord vuelve a detectar tu voz solo.".into(),
+    })
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum Filter {
+    Noise,
+    Echo,
+    Gain,
+}
+
+fn filter(app: &AppHandle, which: Filter, on: bool) -> Result<String, String> {
+    let key = match which {
+        Filter::Noise => "noise_suppression",
+        Filter::Echo => "echo_cancellation",
+        Filter::Gain => "automatic_gain_control",
+    };
+    with(app, |pipe| pipe.command("SET_VOICE_SETTINGS", json!({ key: on })))?;
+    Ok(match (which, on) {
+        (Filter::Noise, true) => "Supresión de ruido de Discord activada.",
+        (Filter::Noise, false) => "Supresión de ruido de Discord apagada.",
+        (Filter::Echo, true) => "Cancelación de eco de Discord activada.",
+        (Filter::Echo, false) => "Cancelación de eco de Discord apagada.",
+        (Filter::Gain, true) => "Control de ganancia de Discord activado.",
+        (Filter::Gain, false) => "Control de ganancia de Discord apagado.",
+    }
+    .into())
+}
+
+fn device(app: &AppHandle, side: Side, name: &str) -> Result<String, String> {
+    let chosen = with(app, |pipe| {
+        let now = voice(pipe)?;
+        let key = if side == Side::In { "input" } else { "output" };
+        let (score, id, title) = now[key]["available_devices"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|d| d["id"].as_str() != Some("default"))
+            .filter_map(|d| {
+                let title = d["name"].as_str()?.to_string();
+                let score = crate::intent::similarity(name, &title).max(crate::intent::covers(name, &title));
+                Some((score, d["id"].as_str()?.to_string(), title))
+            })
+            .max_by(|a, b| a.0.total_cmp(&b.0))
+            .ok_or("Discord no me mostró sus dispositivos.")?;
+        if score < 0.5 {
+            return Err(format!("No encontré «{name}» en los dispositivos de Discord."));
+        }
+        pipe.command("SET_VOICE_SETTINGS", json!({ key: { "device_id": id } }))?;
+        Ok(title)
+    })?;
+    Ok(match side {
+        Side::In => format!("Discord ahora te escucha por {chosen}."),
+        Side::Out => format!("Discord ahora suena por {chosen}."),
+    })
+}
+
+fn invite(app: &AppHandle) -> Result<String, String> {
+    let (code, title) = with(app, |pipe| {
+        let channel = here(pipe)?;
+        let id = channel["id"].as_str().ok_or("Métete primero a un canal de voz y te paso su invitación.")?.to_string();
+        let made = pipe.command("CREATE_CHANNEL_INVITE", json!({ "channel_id": id }))?;
+        Ok((made["code"].as_str().unwrap_or("").to_string(), pretty(channel["name"].as_str().unwrap_or(""))))
+    })?;
+    if code.is_empty() {
+        return Err("Discord no me dio la invitación.".into());
+    }
+    crate::clip::ignore_own_changes();
+    crate::inject::set_clipboard_text(&format!("https://discord.gg/{code}"));
+    Ok(format!("Copié la invitación a «{title}». Pégala donde quieras."))
 }
 
 #[derive(Debug, PartialEq)]
@@ -249,35 +558,145 @@ pub enum Order {
     Join(String),
     Leave,
     Stream,
+    Who,
+    Volume(Side, Change),
+    Person(String, Option<Change>, Option<bool>),
+    PushToTalk(bool),
+    Filter(Filter, bool),
+    Device(Side, String),
+    Text(String),
+    Invite,
+}
+
+fn cut_tail(text: &str) -> String {
+    let mut text = format!(" {text} ");
+    for tail in [" en discord ", " de discord ", " del discord ", " on discord ", " no discord ", " por favor ", " porfa "] {
+        text = text.replace(tail, " ");
+    }
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn change_in(tokens: &[&str], up: bool, down: bool) -> Option<Change> {
+    match crate::intent::number_in(tokens) {
+        Some((value, _)) => Some(Change::Set(value)),
+        None if up => Some(Change::Up),
+        None if down => Some(Change::Down),
+        None => None,
+    }
 }
 
 pub fn understand(spoken: &str) -> Option<Order> {
     let clean = crate::intent::normalize(spoken);
-    let has = |options: &[&str]| options.iter().any(|option| clean.contains(option));
-    let named = clean.contains("discord");
-    if has(&["desmuteame", "desmutame", "desmutea", "quitame el silencio", "activa mi microfono", "prende mi microfono", "unmute me", "desmuta"]) {
-        return Some(Order::Mute(Some(false)));
-    }
-    if has(&["muteame", "mutame", "silenciame", "mute me"]) || (named && has(&["silencia", "mutea", "mute"])) {
-        return Some(Order::Mute(Some(true)));
-    }
-    if has(&["desensordeceme", "quitame lo sordo", "undeafen", "ya quiero oir"]) {
-        return Some(Order::Deaf(Some(false)));
-    }
-    if has(&["ensordeceme", "deafen me", "no quiero oir a nadie"]) || (named && has(&["ensordece", "deafen"])) {
-        return Some(Order::Deaf(Some(true)));
-    }
-    if has(&["sal del canal", "salte del canal", "salir del canal", "desconectame de discord", "desconectate de discord", "cuelga en discord", "sal de la llamada", "leave the channel", "leave voice", "sai do canal"]) {
+    let clean = clean.split_whitespace().collect::<Vec<_>>().join(" ");
+    let padded = format!(" {clean} ");
+    let has = |options: &[&str]| options.iter().any(|option| padded.contains(option));
+    let named = has(&[" discord "]);
+    let off = has(&[" quita ", " quitale ", " desactiva ", " apaga ", " sin ", " off ", " disable ", " turn off ", " desliga "]);
+    let tokens: Vec<&str> = clean.split_whitespace().collect();
+    if has(&[" sal del canal", " salte del canal", " salir del canal", " desconectame de discord", " desconectate de discord", " cuelga en discord", " sal de la llamada", " leave the channel", " leave voice", " sai do canal"]) {
         return Some(Order::Leave);
     }
-    if named && has(&["transmite", "transmitir", "comparte la pantalla", "go live", "stream"]) {
+    if named && has(&[" transmite", " transmitir", " comparte la pantalla", " compartir pantalla", " go live", " stream"]) {
         return Some(Order::Stream);
     }
-    const LEADS: [&str; 9] = ["metete al canal ", "entra al canal ", "unete al canal ", "conectate al canal ", "metete en el canal ", "entra en el canal ", "join the channel ", "join channel ", "entra no canal "];
-    let lead = LEADS.iter().find_map(|lead| clean.find(lead).map(|at| at + lead.len()))?;
-    let name = clean[lead..].replace("de voz", "").replace("en discord", "").replace("de discord", "");
-    let name = name.trim();
-    (!name.is_empty()).then(|| Order::Join(name.to_string()))
+    if has(&[" en que canal estoy", " quien esta en el canal", " quienes estan en el canal", " quien esta en discord", " quienes estan en discord", " quien esta conmigo en discord", " estoy silenciado", " estoy muteado", " estoy ensordecido", " who is in the channel", " quem esta no canal"]) {
+        return Some(Order::Who);
+    }
+    if has(&[" invitacion al canal", " invitacion del canal", " invitacion de discord", " link del canal", " enlace del canal", " link de discord", " invite link", " convite do canal"]) {
+        return Some(Order::Invite);
+    }
+    for lead in [" abre el canal de texto ", " abreme el canal de texto ", " ve al canal de texto ", " entra al canal de texto ", " abre el chat ", " abreme el chat ", " open the text channel "] {
+        if let Some(at) = padded.find(lead) {
+            let name = cut_tail(&padded[at + lead.len()..]);
+            if !name.is_empty() {
+                return Some(Order::Text(name));
+            }
+        }
+    }
+    if named {
+        if let Some(at) = padded.find(" abre el canal ") {
+            let name = cut_tail(&padded[at + " abre el canal ".len()..]);
+            if !name.is_empty() {
+                return Some(Order::Text(name));
+            }
+        }
+    }
+    if has(&[" pulsar para hablar", " presionar para hablar", " push to talk", " apertar para falar"]) {
+        return Some(Order::PushToTalk(!off));
+    }
+    if has(&[" deteccion de voz", " activacion por voz", " voice activity", " deteccao de voz"]) {
+        return Some(Order::PushToTalk(off));
+    }
+    if named {
+        if has(&[" supresion de ruido", " supresor de ruido", " quitar el ruido", " krisp", " noise suppression", " supressao de ruido"]) {
+            return Some(Order::Filter(Filter::Noise, !off));
+        }
+        if has(&[" cancelacion de eco", " cancelar el eco", " echo cancellation", " cancelamento de eco"]) {
+            return Some(Order::Filter(Filter::Echo, !off));
+        }
+        if has(&[" control de ganancia", " ganancia automatica", " gain control", " controle de ganho"]) {
+            return Some(Order::Filter(Filter::Gain, !off));
+        }
+        const DEVICE_IN: [&str; 6] = [" usa el microfono ", " usa el mic ", " cambia el microfono a ", " pon el microfono ", " escuchame por el ", " use the mic "];
+        const DEVICE_OUT: [&str; 6] = [" saca el sonido por ", " suena por ", " cambia la salida a ", " usa la salida ", " usa los audifonos ", " use the speakers "];
+        for (side, leads) in [(Side::In, &DEVICE_IN), (Side::Out, &DEVICE_OUT)] {
+            for lead in leads.iter() {
+                if let Some(at) = padded.find(lead) {
+                    let name = cut_tail(&padded[at + lead.len()..]);
+                    let name = if *lead == " usa los audifonos " { format!("audifonos {name}") } else { name };
+                    if !name.trim().is_empty() {
+                        return Some(Order::Device(side, name.trim().to_string()));
+                    }
+                }
+            }
+        }
+        const PEOPLE: [(&str, i8); 12] = [
+            (" baja a ", -1), (" bajale a ", -1), (" sube a ", 1), (" subele a ", 1), (" pon a ", 0), (" deja a ", 0), (" silencia a ", 2), (" mutea a ", 2), (" mutealo a ", 2),
+            (" desmutea a ", 3), (" desilencia a ", 3), (" quitale el silencio a ", 3),
+        ];
+        for (lead, kind) in PEOPLE {
+            if let Some(at) = padded.find(lead) {
+                let rest = cut_tail(&padded[at + lead.len()..]);
+                let words: Vec<&str> = rest.split_whitespace().collect();
+                let end = words.iter().position(|w| matches!(*w, "al" | "a" | "en" | "hasta" | "to")).unwrap_or(words.len());
+                let name = words[..end].join(" ");
+                if name.is_empty() || name == "discord" {
+                    continue;
+                }
+                return Some(match kind {
+                    2 => Order::Person(name, None, Some(true)),
+                    3 => Order::Person(name, None, Some(false)),
+                    _ => Order::Person(name, change_in(&words[end..], kind > 0, kind < 0).or(Some(if kind > 0 { Change::Up } else { Change::Down })), None),
+                });
+            }
+        }
+        let up = has(&[" sube", " subele", " mas duro", " mas alto", " louder", " aumenta"]);
+        let down = has(&[" baja", " bajale", " mas bajo", " mas suave", " quieter", " diminui"]);
+        let said_level = crate::intent::number_in(&tokens).is_some_and(|(_, level)| level) && has(&[" microfono", " mic ", " microphone", " microfone", " volumen", " volume"]);
+        let level = has(&[" volumen", " volume"]) || up || down || said_level;
+        if level && !has(&[" silencia", " mute"]) {
+            let side = if has(&[" microfono", " mic ", " microphone", " microfone"]) { Side::In } else { Side::Out };
+            if let Some(change) = change_in(&tokens, up, down) {
+                return Some(Order::Volume(side, change));
+            }
+        }
+    }
+    if has(&[" desmuteame", " desmutame", " desmutea", " quitame el silencio", " activa mi microfono", " prende mi microfono", " unmute me", " desmuta"]) {
+        return Some(Order::Mute(Some(false)));
+    }
+    if has(&[" muteame", " mutame", " silenciame", " mute me"]) || (named && has(&[" silencia", " mutea", " mute"])) {
+        return Some(Order::Mute(Some(true)));
+    }
+    if has(&[" desensordeceme", " quitame lo sordo", " undeafen", " ya quiero oir"]) {
+        return Some(Order::Deaf(Some(false)));
+    }
+    if has(&[" ensordeceme", " deafen me", " no quiero oir a nadie"]) || (named && has(&[" ensordece", " deafen"])) {
+        return Some(Order::Deaf(Some(true)));
+    }
+    const LEADS: [&str; 9] = [" metete al canal ", " entra al canal ", " unete al canal ", " conectate al canal ", " metete en el canal ", " entra en el canal ", " join the channel ", " join channel ", " entra no canal "];
+    let lead = LEADS.iter().find_map(|lead| padded.find(lead).map(|at| at + lead.len()))?;
+    let name = cut_tail(&padded[lead..].replace("de voz", ""));
+    (!name.is_empty()).then_some(Order::Join(name))
 }
 
 pub fn spoken(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
@@ -290,14 +709,22 @@ pub fn spoken(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
         Order::Deaf(wanted) => toggle(app, "deaf", wanted),
         Order::Join(name) => join(app, &name),
         Order::Leave => leave(app),
+        Order::Who => who(app),
+        Order::Volume(side, change) => set_volume(app, side, change),
+        Order::Person(name, change, mute) => person(app, &name, change, mute),
+        Order::PushToTalk(on) => talk_mode(app, on),
+        Order::Filter(which, on) => filter(app, which, on),
+        Order::Device(side, name) => device(app, side, &name),
+        Order::Text(name) => open_text(app, &name),
+        Order::Invite => invite(app),
         Order::Stream => Err("Discord no deja empezar a transmitir desde fuera. Pídeselo al modo agente: «encárgate de transmitir mi pantalla en Discord».".into()),
     })
 }
 
 #[cfg(debug_assertions)]
 pub fn probe(app: &AppHandle) -> String {
-    match session(app) {
-        Ok(mut pipe) => format!("conectado: {:?}", pipe.command("GET_SELECTED_VOICE_CHANNEL", json!({})).map(|c| c["name"].clone())),
+    match with(app, panel) {
+        Ok(panel) => format!("conectado: canal {:?}, {} personas, mute {}, salida {}", panel.canal, panel.gente.len(), panel.mute, panel.salida),
         Err(e) => format!("falló: {e}"),
     }
 }
@@ -314,6 +741,120 @@ pub fn discord_estado(app: AppHandle) -> Estado {
     Estado { configurado: stored["client_id"].as_str().is_some_and(|id| !id.is_empty()), conectado: stored["access"].is_string() }
 }
 
+#[derive(serde::Serialize)]
+pub struct Persona {
+    id: String,
+    nombre: String,
+    silenciado: bool,
+    ensordecido: bool,
+    volumen: f64,
+    tu: bool,
+    callado: bool,
+}
+
+#[derive(serde::Serialize)]
+pub struct Panel {
+    mute: bool,
+    deaf: bool,
+    entrada: f64,
+    salida: f64,
+    ruido: bool,
+    eco: bool,
+    pulsar: bool,
+    canal: Option<String>,
+    servidor: String,
+    gente: Vec<Persona>,
+}
+
+fn panel(pipe: &mut Pipe) -> Result<Panel, String> {
+    let settings = voice(pipe)?;
+    let channel = here(pipe)?;
+    let mine = me();
+    let inside = channel["id"].is_string();
+    let server = if inside { channel["guild_id"].as_str().map(|g| guild_name(pipe, g)).unwrap_or_default() } else { String::new() };
+    let gente = channel["voice_states"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|state| {
+            let flags = &state["voice_state"];
+            let yes = |key: &str| flags[key].as_bool() == Some(true);
+            Persona {
+                id: state["user"]["id"].as_str().unwrap_or("").to_string(),
+                nombre: person_name(state),
+                silenciado: yes("self_mute") || yes("mute"),
+                ensordecido: yes("self_deaf") || yes("deaf"),
+                volumen: state["volume"].as_f64().unwrap_or(100.0).round(),
+                tu: state["user"]["id"].as_str() == Some(mine.as_str()),
+                callado: state["mute"].as_bool() == Some(true),
+            }
+        })
+        .collect();
+    Ok(Panel {
+        mute: settings["mute"].as_bool().unwrap_or(false),
+        deaf: settings["deaf"].as_bool().unwrap_or(false),
+        entrada: settings["input"]["volume"].as_f64().unwrap_or(100.0).round(),
+        salida: settings["output"]["volume"].as_f64().unwrap_or(100.0).round(),
+        ruido: settings["noise_suppression"].as_bool().unwrap_or(false),
+        eco: settings["echo_cancellation"].as_bool().unwrap_or(false),
+        pulsar: settings["mode"]["type"].as_str() == Some("PUSH_TO_TALK"),
+        canal: inside.then(|| pretty(channel["name"].as_str().unwrap_or(""))),
+        servidor: server,
+        gente,
+    })
+}
+
+#[tauri::command]
+pub async fn discord_panel(app: AppHandle) -> Result<Option<Panel>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if !load(&app)["access"].is_string() {
+            return Ok(None);
+        }
+        with(&app, panel).map(Some)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn discord_hacer(app: AppHandle, accion: String, valor: Option<f64>, quien: Option<String>) -> Result<Panel, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        with(&app, |pipe| {
+            let now = voice(pipe)?;
+            let flip = |key: &str| !now[key].as_bool().unwrap_or(false);
+            match accion.as_str() {
+                "mute" => drop(pipe.command("SET_VOICE_SETTINGS", json!({ "mute": flip("mute") }))?),
+                "deaf" => drop(pipe.command("SET_VOICE_SETTINGS", json!({ "deaf": flip("deaf") }))?),
+                "ruido" => drop(pipe.command("SET_VOICE_SETTINGS", json!({ "noise_suppression": flip("noise_suppression") }))?),
+                "eco" => drop(pipe.command("SET_VOICE_SETTINGS", json!({ "echo_cancellation": flip("echo_cancellation") }))?),
+                "pulsar" => {
+                    let mut mode = now["mode"].clone();
+                    let push = mode["type"].as_str() != Some("PUSH_TO_TALK");
+                    mode["type"] = json!(if push { "PUSH_TO_TALK" } else { "VOICE_ACTIVITY" });
+                    drop(pipe.command("SET_VOICE_SETTINGS", json!({ "mode": mode }))?);
+                }
+                "entrada" => drop(pipe.command("SET_VOICE_SETTINGS", json!({ "input": { "volume": valor.unwrap_or(100.0).clamp(0.0, 100.0).round() } }))?),
+                "salida" => drop(pipe.command("SET_VOICE_SETTINGS", json!({ "output": { "volume": valor.unwrap_or(100.0).clamp(0.0, 200.0).round() } }))?),
+                "salir" => drop(pipe.command("SELECT_VOICE_CHANNEL", json!({ "channel_id": Value::Null }))?),
+                "persona" => {
+                    let id = quien.clone().unwrap_or_default();
+                    let channel = here(pipe)?;
+                    let state = channel["voice_states"].as_array().into_iter().flatten().find(|s| s["user"]["id"].as_str() == Some(id.as_str())).ok_or("Esa persona ya no está en el canal.")?;
+                    let args = match valor {
+                        Some(level) => json!({ "user_id": id, "volume": level.clamp(0.0, 200.0).round() }),
+                        None => json!({ "user_id": id, "mute": state["mute"].as_bool() != Some(true) }),
+                    };
+                    drop(pipe.command("SET_USER_VOICE_SETTINGS", args)?);
+                }
+                other => return Err(format!("No sé hacer «{other}» en Discord.")),
+            }
+            panel(pipe)
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub async fn discord_conectar(app: AppHandle, id: String, secreto: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -321,11 +862,11 @@ pub async fn discord_conectar(app: AppHandle, id: String, secreto: String) -> Re
         if !id.chars().all(|c| c.is_ascii_digit()) || id.len() < 15 || secret.len() < 20 {
             return Err("Pega el Client ID (solo números) y el Client Secret de tu app de Discord.".to_string());
         }
+        forget_link();
         keep(&app, &json!({ "client_id": id, "secret": secret }))?;
-        let mut pipe = session(&app)?;
-        let me = pipe.command("GET_SELECTED_VOICE_CHANNEL", json!({})).ok();
-        Ok(match me.and_then(|c| c["name"].as_str().map(str::to_string)) {
-            Some(channel) => format!("Discord conectado. Estás en «{channel}»."),
+        let channel = with(&app, |pipe| here(pipe))?;
+        Ok(match channel["name"].as_str() {
+            Some(name) => format!("Discord conectado. Estás en «{}».", pretty(name)),
             None => "Discord conectado.".to_string(),
         })
     })
@@ -335,6 +876,7 @@ pub async fn discord_conectar(app: AppHandle, id: String, secreto: String) -> Re
 
 #[tauri::command]
 pub fn discord_quitar(app: AppHandle) {
+    forget_link();
     if let Some(path) = vault(&app) {
         let _ = std::fs::remove_file(path);
     }
@@ -355,6 +897,51 @@ mod tests {
         assert_eq!(understand("transmite mi pantalla en discord"), Some(Order::Stream));
         assert_eq!(understand("silencia el volumen"), None);
         assert_eq!(understand("pon salsa"), None);
+        assert_eq!(understand("¿quién está en el canal?"), Some(Order::Who));
+        assert_eq!(understand("¿estoy silenciado?"), Some(Order::Who));
+        assert_eq!(understand("baja el volumen de Discord"), Some(Order::Volume(Side::Out, Change::Down)));
+        assert_eq!(understand("volumen de Discord al 60"), Some(Order::Volume(Side::Out, Change::Set(60))));
+        assert_eq!(understand("sube mi micrófono en Discord"), Some(Order::Volume(Side::In, Change::Up)));
+        assert_eq!(understand("micrófono de Discord al 80"), Some(Order::Volume(Side::In, Change::Set(80))));
+        assert_eq!(understand("baja a JaRRi en Discord"), Some(Order::Person("jarri".into(), Some(Change::Down), None)));
+        assert_eq!(understand("pon a Juan al 30 en Discord"), Some(Order::Person("juan".into(), Some(Change::Set(30)), None)));
+        assert_eq!(understand("silencia a Pedro en Discord"), Some(Order::Person("pedro".into(), None, Some(true))));
+        assert_eq!(understand("desmutea a Pedro en Discord"), Some(Order::Person("pedro".into(), None, Some(false))));
+        assert_eq!(understand("activa pulsar para hablar"), Some(Order::PushToTalk(true)));
+        assert_eq!(understand("quita pulsar para hablar"), Some(Order::PushToTalk(false)));
+        assert_eq!(understand("activa la supresión de ruido de Discord"), Some(Order::Filter(Filter::Noise, true)));
+        assert_eq!(understand("apaga la cancelación de eco en Discord"), Some(Order::Filter(Filter::Echo, false)));
+        assert_eq!(understand("usa el micrófono Fifine en Discord"), Some(Order::Device(Side::In, "fifine".into())));
+        assert_eq!(understand("abre el canal de texto general en Discord"), Some(Order::Text("general".into())));
+        assert_eq!(understand("pásame la invitación al canal"), Some(Order::Invite));
+        assert_eq!(understand("sube el volumen"), None);
+        assert_eq!(understand("activa la supresión de ruido"), None);
+    }
+
+    #[test]
+    fn channel_names_lose_their_decoration() {
+        assert_eq!(pretty("🔊|| Chat de Voz  1 ||🔊"), "Chat de Voz 1");
+        assert_eq!(pretty("🎮"), "🎮");
+        assert_eq!(changed(100.0, Change::Up, 100.0, 15.0), 100.0);
+        assert_eq!(changed(10.0, Change::Down, 200.0, 15.0), 0.0);
+        assert_eq!(changed(50.0, Change::Set(80), 100.0, 15.0), 80.0);
+    }
+
+    #[test]
+    fn people_are_found_by_nick_or_name() {
+        *ME.lock().unwrap() = "1".into();
+        let channel = json!({ "voice_states": [
+            { "nick": "JaRRi", "user": { "id": "2", "username": "thortitas_", "global_name": "Thortitas (Halloween Edition🦇)" } },
+            { "nick": "T O K Y O", "user": { "id": "1", "username": "tkyo_0x" } }
+        ] });
+        assert_eq!(find_person(&channel, "jarri").map(|s| s["user"]["id"].clone()), Some(json!("2")));
+        assert_eq!(find_person(&channel, "thortitas").map(|s| s["user"]["id"].clone()), Some(json!("2")));
+        assert!(find_person(&channel, "tokyo").is_none());
+        assert_eq!(person_name(&channel["voice_states"][0]), "JaRRi");
+    }
+
+    #[test]
+    fn mismatched_accounts_are_explained() {
         assert!(plain("Discord: OAuth2 Error: invalid_request: Missing \"redirect_uri\" in request.").contains("deja una sola: http://127.0.0.1"));
         assert_eq!(plain("Discord no está abierto."), "Discord no está abierto.");
         assert!(other_account("ana_x", "ana").starts_with("Tu app de Discord es de la cuenta «ana_x», pero Discord está abierto con «ana»."));

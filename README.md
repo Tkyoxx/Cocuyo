@@ -312,6 +312,24 @@ Háblale o escríbele a Cocuyo desde el celular, estés donde estés: lo que pid
 - Va cifrado de punta a punta: ECDH P-256 y AES-GCM con las llaves de Windows (CNG) en el PC y WebCrypto en el celular, llaves nuevas en cada conexión y contadores contra repeticiones. El punto de cita es un [Cloudflare Worker](remoto/) de 60 líneas que solo pasa paquetes que no puede abrir. Si prefieres montarlo a mano, `npx wrangler deploy` en `remoto/` y pon su dirección en Ajustes → Remoto.
 - Hasta cinco celulares; cada uno se quita con **Quitar**. Sin puertos abiertos en tu PC: es él quien sale a buscar al punto de cita.
 
+## Discord
+
+Conecta tu propia app de Discord una vez (Ajustes → Juegos te lleva paso a paso; si la creas con la misma cuenta que usas en Discord, se conecta sola, sin ventanas de permiso) y Cocuyo maneja tu voz por el RPC local de Discord, también con un juego a pantalla completa:
+
+| Dices | Hace |
+|---|---|
+| «silénciame en Discord», «desmutéame», «ensordéceme» | Tu micrófono y tu audio |
+| «métete al canal General», «sal del canal» | Entra al canal de voz (prefiere tu servidor actual) o sale |
+| «¿quién está en el canal?», «¿estoy silenciado?» | Te dice con quién estás y te muestra la lista |
+| «volumen de Discord al 60», «sube mi micrófono en Discord» | El volumen de Discord y el de tu micrófono |
+| «baja a Juan en Discord», «pon a Juan al 30 en Discord», «silencia a Juan en Discord» | El volumen de cada persona, solo para ti |
+| «activa pulsar para hablar», «activa la supresión de ruido de Discord», «apaga la cancelación de eco en Discord» | Modos y filtros de voz |
+| «usa el micrófono Fifine en Discord» | Cambia el micrófono o la salida de Discord |
+| «abre el canal de texto general en Discord» | Te lleva a ese canal |
+| «pásame la invitación al canal» | Te deja copiado el enlace de invitación |
+
+Y en la isla aparece la pestaña **Discord**: micrófono, ensordecer, salir del canal, supresión de ruido, eco y pulsar para hablar, tus dos volúmenes, y la gente del canal (clic para silenciar a alguien solo para ti, rueda del mouse para su volumen). Cocuyo nunca escribe ni lee mensajes.
+
 ## En los juegos
 
 - Con un juego a pantalla completa **exclusiva**, Cocuyo no muestra ninguna ventana: Windows mandaría el juego al escritorio. Ahí avisa con un tono al empezar a escucharte y otro al terminar, y dice la respuesta en voz alta.

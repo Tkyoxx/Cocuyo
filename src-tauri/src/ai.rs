@@ -125,6 +125,17 @@ desmutéame en discord
 ensordéceme en discord
 métete al canal <nombre del canal de voz>
 sal del canal
+quién está en el canal
+volumen de discord al <número>
+micrófono de discord al <número>
+baja a <persona> en discord
+pon a <persona> al <número> en discord
+silencia a <persona> en discord
+activa pulsar para hablar
+activa la supresión de ruido de discord
+usa el micrófono <nombre> en discord
+abre el canal de texto <nombre> en discord
+pásame la invitación al canal
 toma una captura
 graba la pantalla
 para de grabar
