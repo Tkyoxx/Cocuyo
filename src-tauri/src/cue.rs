@@ -361,7 +361,7 @@ fn chime(notes: &[(u32, f32, f32)], length_ms: u32) -> Vec<u8> {
         *sample *= n as f32 / tail as f32;
     }
     let peak = mix.iter().fold(0f32, |m, s| m.max(s.abs())).max(1e-6);
-    let samples: Vec<i16> = mix.iter().map(|s| (s / peak * 0.3 * i16::MAX as f32) as i16).collect();
+    let samples: Vec<i16> = mix.iter().map(|s| (s / peak * 0.105 * i16::MAX as f32) as i16).collect();
     let data = samples.len() as u32 * 2;
     let mut out = Vec::with_capacity(44 + data as usize);
     out.extend(b"RIFF");
