@@ -246,15 +246,15 @@ pub const HOTKEY_REGION: usize = 1;
 pub const HOTKEY_WINDOW: usize = 2;
 
 pub const HOTKEY_RECORD: usize = 4;
+pub const HOTKEY_REPLAY: usize = 5;
 
 pub fn hotkey(app: &AppHandle, id: usize) {
-    if id == HOTKEY_RECORD {
-        let said = if crate::grabadora::grabar_estado() {
-            crate::grabadora::grabar_parar().map(|file| format!("Grabación guardada: {}", std::path::Path::new(&file).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or(file)))
-        } else {
-            crate::grabadora::grabar_empezar(app.clone()).map(|_| "Grabando la pantalla. Pulsa el mismo atajo para parar.".to_string())
-        };
-        let _ = app.emit_to(overlay::LABEL, "note", crate::i18n::tr(&said.unwrap_or_else(|why| why)));
+    if id == HOTKEY_RECORD || id == HOTKEY_REPLAY {
+        let said = if id == HOTKEY_RECORD { crate::grabadora::toggle(app) } else { crate::grabadora::replay_hotkey(app) };
+        if !(id == HOTKEY_RECORD && crate::grabadora::recording()) {
+            let _ = app.emit_to(overlay::LABEL, "note", crate::i18n::tr(&said));
+        }
+        crate::cue::answer(&said);
         return;
     }
     if selecting() {

@@ -72,6 +72,25 @@ pub struct Settings {
     pub capture_window: Hotkey,
     pub capture_screen: Hotkey,
     pub capture_record: Hotkey,
+    pub capture_replay: Hotkey,
+    pub rec_dir: Option<PathBuf>,
+    pub rec_profile: String,
+    pub rec_height: u32,
+    pub rec_fps: u32,
+    pub rec_kbps: u32,
+    pub rec_speed: u32,
+    pub rec_codec: String,
+    pub rec_system: bool,
+    pub rec_system_vol: u32,
+    pub rec_mic: bool,
+    pub rec_mic_id: String,
+    pub rec_mic_vol: u32,
+    pub rec_audio_kbps: u32,
+    pub rec_noise: String,
+    pub rec_cursor: bool,
+    pub rec_replay: bool,
+    pub rec_replay_secs: u32,
+    pub rec_monitor: String,
 }
 
 const AI_URL: &str = "https://generativelanguage.googleapis.com/v1beta/openai";
@@ -135,13 +154,32 @@ impl Default for Settings {
             capture_window: DEFAULT_CAPTURES[1],
             capture_screen: DEFAULT_CAPTURES[2],
             capture_record: DEFAULT_CAPTURES[3],
+            capture_replay: DEFAULT_CAPTURES[4],
+            rec_dir: None,
+            rec_profile: "auto".into(),
+            rec_height: 0,
+            rec_fps: 0,
+            rec_kbps: 0,
+            rec_speed: 100,
+            rec_codec: "h264".into(),
+            rec_system: true,
+            rec_system_vol: 100,
+            rec_mic: true,
+            rec_mic_id: String::new(),
+            rec_mic_vol: 100,
+            rec_audio_kbps: 160,
+            rec_noise: String::new(),
+            rec_cursor: true,
+            rec_replay: false,
+            rec_replay_secs: 30,
+            rec_monitor: String::new(),
         }
     }
 }
 
 impl Settings {
-    fn captures(&self) -> [Hotkey; 4] {
-        [self.capture_region, self.capture_window, self.capture_screen, self.capture_record]
+    fn captures(&self) -> [Hotkey; 5] {
+        [self.capture_region, self.capture_window, self.capture_screen, self.capture_record, self.capture_replay]
     }
 }
 
@@ -153,11 +191,11 @@ fn check_keys(settings: &Settings) -> Result<(), String> {
     if chords[0] == chords[1] || chords[0] == chords[2] || chords[1] == chords[2] {
         return Err("Dictar, rodear y dar órdenes necesitan atajos distintos.".into());
     }
-    let [region, window, screen, record] = settings.captures();
-    if ![region, window, screen, record].into_iter().all(hotkeys::valid_hotkey) {
+    let keys = settings.captures();
+    if !keys.into_iter().all(hotkeys::valid_hotkey) {
         return Err("Una letra o un número necesita Ctrl, Shift, Alt o Win. Solas solo valen Impr Pant y las teclas F.".into());
     }
-    if region == window || region == screen || window == screen || [region, window, screen].contains(&record) {
+    if keys.iter().enumerate().any(|(i, key)| keys[i + 1..].contains(key)) {
         return Err("Cada captura necesita su propio atajo.".into());
     }
     Ok(())
@@ -186,6 +224,7 @@ pub fn load(app: &AppHandle) -> Settings {
             capture_window: safe.capture_window,
             capture_screen: safe.capture_screen,
             capture_record: safe.capture_record,
+            capture_replay: safe.capture_replay,
             ..settings
         };
     }
@@ -209,6 +248,7 @@ pub fn apply(app: &AppHandle) {
         solid_when_max: settings.bar_solid_max,
     });
     crate::remoto::sync(app);
+    crate::grabadora::configure(app);
 }
 
 pub fn capture_dir(app: &AppHandle, settings: &Settings) -> Option<PathBuf> {
@@ -216,6 +256,25 @@ pub fn capture_dir(app: &AppHandle, settings: &Settings) -> Option<PathBuf> {
         Some(dir) => Some(dir.clone()),
         None => Some(app.path().picture_dir().ok()?.join("Cocuyo")),
     }
+}
+
+pub fn record_dir(app: &AppHandle, settings: &Settings) -> Option<PathBuf> {
+    match &settings.rec_dir {
+        Some(dir) => Some(dir.clone()),
+        None => Some(app.path().video_dir().ok()?.join("Cocuyo")),
+    }
+}
+
+#[tauri::command]
+pub fn current_record_dir(app: AppHandle) -> Option<String> {
+    record_dir(&app, &load(&app)).map(|p| p.display().to_string())
+}
+
+#[tauri::command]
+pub fn open_record_dir(app: AppHandle) -> Result<(), String> {
+    let dir = record_dir(&app, &load(&app)).ok_or("No encontré la carpeta de videos.")?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    crate::apps::open(&dir.display().to_string())
 }
 
 #[tauri::command]

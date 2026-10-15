@@ -1400,6 +1400,12 @@ button.ghost:active {
   scrollbar-color: color-mix(in srgb, var(--dim) 45%, transparent) transparent;
   scrollbar-width: thin;
 }
+.scol {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
 .ssec.long {
   padding-bottom: 22px;
   mask-image: linear-gradient(to bottom, #000 calc(100% - 26px), transparent);
@@ -1948,6 +1954,9 @@ button.ghost.pick svg {
 .mem-row .x {
   flex: none;
   opacity: 0.7;
+}
+.segmented.none .thumb {
+  opacity: 0;
 }
 .segmented.off {
   opacity: 0.45;

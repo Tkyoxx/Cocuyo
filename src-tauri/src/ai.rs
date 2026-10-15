@@ -106,6 +106,9 @@ busca <algo> en youtube
 busca <algo> en google
 anota <texto>
 toma una captura
+graba la pantalla
+para de grabar
+guarda lo último
 bloquea el equipo
 recuerda que <un dato sobre la persona que pide que no olvides>
 recuérdame en <N> minutos <qué>

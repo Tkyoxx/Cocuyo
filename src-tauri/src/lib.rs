@@ -2,10 +2,12 @@
 
 mod agenda;
 mod ai;
+mod amf;
 mod apps;
 mod candado;
 mod capture;
 mod clip;
+mod codificador;
 mod cue;
 mod agent;
 mod dialogs;
@@ -22,8 +24,10 @@ mod mcp;
 mod minutes;
 mod media;
 mod mic;
+mod mp4;
 mod net;
 mod notes;
+mod nvenc;
 mod ocr;
 mod overlay;
 mod pad;
@@ -31,6 +35,7 @@ mod pc;
 mod placement;
 mod player;
 mod remoto;
+mod ruido;
 mod scripts;
 mod settings;
 mod spotify;
@@ -82,8 +87,11 @@ fn demo(app: tauri::AppHandle) {
                 let seconds = parts.get(1).and_then(|n| n.parse().ok()).unwrap_or(10);
                 let height = parts.get(2).and_then(|n| n.parse().ok()).unwrap_or(1080);
                 let fps = parts.get(3).and_then(|n| n.parse().ok()).unwrap_or(60);
-                let stop = std::sync::atomic::AtomicBool::new(false);
-                let done = grabadora::record(std::path::Path::new(parts[0]), height, fps, (true, true), &stop, Some(std::time::Duration::from_secs(seconds)));
+                let mut wanted = grabadora::Wanted::from(&settings::load(&app));
+                wanted.profile = "propio".into();
+                wanted.height = height;
+                wanted.fps = fps;
+                let done = grabadora::record(std::path::Path::new(parts[0]), wanted, seconds);
                 eprintln!("[grabar] {}", done.map(|stats| serde_json::to_string(&stats).unwrap_or_default()).unwrap_or_else(|why| format!("falló: {why}")));
             } else if step == "panico" {
                 let _ = std::thread::Builder::new().name("prueba".into()).spawn(|| panic!("prueba del registro de cierres")).map(|hilo| hilo.join());
@@ -218,6 +226,10 @@ pub fn run() {
     if std::env::args().any(|arg| arg == "--uninstall") {
         return install::uninstall();
     }
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(at) = args.iter().position(|arg| arg == "--probar-codificador") {
+        std::process::exit(grabadora::probe_main(&args[at + 1..]));
+    }
     install::wait_for_previous();
     update::tidy();
     tauri::Builder::default()
@@ -340,6 +352,10 @@ pub fn run() {
             grabadora::grabar_empezar,
             grabadora::grabar_parar,
             grabadora::grabar_estado,
+            grabadora::grabar_equipo,
+            grabadora::grabar_ultimo,
+            settings::current_record_dir,
+            settings::open_record_dir,
         ])
         .setup(|app| {
             let window = app

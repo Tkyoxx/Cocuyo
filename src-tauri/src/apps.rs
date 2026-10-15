@@ -130,7 +130,7 @@ fn words_of(stem: &str) -> String {
     out.trim().to_string()
 }
 
-fn reg_string(key: windows::Win32::System::Registry::HKEY, path: &str, value: &str) -> Option<String> {
+pub(crate) fn reg_string(key: windows::Win32::System::Registry::HKEY, path: &str, value: &str) -> Option<String> {
     use windows::Win32::System::Registry::{RegGetValueW, RRF_RT_REG_SZ};
     let mut buffer = [0u16; 520];
     let mut size = (buffer.len() * 2) as u32;

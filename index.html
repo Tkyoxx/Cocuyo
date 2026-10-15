@@ -15,6 +15,7 @@
       <i class="ear ear-r"></i>
       <div class="shell">
         <div class="voice" aria-hidden="true"><i></i><i></i><i></i><i></i><b></b></div>
+        <button type="button" class="rec" id="rec" aria-label="Parar la grabación"><i></i><span id="rec-time">0:00</span></button>
 
         <div id="menu">
           <nav class="tabs" id="tabs"><span class="tab-ind" id="tab-ind"></span></nav>
@@ -75,6 +76,8 @@
       <div id="select-box"><span id="select-size"></span></div>
       <p id="select-hint">Arrastra para capturar una zona · Esc para cancelar</p>
     </div>
+
+    <button type="button" id="rec-mini" hidden aria-label="Parar la grabación"><i></i><span id="rec-mini-time"></span></button>
 
     <div id="caption" role="status" aria-live="polite">
       <p class="said"><span class="who" id="caption-who"></span><span id="caption-words"></span></p>

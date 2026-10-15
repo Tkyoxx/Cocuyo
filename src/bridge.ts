@@ -173,6 +173,25 @@ export interface Settings {
   captureWindow: Hotkey;
   captureScreen: Hotkey;
   captureRecord: Hotkey;
+  captureReplay: Hotkey;
+  recDir: string | null;
+  recProfile: string;
+  recHeight: number;
+  recFps: number;
+  recKbps: number;
+  recSpeed: number;
+  recCodec: string;
+  recSystem: boolean;
+  recSystemVol: number;
+  recMic: boolean;
+  recMicId: string;
+  recMicVol: number;
+  recAudioKbps: number;
+  recNoise: string;
+  recCursor: boolean;
+  recReplay: boolean;
+  recReplaySecs: number;
+  recMonitor: string;
 }
 
 export interface Hotkey {
@@ -281,6 +300,25 @@ const DEFAULTS: Settings = {
   captureWindow: { mods: 4, vk: 0x2c },
   captureScreen: { mods: 1, vk: 0x2c },
   captureRecord: { mods: 5, vk: 0x52 },
+  captureReplay: { mods: 5, vk: 0x47 },
+  recDir: null,
+  recProfile: "auto",
+  recHeight: 0,
+  recFps: 0,
+  recKbps: 0,
+  recSpeed: 100,
+  recCodec: "h264",
+  recSystem: true,
+  recSystemVol: 100,
+  recMic: true,
+  recMicId: "",
+  recMicVol: 100,
+  recAudioKbps: 160,
+  recNoise: "",
+  recCursor: true,
+  recReplay: false,
+  recReplaySecs: 30,
+  recMonitor: "",
 };
 
 export function onKey(handler: (vk: number) => void) {

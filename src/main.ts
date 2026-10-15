@@ -31,6 +31,7 @@ import { Menu } from "./menu";
 import { emit, loadExtensions } from "./extensiones";
 import { settingsPage } from "./pages";
 import { Cards, type Card, type Progress } from "./tarjeta";
+import type { RecState } from "./pages";
 import { Selector } from "./selector";
 
 const memory = (navigator as { deviceMemory?: number }).deviceMemory ?? 8;
@@ -61,10 +62,60 @@ function publish() {
     const r = el.getBoundingClientRect();
     if (r.width && r.height) shapes.push({ x: r.left, y: r.top, w: r.width, h: r.height, r: 0 });
   }
+  if (!recMini.hidden) {
+    const r = recMini.getBoundingClientRect();
+    shapes.push({ x: r.left, y: r.top, w: r.width, h: r.height, r: r.height / 2 });
+  }
   setRegion(shapes);
 }
 
 island.onShape = caption.onShape = pill.onShape = cards.onShape = publish;
+
+const islandEl = document.getElementById("island")!;
+const recMini = document.getElementById("rec-mini")!;
+const recTexts = [document.getElementById("rec-time")!, document.getElementById("rec-mini-time")!];
+let recSince = 0;
+let recTimer = 0;
+let recOn = false;
+let placeNow: Place = "top";
+
+function recTick() {
+  const total = Math.max(0, Math.floor((Date.now() - recSince) / 1000));
+  const [h, m, s] = [Math.floor(total / 3600), Math.floor(total / 60) % 60, total % 60];
+  const text = h ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${m}:${String(s).padStart(2, "0")}`;
+  for (const el of recTexts) el.textContent = text;
+}
+
+function paintRecording(state: RecState) {
+  recOn = state.grabando;
+  islandEl.toggleAttribute("data-rec", recOn);
+  window.clearInterval(recTimer);
+  if (recOn) {
+    recSince = state.desde || Date.now();
+    recTick();
+    recTimer = window.setInterval(recTick, 1000);
+  }
+  const mini = recOn && placeNow === "hidden";
+  if (recMini.hidden === mini) {
+    recMini.hidden = !mini;
+    publish();
+  }
+}
+
+async function stopRecording(e: Event) {
+  e.stopPropagation();
+  try {
+    const file = await call<string>("grabar_parar");
+    caption.say("app", `Grabación guardada: ${file.split("\\").pop()}`, 4200);
+  } catch (error) {
+    caption.say("app", String(error), 4200);
+  }
+}
+
+document.getElementById("rec")!.addEventListener("click", stopRecording);
+recMini.addEventListener("click", stopRecording);
+on<RecState>("grabadora", paintRecording);
+void call<RecState | null>("grabar_estado", undefined, null).then((state) => state && paintRecording(state));
 cards.onSay = (text) => caption.say("app", text, 4200);
 
 function closeMenu() {
@@ -139,6 +190,8 @@ onGuideRequested(() => {
   guide.start();
 });
 onPlace((place) => {
+  placeNow = place;
+  if (recOn) paintRecording({ grabando: true, desde: recSince, repeticion: false, archivo: null });
   wanted = place;
   if (guide.open || installer.open) return;
   closeMenu();

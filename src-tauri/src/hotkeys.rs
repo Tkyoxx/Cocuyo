@@ -70,11 +70,12 @@ pub struct Hotkey {
     pub vk: u32,
 }
 
-pub const DEFAULT_CAPTURES: [Hotkey; 4] = [
+pub const DEFAULT_CAPTURES: [Hotkey; 5] = [
     Hotkey { mods: 0, vk: VK_SNAPSHOT },
     Hotkey { mods: ALT, vk: VK_SNAPSHOT },
     Hotkey { mods: CTRL, vk: VK_SNAPSHOT },
     Hotkey { mods: CTRL | ALT, vk: 0x52 },
+    Hotkey { mods: CTRL | ALT, vk: 0x47 },
 ];
 
 pub fn valid_hotkey(key: Hotkey) -> bool {
@@ -82,8 +83,8 @@ pub fn valid_hotkey(key: Hotkey) -> bool {
     key.vk != 0 && key.mods < 16 && modifier(key.vk).is_none() && (key.mods != 0 || standalone)
 }
 
-static CAPTURE_KEYS: Mutex<[Hotkey; 4]> = Mutex::new(DEFAULT_CAPTURES);
-static CAPTURE_OK: [AtomicBool; 4] = [AtomicBool::new(false), AtomicBool::new(false), AtomicBool::new(false), AtomicBool::new(false)];
+static CAPTURE_KEYS: Mutex<[Hotkey; 5]> = Mutex::new(DEFAULT_CAPTURES);
+static CAPTURE_OK: [AtomicBool; 5] = [AtomicBool::new(false), AtomicBool::new(false), AtomicBool::new(false), AtomicBool::new(false), AtomicBool::new(false)];
 static HOOK_THREAD: AtomicU32 = AtomicU32::new(0);
 const WM_REBIND: u32 = WM_APP + 1;
 
@@ -224,11 +225,11 @@ pub fn set_chords_paused(on: bool) {
 }
 
 #[tauri::command]
-pub fn capture_keys_available() -> [bool; 4] {
-    [0, 1, 2, 3].map(|i| CAPTURE_OK[i].load(Ordering::Relaxed))
+pub fn capture_keys_available() -> [bool; 5] {
+    [0, 1, 2, 3, 4].map(|i| CAPTURE_OK[i].load(Ordering::Relaxed))
 }
 
-pub fn configure(dictation: u8, lasso: u8, command: u8, captures: [Hotkey; 4]) {
+pub fn configure(dictation: u8, lasso: u8, command: u8, captures: [Hotkey; 5]) {
     DICTATION_KEYS.store(dictation, Ordering::Relaxed);
     LASSO_KEYS.store(lasso, Ordering::Relaxed);
     COMMAND_KEYS.store(command, Ordering::Relaxed);

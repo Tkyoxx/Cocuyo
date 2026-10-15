@@ -991,11 +991,60 @@ const energia: Page = {
 };
 
 type ChordKey = "dictationKeys" | "commandKeys" | "lassoKeys";
-type HotkeyKey = "captureRegion" | "captureWindow" | "captureScreen" | "captureRecord";
+type HotkeyKey = "captureRegion" | "captureWindow" | "captureScreen" | "captureRecord" | "captureReplay";
 type KeysKey = ChordKey | HotkeyKey;
 
 const CHORDS: ChordKey[] = ["dictationKeys", "commandKeys", "lassoKeys"];
-const HOTKEYS: HotkeyKey[] = ["captureRegion", "captureWindow", "captureScreen", "captureRecord"];
+const HOTKEYS: HotkeyKey[] = ["captureRegion", "captureWindow", "captureScreen", "captureRecord", "captureReplay"];
+
+interface RecPlan {
+  perfil: string;
+  tamano: [number, number];
+  alto: number;
+  fps: number;
+  kbps: number;
+  rapidez: number;
+  codec: string;
+  hardware: boolean;
+  topes: string[];
+  aprendido: number | null;
+  mb_por_minuto: number;
+}
+
+interface RecMachine {
+  graficas: { nombre: string; marca: string; integrada: boolean; memoria_mb: number }[];
+  procesador: string;
+  hilos: number;
+  monitores: { id: string; nombre: string; ancho: number; alto: number; hz: number; principal: boolean; grafica: string }[];
+  codecs: string[];
+  automatico: string;
+  plan: RecPlan;
+  codificador: string;
+}
+
+export interface RecState {
+  grabando: boolean;
+  desde: number;
+  repeticion: boolean;
+  archivo: string | null;
+}
+
+const PROFILE_NAMES: Record<string, string> = { ahorro: "Ahorro", equilibrado: "Equilibrada", alta: "Alta", maxima: "Máxima" };
+const CODEC_NAMES: Record<string, string> = { h264: "H.264", hevc: "HEVC", av1: "AV1" };
+
+function markSegmented(box: HTMLElement, value: string) {
+  const buttons = [...box.querySelectorAll<HTMLElement>("button")];
+  box.style.setProperty("--n", String(buttons.length));
+  buttons.forEach((button, i) => {
+    const active = button.dataset.value === value;
+    button.classList.toggle("on", active);
+    if (active) box.style.setProperty("--i", String(i));
+  });
+  box.classList.toggle("none", !buttons.some((button) => button.dataset.value === value));
+}
+
+const segmented = (id: string, options: [string | number, string][]) =>
+  `<div class="segmented" id="${id}"><span class="thumb"></span>${options.map(([value, label]) => `<button data-value="${value}">${label}</button>`).join("")}</div>`;
 const isChord = (key: KeysKey): key is ChordKey => (CHORDS as string[]).includes(key);
 const ESCAPE = 0x1b;
 
@@ -1098,6 +1147,7 @@ class SettingsPage implements Page {
     if (section === "remoto") void this.paintRemote();
     if (section === "voz") void this.paintMics();
     for (const node of this.el.querySelectorAll<HTMLElement>("[data-sec]")) node.classList.toggle("on", node.dataset.sec === section);
+    if (section === "capturas") void this.paintRec();
     const measure = () => {
       for (const node of this.el.querySelectorAll<HTMLElement>(".ssec.on")) node.classList.toggle("long", node.scrollHeight > node.clientHeight + 4);
       this.navEdges();
@@ -1225,15 +1275,37 @@ class SettingsPage implements Page {
         ) +
         section(
           "capturas",
-          `<div class="card">
+          `<div class="scol">
+           <div class="card rec-card">
+             <div class="srow"><div><b>Grabar la pantalla</b><small id="s-rec-help">Con el audio del PC y tu micrófono. Lo codifica la gráfica, así casi no gasta.</small></div><button class="ghost pick" id="s-rec">Grabar</button></div>
+             <div class="srow stack"><div><b>Calidad</b><small id="s-rec-plan"></small></div>${segmented("s-rec-profile", [["auto", "Automática"], ["ahorro", "Ahorro"], ["equilibrado", "Equilibrada"], ["alta", "Alta"], ["maxima", "Máxima"]])}</div>
+             <div id="s-rec-manual"></div>
+             <label class="srow"><div><b>Mostrar el cursor</b><small>Se dibuja en la gráfica, encima de la imagen.</small></div><input type="checkbox" class="switch" id="s-rec-cursor"></label>
+           </div>
+           <div class="card">
+             <label class="srow"><div><b>Repetición instantánea</b><small id="s-rec-replay-help"></small></div><input type="checkbox" class="switch" id="s-rec-replay"></label>
+             <div class="srow stack" id="s-rec-replay-row">${segmented("s-rec-replay-secs", [[15, "15 s"], [30, "30 s"], [60, "1 min"], [120, "2 min"]])}<button class="ghost" id="s-rec-save">Guardar lo último</button></div>
+           </div>
+           </div>
+           <div class="scol">
+           <div class="card">
+             <label class="srow"><div><b>Audio del PC</b><small>Todo lo que suena: el juego, la música, la otra persona en una llamada.</small></div><input type="checkbox" class="switch" id="s-rec-system"></label>
+             <div class="srow stack" id="s-rec-system-row"><div><b>Volumen del PC</b><small id="s-rec-system-text"></small></div><input type="range" class="range" id="s-rec-system-vol" min="0" max="200" step="5" /></div>
+             <label class="srow"><div><b>Micrófono</b><small>Tu voz encima de todo lo demás.</small></div><input type="checkbox" class="switch" id="s-rec-mic"></label>
+             <div class="srow chips flat" id="s-rec-mics"></div>
+             <div class="srow stack" id="s-rec-mic-row"><div><b>Volumen del micrófono</b><small id="s-rec-mic-text"></small></div><input type="range" class="range" id="s-rec-mic-vol" min="0" max="200" step="5" /></div>
+             <div class="srow stack" id="s-rec-noise-row"><div><b>Quitar el ruido</b><small>El ventilador, el zumbido o el soplido de fondo. Lo hace Cocuyo mismo y casi no gasta.</small></div>${segmented("s-rec-noise", [["", "Apagado"], ["suave", "Suave"], ["fuerte", "Fuerte"]])}</div>
+             <div class="srow stack"><div><b>Calidad del sonido</b><small>AAC estéreo a 48 kHz.</small></div>${segmented("s-rec-audio", [[128, "128 kb/s"], [160, "160 kb/s"], [192, "192 kb/s"]])}</div>
+           </div>
+           <div class="card">
+             <div class="srow"><div><b>Carpeta de grabaciones</b><small class="path" id="s-rec-folder"></small></div><button class="ghost" id="s-rec-reset" hidden>Restablecer</button><button class="ghost" id="s-rec-open">Abrir</button><button class="ghost" id="s-rec-pick">Cambiar</button></div>
+             <div class="srow" id="s-folder-row"><div><b>Carpeta de capturas</b><small class="path" id="s-folder"></small></div><button class="ghost" id="s-reset" hidden>Restablecer</button><button class="ghost" id="s-open">Abrir</button><button class="ghost" id="s-pick">Cambiar</button></div>
+           </div>
+           <div class="card">
              <label class="srow"><div><b>Preguntar dónde guardar</b><small>Apagado: cada captura va directo a la carpeta.</small></div><input type="checkbox" class="switch" id="s-ask"></label>
              <label class="srow"><div><b>Copiar al portapapeles</b><small>La captura queda lista para pegar.</small></div><input type="checkbox" class="switch" id="s-copy"></label>
            </div>
-           <div class="card">
-             <div class="srow"><div><b>Grabar la pantalla</b><small id="s-rec-help">Con el audio del PC y tu micrófono. Lo codifica la gráfica, así casi no gasta.</small></div><button class="ghost pick" id="s-rec">Grabar</button></div>
            </div>
-           <div class="card">
-             <div class="srow" id="s-folder-row"><div><b>Carpeta de capturas</b><small class="path" id="s-folder"></small></div><button class="ghost" id="s-reset" hidden>Restablecer</button><button class="ghost" id="s-open">Abrir</button><button class="ghost" id="s-pick">Cambiar</button></div>
            </div>`,
         ) +
         section(
@@ -1325,7 +1397,8 @@ class SettingsPage implements Page {
              keyRow("captureRegion", "Capturar un rectángulo", "") +
              keyRow("captureWindow", "Capturar la ventana activa", "") +
              keyRow("captureScreen", "Capturar toda la pantalla", "") +
-             keyRow("captureRecord", "Grabar la pantalla", "Una vez empieza, otra vez para y guarda.")
+             keyRow("captureRecord", "Grabar la pantalla", "Una vez empieza, otra vez para y guarda.") +
+             keyRow("captureReplay", "Guardar lo último", "Con la repetición instantánea encendida.")
            }</div>`,
         )
       }<p class="snote" id="s-note"></p></div>`;
@@ -1490,28 +1563,97 @@ class SettingsPage implements Page {
     toggle("#s-agent-hands", "agentHands");
     toggle("#s-live", "aiLive");
     const rec = q<HTMLButtonElement>("#s-rec");
-    const paintRec = (on: boolean) => {
-      rec.textContent = on ? "Parar" : "Grabar";
-      rec.classList.toggle("on", on);
+    const paintButton = (state: RecState) => {
+      rec.textContent = state.grabando ? "Parar" : "Grabar";
+      rec.classList.toggle("on", state.grabando);
     };
-    void call<boolean>("grabar_estado", undefined, false).then(paintRec);
+    const idle: RecState = { grabando: false, desde: 0, repeticion: false, archivo: null };
+    void call<RecState>("grabar_estado", undefined, idle).then(paintButton);
+    on<RecState>("grabadora", paintButton);
     rec.addEventListener("click", async () => {
       rec.disabled = true;
       try {
-        if (await call<boolean>("grabar_estado", undefined, false)) {
+        const state = await call<RecState>("grabar_estado", undefined, idle);
+        if (state.grabando) {
           const file = await call<string>("grabar_parar");
-          paintRec(false);
           this.note(`Guardada: ${file.split("\\").pop()}`);
         } else {
+          rec.textContent = "Arrancando…";
           await call<string>("grabar_empezar");
-          paintRec(true);
-          this.note("Grabando. Pulsa Parar para guardar.");
+          this.note("Grabando. Pulsa Parar o toca el punto rojo de la isla para guardar.");
         }
       } catch (error) {
-        paintRec(false);
         this.note(String(error));
       }
+      paintButton(await call<RecState>("grabar_estado", undefined, idle));
       rec.disabled = false;
+    });
+    const recSection = q(".rec-card").closest<HTMLElement>(".ssec")!;
+    recSection.addEventListener("click", (e) => {
+      const button = (e.target as HTMLElement).closest<HTMLElement>("button[data-value], button[data-monitor], button[data-recmic]");
+      if (!button || !this.settings) return;
+      const box = button.parentElement!;
+      const value = button.dataset.value ?? "";
+      const plan = this.recMachine?.plan;
+      const native = this.recNative() ?? 0;
+      const manual = (change: Partial<Settings>) =>
+        this.save({
+          recProfile: "propio",
+          recHeight: plan && plan.alto < native ? plan.alto : 0,
+          recFps: this.settings!.recProfile === "propio" ? this.settings!.recFps : plan?.fps ?? 60,
+          recKbps: plan?.kbps ?? this.settings!.recKbps,
+          recSpeed: plan?.rapidez ?? this.settings!.recSpeed,
+          ...change,
+        });
+      if (button.dataset.monitor !== undefined) void this.save({ recMonitor: button.dataset.monitor });
+      else if (button.dataset.recmic !== undefined) void this.save({ recMicId: button.dataset.recmic });
+      else if (box.id === "s-rec-profile") void this.save({ recProfile: value });
+      else if (box.id === "s-rec-height") void manual({ recHeight: Number(value) });
+      else if (box.id === "s-rec-fps") void manual({ recFps: Number(value) });
+      else if (box.id === "s-rec-speed") void manual({ recSpeed: Number(value) });
+      else if (box.id === "s-rec-codec") void this.save({ recCodec: value });
+      else if (box.id === "s-rec-audio") void this.save({ recAudioKbps: Number(value) });
+      else if (box.id === "s-rec-noise") void this.save({ recNoise: value });
+      else if (box.id === "s-rec-replay-secs") void this.save({ recReplaySecs: Number(value) });
+    });
+    recSection.addEventListener("input", (e) => {
+      const input = e.target as HTMLInputElement;
+      if (input.id === "s-rec-kbps") this.paintKbps(Number(input.value) * 1000);
+      if (input.id === "s-rec-system-vol" || input.id === "s-rec-mic-vol") q(`#${input.id.replace("-vol", "-text")}`).textContent = `${input.value} %`;
+    });
+    recSection.addEventListener("change", (e) => {
+      const input = e.target as HTMLInputElement;
+      if (!this.settings) return;
+      const plan = this.recMachine?.plan;
+      const native = this.recNative() ?? 0;
+      if (input.id === "s-rec-kbps")
+        void this.save({
+          recProfile: "propio",
+          recKbps: Number(input.value) * 1000,
+          recHeight: plan && plan.alto < native ? plan.alto : 0,
+          recFps: this.settings.recProfile === "propio" ? this.settings.recFps : plan?.fps ?? 60,
+          recSpeed: plan?.rapidez ?? 100,
+        });
+      else if (input.id === "s-rec-system-vol") void this.save({ recSystemVol: Number(input.value) });
+      else if (input.id === "s-rec-mic-vol") void this.save({ recMicVol: Number(input.value) });
+      else if (input.id === "s-rec-system") void this.save({ recSystem: input.checked });
+      else if (input.id === "s-rec-mic") void this.save({ recMic: input.checked });
+      else if (input.id === "s-rec-cursor") void this.save({ recCursor: input.checked });
+      else if (input.id === "s-rec-replay") void this.save({ recReplay: input.checked });
+    });
+    q("#s-rec-save").addEventListener("click", async () => {
+      try {
+        const file = await call<string>("grabar_ultimo");
+        this.note(`Guardé lo último: ${file.split("\\").pop()}`);
+      } catch (error) {
+        this.note(String(error));
+      }
+    });
+    q("#s-rec-reset").addEventListener("click", () => this.save({ recDir: null }));
+    q("#s-rec-open").addEventListener("click", () => void call("open_record_dir").catch((error) => this.note(String(error))));
+    q("#s-rec-pick").addEventListener("click", async () => {
+      const picked = await pickCaptureDir();
+      if (picked) await this.save({ recDir: picked });
     });
     q("#s-mic").addEventListener("click", async (e) => {
       const target = (e.target as HTMLElement).closest<HTMLElement>("[data-mic]");
@@ -1918,6 +2060,98 @@ class SettingsPage implements Page {
       .join("");
   }
 
+  private recMachine: RecMachine | null = null;
+  private recAsked = 0;
+
+  private recNative() {
+    const s = this.settings;
+    const screen = this.recMachine?.monitores.find((m) => m.id === s?.recMonitor) ?? this.recMachine?.monitores.find((m) => m.principal);
+    return screen?.alto;
+  }
+
+  private paintKbps(kbps: number) {
+    const audio = this.settings && (this.settings.recSystem || this.settings.recMic) ? this.settings.recAudioKbps : 0;
+    const perMinute = (((kbps + audio) * 60) / 8 / 1000).toFixed(0);
+    const text = this.el.querySelector("#s-rec-kbps-text");
+    if (text) text.textContent = `${(kbps / 1000).toFixed(1).replace(".0", "").replace(".", ",")} Mb/s · unos ${perMinute} MB por minuto`;
+  }
+
+  private async paintRec() {
+    const s = this.settings;
+    if (!s) return;
+    const q = <T extends HTMLElement>(sel: string) => this.el.querySelector<T>(sel)!;
+    const asked = ++this.recAsked;
+    const machine = await call<RecMachine | null>("grabar_equipo", undefined, null);
+    if (asked !== this.recAsked || !machine) return;
+    this.recMachine = machine;
+    const plan = machine.plan;
+    const native = this.recNative() ?? plan.tamano[1];
+    const screen = machine.monitores.find((m) => m.id === s.recMonitor) ?? machine.monitores.find((m) => m.principal);
+    const card = machine.graficas.find((g) => g.nombre === screen?.grafica) ?? machine.graficas[0];
+    q("#s-rec-help").textContent = card
+      ? `${card.nombre}${card.memoria_mb >= 1024 ? ` (${Math.round(card.memoria_mb / 1024)} GB)` : ""} · codifica ${machine.codificador} · ${machine.procesador || "procesador"} (${machine.hilos} hilos)`
+      : "Con el audio del PC y tu micrófono.";
+    markSegmented(q("#s-rec-profile"), s.recProfile === "propio" ? "" : s.recProfile || "auto");
+    const chosen = PROFILE_NAMES[plan.perfil] ?? "A tu gusto";
+    const lead = s.recProfile === "auto" || !s.recProfile ? `Automática eligió ${chosen}: ` : s.recProfile === "propio" ? "A tu gusto: " : "";
+    const lines = [`${lead}${plan.alto}p a ${plan.fps} fps, ${(plan.kbps / 1000).toFixed(1).replace(".0", "").replace(".", ",")} Mb/s en ${CODEC_NAMES[plan.codec] ?? plan.codec}, unos ${Math.round(plan.mb_por_minuto)} MB por minuto.`];
+    if (plan.aprendido) lines.push(`Aprendió que aquí se sostiene a ${plan.aprendido} fps; sube sola cuando le sobre.`);
+    else if (plan.fps >= 30) lines.push("Si pierde cuadros la próxima baja sola, y si le sobra sube hasta el refresco de tu pantalla.");
+    lines.push(...plan.topes.map((tope) => `Tope: ${tope}.`));
+    q("#s-rec-plan").textContent = lines.join(" ");
+    const heights: [number, string][] = [[0, `Nativa (${native}p)`]];
+    for (const h of [1440, 1080, 720, 480]) if (h < native) heights.push([h, `${h}p`]);
+    const refresh = screen?.hz ?? 60;
+    const rates: [number, string][] = [[0, "Auto"], [30, "30"], [60, "60"]];
+    for (const f of [120, 144]) if (refresh >= f) rates.push([f, String(f)]);
+    const shownHeight = plan.alto >= native ? 0 : plan.alto;
+    const monitors =
+      machine.monitores.length > 1
+        ? `<div class="srow stack"><div><b>Qué pantalla</b><small>Graba solo esa.</small></div><div class="srow chips flat">${machine.monitores
+            .map((m) => `<button class="chip${(s.recMonitor ? m.id === s.recMonitor : m.principal) ? " on" : ""}" data-monitor="${m.principal ? "" : esc(m.id)}">${esc(m.nombre)} · ${m.ancho}×${m.alto} · ${m.hz} Hz</button>`)
+            .join("")}</div></div>`
+        : "";
+    q("#s-rec-manual").innerHTML = `
+      <div class="srow stack"><div><b>Resolución</b></div>${segmented("s-rec-height", heights)}</div>
+      <div class="srow stack"><div><b>Cuadros por segundo</b><small>Auto aprende cuántos aguanta tu máquina sin perder ninguno.</small></div>${segmented("s-rec-fps", rates)}</div>
+      <div class="srow stack"><div><b>Tasa de video</b><small id="s-rec-kbps-text"></small></div><input type="range" class="range" id="s-rec-kbps" min="2" max="60" step="0.5" /></div>
+      <div class="srow stack"><div><b>Velocidad o calidad</b><small>Velocidad le quita menos al juego; Calidad se ve mejor con la misma tasa.</small></div>${segmented("s-rec-speed", [[100, "Velocidad"], [50, "Equilibrio"], [0, "Calidad"]])}</div>
+      <div class="srow stack"><div><b>Códec</b><small>${machine.codecs.length > 1 ? "HEVC y AV1 pesan menos con la misma calidad, pero algunos editores viejos no los abren." : "Tu gráfica codifica H.264."}</small></div>${segmented("s-rec-codec", machine.codecs.map((c) => [c, CODEC_NAMES[c] ?? c]))}</div>
+      ${monitors}`;
+    markSegmented(q("#s-rec-height"), String(shownHeight));
+    markSegmented(q("#s-rec-fps"), s.recProfile === "propio" ? String(s.recFps) : "0");
+    markSegmented(q("#s-rec-speed"), String(plan.rapidez >= 75 ? 100 : plan.rapidez >= 25 ? 50 : 0));
+    markSegmented(q("#s-rec-codec"), plan.codec);
+    q<HTMLInputElement>("#s-rec-kbps").value = String(plan.kbps / 1000);
+    this.paintKbps(plan.kbps);
+    q<HTMLInputElement>("#s-rec-cursor").checked = s.recCursor;
+    q<HTMLInputElement>("#s-rec-system").checked = s.recSystem;
+    q<HTMLInputElement>("#s-rec-mic").checked = s.recMic;
+    q<HTMLInputElement>("#s-rec-system-vol").value = String(s.recSystemVol);
+    q<HTMLInputElement>("#s-rec-mic-vol").value = String(s.recMicVol);
+    q("#s-rec-system-text").textContent = `${s.recSystemVol} %`;
+    q("#s-rec-mic-text").textContent = `${s.recMicVol} %`;
+    q("#s-rec-system-row").classList.toggle("off", !s.recSystem);
+    q("#s-rec-mic-row").classList.toggle("off", !s.recMic);
+    q("#s-rec-noise-row").classList.toggle("off", !s.recMic);
+    markSegmented(q("#s-rec-noise"), s.recNoise);
+    markSegmented(q("#s-rec-audio"), String(s.recAudioKbps));
+    q<HTMLInputElement>("#s-rec-replay").checked = s.recReplay;
+    q("#s-rec-replay-row").classList.toggle("off", !s.recReplay);
+    markSegmented(q("#s-rec-replay-secs"), String(s.recReplaySecs));
+    const ram = Math.round(((plan.kbps / 8) * s.recReplaySecs) / 1000);
+    q("#s-rec-replay-help").textContent = s.recReplay
+      ? `Graba sin parar en la memoria (unos ${ram} MB) y guarda los últimos ${s.recReplaySecs} s cuando pulses el atajo o digas «guarda lo último».`
+      : "Graba sin parar en la memoria y guarda lo último cuando se lo pidas. Apagada no gasta nada.";
+    const mics = await call<{ id: string; nombre: string; windows: boolean }[]>("mic_list", undefined, []);
+    const chip = (id: string, label: string, on: boolean) => `<button class="chip${on ? " on" : ""}" data-recmic="${esc(id)}">${esc(label)}</button>`;
+    q("#s-rec-mics").innerHTML = chip("", tr("El mismo de Voz"), !s.recMicId || !mics.some((m) => m.id === s.recMicId)) + mics.map((m) => chip(m.id, m.nombre, m.id === s.recMicId)).join("");
+    q("#s-rec-mics").classList.toggle("off", !s.recMic);
+    const folder = await call<string | null>("current_record_dir", undefined, null);
+    q("#s-rec-folder").textContent = folder ?? "";
+    q("#s-rec-reset").hidden = !s.recDir;
+  }
+
   private async paintMics() {
     const mics = await call<{ id: string; nombre: string; windows: boolean }[]>("mic_list", undefined, []);
     const chosen = this.settings?.mic ?? "";
@@ -2217,6 +2451,7 @@ class SettingsPage implements Page {
       if (bar.rival) q("#s-bar-rival").textContent = `Tienes ${bar.rival} abierto. Si los dos tocan la barra se pelean.`;
     });
     q<HTMLInputElement>("#s-updates").checked = s.checkUpdates;
+    if (this.section === "capturas") void this.paintRec();
     void call<string>("version", undefined, "").then((version) => (q("#s-version").textContent = `Cocuyo ${version}`));
     const into = q("#s-into");
     [...into.querySelectorAll<HTMLElement>("button")].forEach((button, i) => {

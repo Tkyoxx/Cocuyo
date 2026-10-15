@@ -27,7 +27,30 @@ pub enum Intent {
     Screenshot,
     Lock,
     Settings,
+    Record(bool),
+    SaveReplay,
     Unknown,
+}
+
+const RECORD: &[&str] = &["graba", "grabar", "grabame", "grabes", "grabando", "grabacion", "grabe",
+    "record", "recording", "grava", "gravar", "gravacao", "gravando", "grave",
+];
+const HALT: &[&str] = &["para", "parar", "pare", "deja", "dejar", "deten", "detener", "detenga", "termina", "terminar", "acaba", "acabar",
+    "corta", "cortar", "apaga", "apagar", "frena", "finaliza", "finalizar", "stop", "end", "finish", "quit", "detem", "encerra", "encerrar",
+];
+const KEEP: &[&str] = &["guarda", "guardar", "guardame", "salva", "salvar", "save", "clip", "clipea", "clipear", "clipealo", "clipa"];
+const LAST: &[&str] = &["ultimo", "ultimos", "ultima", "ultimas", "eso", "esto", "repeticion", "jugada", "jugadon", "clip", "last", "that", "replay", "isso", "jogada"];
+const NOT_SCREEN: &[&str] = &["audio", "nota", "voz", "mensaje", "cancion", "note", "voice", "message", "mensagem"];
+
+fn recording(tokens: &[&str]) -> Option<Intent> {
+    let any = |family: &[&str]| tokens.iter().any(|t| family.contains(t));
+    if any(KEEP) && (any(LAST) || tokens.len() == 1) && !any(NOT_SCREEN) {
+        return Some(Intent::SaveReplay);
+    }
+    if !any(RECORD) || any(NOT_SCREEN) {
+        return None;
+    }
+    Some(Intent::Record(!any(HALT)))
 }
 
 // Solo hace falta la forma base de cada verbo: los pronombres pegados ("ponme",
@@ -647,6 +670,9 @@ fn complaint(tokens: &[&str]) -> Option<i8> {
 }
 
 fn interpret(tokens: &[&str]) -> Intent {
+    if let Some(recorder) = recording(tokens) {
+        return recorder;
+    }
     if let Some(sign) = complaint(tokens) {
         return volume(sign, tokens, false);
     }
@@ -920,6 +946,21 @@ mod tests {
         assert_eq!(parse("Reproduze soda estereo"), song("soda estereo"));
         assert_eq!(parse("kontinua"), Intent::Resume);
         assert_eq!(parse("toma una captura de pantaya"), Intent::Screenshot);
+        assert_eq!(parse("graba la pantalla"), Intent::Record(true));
+        assert_eq!(parse("empieza a grabar"), Intent::Record(true));
+        assert_eq!(parse("Para de grabar."), Intent::Record(false));
+        assert_eq!(parse("deja de grabar la pantalla"), Intent::Record(false));
+        assert_eq!(parse("detén la grabación"), Intent::Record(false));
+        assert_eq!(parse("guarda lo último"), Intent::SaveReplay);
+        assert_eq!(parse("guarda eso"), Intent::SaveReplay);
+        assert_eq!(parse("clip"), Intent::SaveReplay);
+        assert_eq!(parse("start recording"), Intent::Record(true));
+        assert_eq!(parse("stop recording"), Intent::Record(false));
+        assert_eq!(parse("clip that"), Intent::SaveReplay);
+        assert_eq!(parse("pare de gravar"), Intent::Record(false));
+        assert_eq!(parse("salva isso"), Intent::SaveReplay);
+        assert_ne!(parse("graba una nota de voz"), Intent::Record(true));
+        assert_eq!(parse("para"), Intent::Pause);
         assert_eq!(parse("Habre el bloc de notas"), Intent::OpenApp("bloc de notas".into()));
         assert_eq!(parse("Pun. Baby doll. The Dominic Fike."), song("baby doll the dominic fike"));
         assert_eq!(parse("Pun. Blinding lights. The weakened."), song("blinding lights the weakened"));
