@@ -5,7 +5,7 @@ name: Gente usándolo ahora
 # El número queda en la rama «estadisticas» (un solo commit que se pisa) y la insignia del README lo lee de ahí.
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "17,47 * * * *"
   push:
     branches: [main]
     paths: [".github/workflows/contador.yml"]
