@@ -154,6 +154,9 @@ fn demo(app: tauri::AppHandle) {
             } else if let Some(text) = step.strip_prefix("orden=") {
                 let started = std::time::Instant::now();
                 eprintln!("[orden] {text} -> {:?} en {:?}", voice::run_order(&app, text), started.elapsed());
+            } else if let Some(file) = step.strip_prefix("voces-charon=") {
+                eprintln!("[voces] {}", talk::voice_lines(&app, std::path::Path::new(file)));
+                talk::forget();
             } else if step == "spotify-biblioteca" {
                 eprintln!("[spotify] {}", media::library_check(&app));
             } else if step == "spotify-mudo" || step == "spotify-sonido" {
@@ -409,6 +412,7 @@ pub fn run() {
             }
             agenda::start(app.handle().clone(), std::env::args().any(|arg| arg == "--inicio"));
             update::watch(app.handle().clone());
+            update::beat(app.handle().clone());
             hotkeys::spawn(app.handle().clone());
             let handle = app.handle().clone();
             std::thread::spawn(move || live::restore(&handle));

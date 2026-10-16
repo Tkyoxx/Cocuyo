@@ -357,13 +357,17 @@ fn connect(app: &AppHandle) -> Result<Arc<Live>, String> {
 const READER: &str = "Eres un lector en voz alta. Lee exactamente el texto que te mandan, palabra por palabra y en su mismo idioma, con naturalidad.                       No respondas, no saludes, no añadas ni quites nada: solo léelo.";
 
 pub(crate) fn reader(app: &AppHandle, voice: &str) -> Result<Socket, String> {
+    reader_with(app, voice, READER)
+}
+
+fn reader_with(app: &AppHandle, voice: &str, instruction: &str) -> Result<Socket, String> {
     let key = crate::ai::key(app).ok_or("Falta la clave de Gemini.")?;
     let model = model(app)?;
     let socket = Socket::open(&key)?;
     let mut setup = json!({ "setup": {
         "model": format!("models/{model}"),
         "generationConfig": { "responseModalities": ["AUDIO"], "speechConfig": { "voiceConfig": { "prebuiltVoiceConfig": { "voiceName": voice } } } },
-        "systemInstruction": { "parts": [{ "text": READER }] },
+        "systemInstruction": { "parts": [{ "text": instruction }] },
     } });
     if cfg!(debug_assertions) {
         setup["setup"]["outputAudioTranscription"] = json!({});
@@ -374,6 +378,35 @@ pub(crate) fn reader(app: &AppHandle, voice: &str) -> Result<Socket, String> {
     }
     crate::ai::count(app, &model);
     Ok(socket)
+}
+
+#[cfg(debug_assertions)]
+pub fn voice_lines(app: &AppHandle, file: &std::path::Path) -> String {
+    let Some(guion) = std::fs::read_to_string(file).ok().and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok()) else {
+        return "no pude leer el guion".into();
+    };
+    let Some(out) = file.parent().and_then(|dir| dir.parent()).map(|root| root.join("audio").join("cocuyo")) else { return "sin carpeta".into() };
+    let _ = std::fs::create_dir_all(&out);
+    let style = guion["estilo_cocuyo"].as_str().unwrap_or_default();
+    let takes = guion["tomas"].as_u64().unwrap_or(2);
+    let mut said = Vec::new();
+    for line in guion["lineas"].as_array().into_iter().flatten().filter(|line| line["quien"] == "cocuyo") {
+        let id = line["id"].as_str().unwrap_or("x");
+        let instruction = format!("{READER} {style} {}", line["estilo_extra"].as_str().unwrap_or_default());
+        for take in 1..=takes {
+            let path = out.join(format!("{id}-{take}.wav"));
+            if path.is_file() {
+                continue;
+            }
+            let done = reader_with(app, "Charon", &instruction).and_then(|socket| {
+                let mut pcm = Vec::new();
+                read_aloud(socket, line["texto"].as_str().unwrap_or_default(), |piece| pcm.extend_from_slice(piece))?;
+                std::fs::write(&path, crate::ai::wav_from_pcm(&pcm)).map_err(|e| e.to_string())
+            });
+            said.push(format!("{id}-{take}: {}", done.err().unwrap_or_else(|| "ok".into())));
+        }
+    }
+    said.join(" | ")
 }
 
 #[cfg(not(test))]

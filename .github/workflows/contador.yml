@@ -1,0 +1,68 @@
+name: Gente usándolo ahora
+
+# Cada Cocuyo abierto baja cada 5 minutos el archivito «latido» de la versión «latido» (1 byte, nada más).
+# Cada media hora se mira cuánto subieron esas descargas y de ahí sale cuánta gente lo tiene abierto.
+# El número queda en la rama «estadisticas» (un solo commit que se pisa) y la insignia del README lo lee de ahí.
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  push:
+    branches: [main]
+    paths: [".github/workflows/contador.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: contador
+  cancel-in-progress: false
+
+jobs:
+  contar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Que exista la versión «latido»
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view latido --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            printf '1' > latido
+            gh release create latido latido --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false \
+              --title "Latido (no es una versión)" \
+              --notes "Cocuyo baja este archivo de 1 byte cada 5 minutos mientras está abierto, y así el README sabe cuánta gente lo está usando. No se manda nada más. Se apaga en Ajustes → Isla → «Contarme en Usándolo ahora»."
+          fi
+
+      - name: Contar
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          descargas=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/latido" --jq '[.assets[] | select(.name == "latido") | .download_count] | add // 0')
+          ahora=$(date -u +%s)
+          git init -q est && cd est
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          antes_descargas=""; antes_hora=""; antes_gente=0
+          if git fetch -q --depth 1 origin estadisticas 2>/dev/null; then
+            git show FETCH_HEAD:estado.json > previo.json
+            antes_descargas=$(jq -r '.descargas' previo.json)
+            antes_hora=$(jq -r '.hora' previo.json)
+            antes_gente=$(jq -r '.gente' previo.json)
+          fi
+          gente=$antes_gente
+          if [ -n "$antes_hora" ]; then
+            minutos=$(( (ahora - antes_hora) / 60 ))
+            subida=$(( descargas - antes_descargas ))
+            if [ "$minutos" -ge 10 ] && [ "$minutos" -le 240 ] && [ "$subida" -ge 0 ]; then
+              gente=$(( (subida * 5 + minutos / 2) / minutos ))
+            elif [ "$minutos" -lt 10 ]; then
+              descargas=$antes_descargas; ahora=$antes_hora
+            fi
+          fi
+          if [ "$gente" -eq 1 ]; then texto="1 persona"; else texto="$gente personas"; fi
+          jq -n --argjson d "$descargas" --argjson h "$ahora" --argjson g "$gente" '{descargas: $d, hora: $h, gente: $g}' > estado.json
+          jq -n --arg t "$texto" '{schemaVersion: 1, label: "Usándolo ahora", message: $t, color: "B8FF3D"}' > insignia.json
+          git add estado.json insignia.json
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "Usándolo ahora: $texto"
+          git push -qf origin HEAD:estadisticas
+          echo "Usándolo ahora: $texto (descargas del latido: $descargas)"

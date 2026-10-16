@@ -1220,6 +1220,7 @@ class SettingsPage implements Page {
            <div class="card">
              <div class="srow"><div><b id="s-version">Cocuyo</b><small id="s-update">Mira en GitHub si hay una versión nueva.</small></div><button class="ghost" id="s-update-go">Buscar ahora</button></div>
              <label class="srow"><div><b>Actualizarse sola</b><small>Cuando sale una versión nueva la baja, se cambia y vuelve a abrirse. Nunca en medio de un juego.</small></div><input type="checkbox" class="switch" id="s-updates"></label>
+             <label class="srow"><div><b>Contarme en «Usándolo ahora»</b><small>Mientras está abierto, cada 5 minutos baja de GitHub un archivo de 1 byte para que el contador del README sepa cuánta gente lo tiene abierto. No manda nada tuyo.</small></div><input type="checkbox" class="switch" id="s-countme"></label>
            </div>`,
         ) +
         section(
@@ -1458,7 +1459,7 @@ class SettingsPage implements Page {
     for (const button of el.querySelectorAll<HTMLElement>("#s-lang button")) {
       button.addEventListener("click", () => this.save({ language: button.dataset.value as Settings["language"] }));
     }
-    const toggle = (sel: string, key: "hideOnFullscreen" | "askWhere" | "copyToClipboard" | "autostart" | "cueFullscreen" | "speakFullscreen" | "gameOverlay" | "aiOn" | "aiDictation" | "aiHear" | "padOn" | "checkUpdates" | "barCenter" | "barSolidMax" | "extensionsOn" | "aiAgent" | "agentHands" | "agentConfirm" | "aiLive" | "remoteOn") => {
+    const toggle = (sel: string, key: "hideOnFullscreen" | "askWhere" | "copyToClipboard" | "autostart" | "cueFullscreen" | "speakFullscreen" | "gameOverlay" | "aiOn" | "aiDictation" | "aiHear" | "padOn" | "checkUpdates" | "countMe" | "barCenter" | "barSolidMax" | "extensionsOn" | "aiAgent" | "agentHands" | "agentConfirm" | "aiLive" | "remoteOn") => {
       const input = q<HTMLInputElement>(sel);
       input.addEventListener("change", () => {
         const change: Partial<Settings> = {};
@@ -1570,6 +1571,7 @@ class SettingsPage implements Page {
       void call("taskbar_autohide", { on: (e.target as HTMLInputElement).checked });
     });
     toggle("#s-updates", "checkUpdates");
+    toggle("#s-countme", "countMe");
     for (const button of el.querySelectorAll<HTMLElement>("#s-pad-combo button")) {
       button.addEventListener("click", () => this.save({ padCombo: Number(button.dataset.value), padButtons: 0 }));
     }
@@ -2581,6 +2583,7 @@ class SettingsPage implements Page {
       if (bar.rival) q("#s-bar-rival").textContent = `Tienes ${bar.rival} abierto. Si los dos tocan la barra se pelean.`;
     });
     q<HTMLInputElement>("#s-updates").checked = s.checkUpdates;
+    q<HTMLInputElement>("#s-countme").checked = s.countMe;
     if (this.section === "capturas") void this.paintRec();
     void call<string>("version", undefined, "").then((version) => (q("#s-version").textContent = `Cocuyo ${version}`));
     const into = q("#s-into");

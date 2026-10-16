@@ -161,6 +161,7 @@ export interface Settings {
   liveModel: string;
   extensions: string[];
   checkUpdates: boolean;
+  countMe: boolean;
   aiDaily: number;
   voice: string;
   aiOn: boolean;
@@ -290,6 +291,7 @@ const DEFAULTS: Settings = {
   liveModel: "",
   extensions: [],
   checkUpdates: true,
+  countMe: true,
   aiDaily: 480,
   voice: "",
   aiOn: false,

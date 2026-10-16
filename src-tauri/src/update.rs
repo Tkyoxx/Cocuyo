@@ -14,6 +14,8 @@ use crate::{install, overlay, placement, settings, voice};
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const LATEST: &str = "https://api.github.com/repos/Tkyoxx/Cocuyo/releases/latest";
 const DOWNLOADS: &str = "https://github.com/Tkyoxx/Cocuyo/releases/download/";
+const BEAT: &str = "https://github.com/Tkyoxx/Cocuyo/releases/download/latido/latido";
+const BEAT_EVERY: Duration = Duration::from_secs(300);
 const PORTABLE: &str = "/Cocuyo.exe";
 const UPDATED: &str = "--actualizado=";
 const EVERY: Duration = Duration::from_secs(6 * 3600);
@@ -156,6 +158,21 @@ pub fn watch(app: AppHandle) {
             }
             std::thread::sleep(EVERY);
         }
+    });
+}
+
+pub fn beat(app: AppHandle) {
+    if cfg!(debug_assertions) {
+        return;
+    }
+    std::thread::spawn(move || loop {
+        if settings::load(&app).count_me {
+            let _ = Command::new("curl.exe")
+                .args(["--silent", "--location", "--max-time", "20", "--output", "NUL", "--user-agent", "Cocuyo", BEAT])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+        }
+        std::thread::sleep(BEAT_EVERY);
     });
 }
 
