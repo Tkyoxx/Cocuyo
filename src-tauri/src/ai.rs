@@ -108,6 +108,7 @@ cierra <app>, <app> y <app>
 cierra todo
 cierra todo menos <app>
 abre la carpeta de errores
+quién es tu dueño
 busca <algo> en youtube
 busca <algo> en google
 busca <juego> en steam

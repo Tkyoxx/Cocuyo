@@ -217,8 +217,13 @@ fn token_request(fields: &[(&str, &str)]) -> Result<Value, String> {
     }
 }
 
+pub static GRANTED: Mutex<String> = Mutex::new(String::new());
+
 fn remember(app: &AppHandle, response: &Value) -> Result<String, String> {
     let token = response["access_token"].as_str().ok_or("Spotify no devolvió un permiso.")?.to_string();
+    if let (Ok(mut granted), Some(scope)) = (GRANTED.lock(), response["scope"].as_str()) {
+        *granted = scope.to_string();
+    }
     let lifetime = response["expires_in"].as_u64().unwrap_or(3600).saturating_sub(120);
     *ACCESS.lock().unwrap() = Some(Access { token: token.clone(), expires: Instant::now() + Duration::from_secs(lifetime) });
     if let Some(refresh) = response["refresh_token"].as_str() {

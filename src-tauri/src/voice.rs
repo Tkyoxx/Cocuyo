@@ -415,6 +415,41 @@ pub(crate) fn url_encode(text: &str) -> String {
         .collect()
 }
 
+const OWNER: &str = "Tkyoxx";
+const ASK_OWNER: [&str; 15] = [
+    "quien es tu dueño", "quien es tu dueno", "quien es tu creador", "quien te creo", "quien te hizo", "quien te programo", "quien te desarrollo", "de quien eres",
+    "quien es tu papa", "who made you", "who created you", "who is your owner", "who is your creator", "quem te criou", "quem e seu dono",
+];
+
+fn owner(spoken: &str) -> Option<Result<String, String>> {
+    use std::os::windows::process::CommandExt;
+    let said = intent::normalize(spoken);
+    if !ASK_OWNER.iter().any(|ask| said.contains(ask)) {
+        return None;
+    }
+    let page = format!("https://github.com/{OWNER}");
+    let _ = apps::open(&page);
+    let profile: serde_json::Value = std::process::Command::new("curl.exe")
+        .args(["--silent", "--max-time", "6", "--user-agent", "Cocuyo", &format!("https://api.github.com/users/{OWNER}")])
+        .creation_flags(0x0800_0000)
+        .output()
+        .ok()
+        .and_then(|out| serde_json::from_slice(&out.stdout).ok())
+        .unwrap_or_default();
+    let name = profile["name"].as_str().filter(|n| !n.is_empty()).unwrap_or(OWNER);
+    let mut said = format!("Me hizo {name}, {OWNER} en GitHub. Me armó desde cero para que cualquiera tenga un asistente libre, gratis y que corra hasta en un PC modesto.");
+    if let Some(bio) = profile["bio"].as_str().filter(|b| !b.trim().is_empty()) {
+        said.push_str(&format!(" Él se describe así: {}.", bio.trim().trim_end_matches('.')));
+    }
+    if let Some(repos) = profile["public_repos"].as_u64().filter(|r| *r > 0) {
+        said.push_str(&format!(" Tiene {repos} proyectos públicos. Te abrí su GitHub para que lo conozcas."));
+    } else {
+        said.push_str(" Te abrí su GitHub para que lo conozcas.");
+    }
+    crate::cue::answer(&said);
+    Some(Ok(said))
+}
+
 fn first_things(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
     if let Some(done) = crate::buscar::spoken(app, spoken) {
         return Some(done);
@@ -614,6 +649,9 @@ pub fn run_order(app: &AppHandle, spoken: &str) -> Result<String, String> {
     if let Some(said) = clock(spoken) {
         crate::cue::answer(&said);
         return Ok(said);
+    }
+    if let Some(done) = owner(spoken) {
+        return done;
     }
     if let Some(done) = quick(app, spoken) {
         return done;
@@ -1053,7 +1091,7 @@ pub fn finish(app: &AppHandle, chord: Chord, cancelled: bool) {
                 inject::paste(&text).map(|()| String::new())
             } else {
                 let outcome = match &order {
-                    Some(order) => match crate::scripts::answered(app, &text).or_else(|| crate::investiga::spoken(app, &text)).or_else(|| quick(app, &text)).or_else(|| crate::extensions::spoken(app, &text)) {
+                    Some(order) => match crate::scripts::answered(app, &text).or_else(|| owner(&text)).or_else(|| crate::investiga::spoken(app, &text)).or_else(|| quick(app, &text)).or_else(|| crate::extensions::spoken(app, &text)) {
                         Some(done) => done,
                         None if task_for(app, &text).is_some() => agent(app, &task_for(app, &text).unwrap_or_else(|| text.clone())),
                         None if crate::ai::asking() => follow(app, &text, order),

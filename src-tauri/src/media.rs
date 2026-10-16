@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 use windows::core::{Interface, PWSTR};
 use windows::Win32::Foundation::CloseHandle;
 use windows::Win32::Media::Audio::{
@@ -329,6 +329,22 @@ pub fn raw(app: &AppHandle, path: &str) -> String {
 }
 
 #[cfg(debug_assertions)]
+pub fn library_check(app: &AppHandle) -> String {
+    let Some((token, source)) = spotify::token(app) else { return "sin sesión de Spotify".into() };
+    let mut out = format!("llave {} · permisos: {}", if source == spotify::Source::Cocuyo { "propia" } else { "de Mis Notas" }, spotify::GRANTED.lock().map(|g| g.clone()).unwrap_or_default());
+    let show = |label: &str, answer: Option<(u16, Value)>| match answer {
+        Some((status, json)) => format!("\n{label}: {status} {}", json.to_string().chars().take(300).collect::<String>()),
+        None => format!("\n{label}: sin respuesta"),
+    };
+    let now = api(&token, "GET", "/me/player/currently-playing", None);
+    let id = now.as_ref().and_then(|(_, j)| j["item"]["id"].as_str().map(str::to_string)).unwrap_or_else(|| "4uLU6hMCjMI75M1A2tKUQC".into());
+    out += &format!("\ncanción: {id}");
+    out += &show("library contains", api(&token, "GET", &format!("/me/library/contains?uris=spotify:track:{id}"), None));
+    out += &show("tracks", api(&token, "GET", "/me/tracks?limit=1", None).map(|(s, j)| (s, json!({ "total": j["total"], "error": j["error"] }))));
+    out
+}
+
+#[cfg(debug_assertions)]
 pub fn probe(app: &AppHandle, query: &str) -> String {
     let Some((token, source)) = spotify::token(app) else { return "sin sesión de Spotify".into() };
     let source = if source == spotify::Source::Cocuyo { "propia" } else { "de Mis Notas" };
@@ -578,13 +594,20 @@ fn queue(app: &AppHandle, query: &str) -> Result<String, String> {
     Ok(format!("En cola: «{}» de {}.", best.1, best.2))
 }
 
+fn library(token: &str, method: &str, id: &str) -> Result<Value, String> {
+    match api(token, method, &format!("/me/library?uris=spotify:track:{id}"), None) {
+        Some((404 | 405, _)) | None => outcome(api(token, method, &format!("/me/tracks?ids={id}"), None)),
+        answer => outcome(answer),
+    }
+}
+
 fn like(app: &AppHandle) -> Result<String, String> {
     let token = session(app)?;
     let now = outcome(api(&token, "GET", "/me/player/currently-playing", None))?;
     let (Some(id), Some(name)) = (now["item"]["id"].as_str(), now["item"]["name"].as_str()) else {
         return Err("Spotify no tiene nada sonando en ningún dispositivo.".into());
     };
-    outcome(api(&token, "PUT", &format!("/me/tracks?ids={id}"), None))?;
+    library(&token, "PUT", id)?;
     Ok(format!("Guardada en tus Me gusta: «{name}»."))
 }
 
@@ -594,7 +617,7 @@ fn unlike(app: &AppHandle) -> Result<String, String> {
     let (Some(id), Some(name)) = (now["item"]["id"].as_str(), now["item"]["name"].as_str()) else {
         return Err("Spotify no tiene nada sonando en ningún dispositivo.".into());
     };
-    outcome(api(&token, "DELETE", &format!("/me/tracks?ids={id}"), None))?;
+    library(&token, "DELETE", id)?;
     Ok(format!("Quitada de tus Me gusta: «{name}»."))
 }
 
