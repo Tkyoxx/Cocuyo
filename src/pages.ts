@@ -1220,7 +1220,7 @@ class SettingsPage implements Page {
            <div class="card">
              <div class="srow"><div><b id="s-version">Cocuyo</b><small id="s-update">Mira en GitHub si hay una versión nueva.</small></div><button class="ghost" id="s-update-go">Buscar ahora</button></div>
              <label class="srow"><div><b>Actualizarse sola</b><small>Cuando sale una versión nueva la baja, se cambia y vuelve a abrirse. Nunca en medio de un juego.</small></div><input type="checkbox" class="switch" id="s-updates"></label>
-             <label class="srow"><div><b>Contarme en «Usándolo ahora»</b><small>Mientras está abierto, cada 5 minutos baja de GitHub un archivo de 1 byte para que el contador del README sepa cuánta gente lo tiene abierto. No manda nada tuyo.</small></div><input type="checkbox" class="switch" id="s-countme"></label>
+             <label class="srow"><div><b>Contarme en las instalaciones</b><small>La primera vez que se abre, baja de GitHub un archivo de 1 byte para que el README sepa en cuántos PC está instalado. Una sola vez, y no manda nada tuyo.</small></div><input type="checkbox" class="switch" id="s-countme"></label>
            </div>`,
         ) +
         section(

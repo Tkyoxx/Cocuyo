@@ -412,7 +412,7 @@ pub fn run() {
             }
             agenda::start(app.handle().clone(), std::env::args().any(|arg| arg == "--inicio"));
             update::watch(app.handle().clone());
-            update::beat(app.handle().clone());
+            update::count_install(app.handle().clone());
             hotkeys::spawn(app.handle().clone());
             let handle = app.handle().clone();
             std::thread::spawn(move || live::restore(&handle));

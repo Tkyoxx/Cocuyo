@@ -7,15 +7,14 @@ use std::time::Duration;
 
 use serde::Serialize;
 use serde_json::Value;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::{install, overlay, placement, settings, voice};
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const LATEST: &str = "https://api.github.com/repos/Tkyoxx/Cocuyo/releases/latest";
 const DOWNLOADS: &str = "https://github.com/Tkyoxx/Cocuyo/releases/download/";
-const BEAT: &str = "https://github.com/Tkyoxx/Cocuyo/releases/download/latido/latido";
-const BEAT_EVERY: Duration = Duration::from_secs(300);
+const COUNT: &str = "https://github.com/Tkyoxx/Cocuyo/releases/download/contador/instalacion";
 const PORTABLE: &str = "/Cocuyo.exe";
 const UPDATED: &str = "--actualizado=";
 const EVERY: Duration = Duration::from_secs(6 * 3600);
@@ -161,18 +160,30 @@ pub fn watch(app: AppHandle) {
     });
 }
 
-pub fn beat(app: AppHandle) {
+pub fn count_install(app: AppHandle) {
     if cfg!(debug_assertions) {
         return;
     }
-    std::thread::spawn(move || loop {
-        if settings::load(&app).count_me {
-            let _ = Command::new("curl.exe")
-                .args(["--silent", "--location", "--max-time", "20", "--output", "NUL", "--user-agent", "Cocuyo", BEAT])
-                .creation_flags(CREATE_NO_WINDOW)
-                .status();
+    let Some(mark) = app.path().app_config_dir().ok().map(|dir| dir.join("contado")) else { return };
+    if mark.exists() {
+        return;
+    }
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(60));
+        if !settings::load(&app).count_me {
+            return;
         }
-        std::thread::sleep(BEAT_EVERY);
+        let counted = Command::new("curl.exe")
+            .args(["--silent", "--fail", "--location", "--max-time", "20", "--output", "NUL", "--user-agent", "Cocuyo", COUNT])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status()
+            .is_ok_and(|status| status.success());
+        if counted {
+            if let Some(dir) = mark.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let _ = std::fs::write(&mark, b"");
+        }
     });
 }
 
