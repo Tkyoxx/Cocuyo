@@ -1,19 +1,25 @@
 name: Contador de instalaciones
 
 # Cada Cocuyo nuevo baja una sola vez el archivito «instalacion» (1 byte) de la versión «contador».
-# La insignia del README lee directo cuántas veces se bajó, así que no hace falta nada más.
-# Este flujo solo crea esa versión si falta y quita lo del contador viejo («latido» y la rama «estadisticas»).
+# Este flujo lee cuántas veces se bajó y lo deja en la rama «estadisticas» (instalaciones.json),
+# que es lo que lee la insignia del README. Así la insignia no depende de los tokens prestados de shields.io.
+# Si GitHub no responde, no se toca nada: la insignia sigue con el último número bueno.
 on:
+  schedule:
+    - cron: "23 * * * *"
   push:
     branches: [main]
-    paths: [".github/workflows/contador.yml"]
   workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: contador
+  cancel-in-progress: false
+
 jobs:
-  preparar:
+  contar:
     runs-on: ubuntu-latest
     steps:
       - name: Que exista la versión «contador»
@@ -27,9 +33,21 @@ jobs:
               --notes "La primera vez que Cocuyo se abre en un PC baja este archivo de 1 byte, una sola vez. Así el README sabe en cuántos PC está instalado. No se manda nada más. Se apaga en Ajustes → Isla → «Contarme en las instalaciones»."
           fi
 
-      - name: Quitar el contador viejo
+      - name: Contar
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete latido --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes 2>/dev/null || true
-          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/estadisticas" 2>/dev/null || true
+          set -u
+          n=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/contador" --jq '[.assets[] | select(.name == "instalacion") | .download_count] | add // 0') || exit 0
+          case "$n" in ''|*[!0-9]*) exit 0 ;; esac
+          git init -q est && cd est
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git fetch -q --depth 1 origin estadisticas 2>/dev/null; then
+            antes=$(git show FETCH_HEAD:instalaciones.json 2>/dev/null | jq -r '.message' || true)
+            if [ "$antes" = "$n" ]; then echo "Instalaciones: $n (sin cambios)"; exit 0; fi
+          fi
+          jq -n --arg n "$n" '{schemaVersion: 1, label: "Instalaciones", message: $n, color: "B8FF3D"}' > instalaciones.json
+          git add instalaciones.json
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "Instalaciones: $n"
+          git push -qf origin HEAD:estadisticas
+          echo "Instalaciones: $n"

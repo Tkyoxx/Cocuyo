@@ -169,20 +169,23 @@ pub fn count_install(app: AppHandle) {
         return;
     }
     std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_secs(60));
-        if !settings::load(&app).count_me {
-            return;
-        }
-        let counted = Command::new("curl.exe")
-            .args(["--silent", "--fail", "--location", "--max-time", "20", "--output", "NUL", "--user-agent", "Cocuyo", COUNT])
-            .creation_flags(CREATE_NO_WINDOW)
-            .status()
-            .is_ok_and(|status| status.success());
-        if counted {
-            if let Some(dir) = mark.parent() {
-                let _ = std::fs::create_dir_all(dir);
+        for wait in [5, 60, 300, 1800] {
+            std::thread::sleep(Duration::from_secs(wait));
+            if !settings::load(&app).count_me {
+                return;
             }
-            let _ = std::fs::write(&mark, b"");
+            let counted = Command::new("curl.exe")
+                .args(["--silent", "--fail", "--location", "--max-time", "20", "--output", "NUL", "--user-agent", "Cocuyo", COUNT])
+                .creation_flags(CREATE_NO_WINDOW)
+                .status()
+                .is_ok_and(|status| status.success());
+            if counted {
+                if let Some(dir) = mark.parent() {
+                    let _ = std::fs::create_dir_all(dir);
+                }
+                let _ = std::fs::write(&mark, b"");
+                return;
+            }
         }
     });
 }
