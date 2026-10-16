@@ -416,36 +416,178 @@ pub(crate) fn url_encode(text: &str) -> String {
 }
 
 const OWNER: &str = "Tkyoxx";
-const ASK_OWNER: [&str; 15] = [
+const ASK_OWNER: [&str; 30] = [
     "quien es tu dueño", "quien es tu dueno", "quien es tu creador", "quien te creo", "quien te hizo", "quien te programo", "quien te desarrollo", "de quien eres",
-    "quien es tu papa", "who made you", "who created you", "who is your owner", "who is your creator", "quem te criou", "quem e seu dono",
+    "quien es tu papa", "quien es el creador", "quien es el dueño", "quien es el dueno", "quien es tu desarrollador", "quien es el desarrollador", "quien hizo cocuyo",
+    "quien creo cocuyo", "quien programo cocuyo", "de quien es cocuyo", "quien te invento", "quien te armo", "who made you", "who created you", "who is your owner",
+    "who is your creator", "who built you", "who developed you", "who is the creator", "quem te criou", "quem e seu dono", "quem e o criador",
 ];
 
-fn owner(spoken: &str) -> Option<Result<String, String>> {
+fn github(path: &str) -> serde_json::Value {
     use std::os::windows::process::CommandExt;
-    let said = intent::normalize(spoken);
-    if !ASK_OWNER.iter().any(|ask| said.contains(ask)) {
-        return None;
-    }
-    let page = format!("https://github.com/{OWNER}");
-    let _ = apps::open(&page);
-    let profile: serde_json::Value = std::process::Command::new("curl.exe")
-        .args(["--silent", "--max-time", "6", "--user-agent", "Cocuyo", &format!("https://api.github.com/users/{OWNER}")])
+    std::process::Command::new("curl.exe")
+        .args(["--silent", "--max-time", "6", "--user-agent", "Cocuyo", &format!("https://api.github.com/{path}")])
         .creation_flags(0x0800_0000)
         .output()
         .ok()
         .and_then(|out| serde_json::from_slice(&out.stdout).ok())
-        .unwrap_or_default();
-    let name = profile["name"].as_str().filter(|n| !n.is_empty()).unwrap_or(OWNER);
-    let mut said = format!("Me hizo {name}, {OWNER} en GitHub. Me armó desde cero para que cualquiera tenga un asistente libre, gratis y que corra hasta en un PC modesto.");
-    if let Some(bio) = profile["bio"].as_str().filter(|b| !b.trim().is_empty()) {
-        said.push_str(&format!(" Él se describe así: {}.", bio.trim().trim_end_matches('.')));
+        .unwrap_or_default()
+}
+
+struct Maker {
+    name: String,
+    bio: String,
+    place: String,
+    since: String,
+    repos: u64,
+    followers: u64,
+    stars: u64,
+    projects: Vec<(String, String)>,
+}
+
+fn maker() -> Maker {
+    let profile = github(&format!("users/{OWNER}"));
+    let repos = github(&format!("users/{OWNER}/repos?per_page=100&sort=pushed"));
+    let text = |value: &serde_json::Value| value.as_str().map(|s| s.trim().to_string()).unwrap_or_default();
+    let mine: Vec<&serde_json::Value> = repos
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|repo| repo["fork"].as_bool() != Some(true) && repo["name"].as_str().is_some_and(|name| !name.eq_ignore_ascii_case(OWNER) && !name.ends_with("-releases")))
+        .collect();
+    let pretty = |name: &str| {
+        let words: Vec<String> = name
+            .split(['-', '_', '.'])
+            .filter(|w| !w.is_empty())
+            .map(|w| {
+                if w.chars().count() <= 2 {
+                    return w.to_uppercase();
+                }
+                let mut letters = w.chars();
+                letters.next().map(|first| first.to_uppercase().chain(letters).collect()).unwrap_or_default()
+            })
+            .collect();
+        if name.chars().any(char::is_uppercase) { name.to_string() } else { words.join(" ") }
+    };
+    let bio: String = text(&profile["bio"])
+        .chars()
+        .map(|c| if c == '·' { ',' } else if c.is_alphanumeric() || c.is_whitespace() || ".,;:¿?¡!-()'".contains(c) { c } else { '|' })
+        .collect();
+    let bio = bio
+        .split('|')
+        .map(|piece| piece.split_whitespace().collect::<Vec<_>>().join(" ").replace(" ,", ","))
+        .map(|piece| piece.trim_matches(|c: char| c == ',' || c == ' ').to_string())
+        .filter(|piece| !piece.is_empty())
+        .collect::<Vec<_>>()
+        .join(". ");
+    let mut mine = mine;
+    mine.sort_by_key(|repo| repo["description"].as_str().is_none_or(|about| about.trim().is_empty()));
+    Maker {
+        name: text(&profile["name"]).replace('_', " ").chars().take(40).collect::<String>().trim().to_string(),
+        bio,
+        place: text(&profile["location"]),
+        since: text(&profile["created_at"]).chars().take(4).collect(),
+        repos: profile["public_repos"].as_u64().unwrap_or(0),
+        followers: profile["followers"].as_u64().unwrap_or(0),
+        stars: mine.iter().filter_map(|repo| repo["stargazers_count"].as_u64()).sum(),
+        projects: mine.iter().take(4).map(|repo| (pretty(repo["name"].as_str().unwrap_or_default()), text(&repo["description"]))).collect(),
     }
-    if let Some(repos) = profile["public_repos"].as_u64().filter(|r| *r > 0) {
-        said.push_str(&format!(" Tiene {repos} proyectos públicos. Te abrí su GitHub para que lo conozcas."));
-    } else {
-        said.push_str(" Te abrí su GitHub para que lo conozcas.");
+}
+
+fn maker_by_ai(app: &AppHandle, who: &Maker) -> Option<String> {
+    crate::ai::mode(app)?;
+    let language = match crate::cue::language().0 {
+        "en" => "inglés",
+        "pt" => "portugués de Brasil",
+        _ => "español",
+    };
+    let persona = crate::settings::load(app).ai_persona.trim().chars().take(300).collect::<String>();
+    let system = format!(
+        "Eres Cocuyo, un asistente de voz libre y gratis para Windows. Te preguntaron quién te creó. Con los datos públicos de GitHub que te paso, \
+         presenta a quien te hizo con cariño, orgullo y mucha buena onda, como quien presume a la persona que lo creó: que se note que la admiras. \
+         Son 3 o 4 frases para decir en voz alta, máximo 80 palabras, en {language}. Usa SOLO estos datos: no inventes edad, estudios, premios ni nada \
+         que no esté. Di su nombre y no uses «él» ni «ella». Termina contando que le abriste su GitHub para que lo conozcan. Sin emojis, sin listas, \
+         sin markdown y sin comillas.{}",
+        if persona.is_empty() { String::new() } else { format!(" Habla así: {persona}") }
+    );
+    let mut facts = format!("Nombre: {}\nUsuario de GitHub: {OWNER}\n", if who.name.is_empty() { OWNER } else { &who.name });
+    for (label, value) in [("Se describe así", &who.bio), ("Es de", &who.place), ("En GitHub desde", &who.since)] {
+        if !value.is_empty() {
+            facts.push_str(&format!("{label}: {value}\n"));
+        }
     }
+    facts.push_str(&format!("Proyectos públicos: {}\nSeguidores: {}\n", who.repos, who.followers));
+    if who.stars > 0 {
+        facts.push_str(&format!("Estrellas en sus proyectos: {}\n", who.stars));
+    }
+    facts.push_str("Cocuyo (tú) lo hizo desde cero, en Rust, para que cualquiera tenga un asistente libre, gratis y que corra hasta en un PC modesto.\n");
+    for (name, about) in &who.projects {
+        facts.push_str(&format!("Proyecto {name}{}\n", if about.is_empty() { String::new() } else { format!(": {about}") }));
+    }
+    let said = crate::ai::ask(app, &system, &facts, 400).ok()?;
+    let said = said.split("</think>").last()?.replace(['*', '#', '"', '«', '»', '“', '”'], "").split_whitespace().collect::<Vec<_>>().join(" ");
+    (said.split_whitespace().count() >= 12 && said.chars().count() <= 900).then_some(said)
+}
+
+fn maker_said(who: &Maker) -> String {
+    let name = if who.name.is_empty() { OWNER.to_string() } else { who.name.clone() };
+    let others: Vec<&str> = who.projects.iter().map(|(name, _)| name.as_str()).filter(|name| !name.eq_ignore_ascii_case("cocuyo")).take(3).collect();
+    let list = |and: &str| match others.as_slice() {
+        [] => String::new(),
+        [one] => one.to_string(),
+        [rest @ .., last] => format!("{} {and} {last}", rest.join(", ")),
+    };
+    match crate::cue::language().0 {
+        "en" => {
+            let mut said = format!("I was made by {name}, {OWNER} on GitHub{}. ", if who.place.is_empty() { String::new() } else { format!(", from {}", who.place) });
+            said.push_str("Built me from scratch so anyone can have a free assistant that runs even on a modest PC, and honestly, that takes talent. ");
+            if !who.bio.is_empty() {
+                said.push_str(&format!("In {name}'s own words: {}. ", who.bio.trim_end_matches('.')));
+            }
+            if !others.is_empty() {
+                said.push_str(&format!("Also behind {}. ", list("and")));
+            }
+            said.push_str("I opened the GitHub page so you can meet the mind behind me.");
+            said
+        }
+        "pt" => {
+            let mut said = format!("Quem me fez foi {name}, {OWNER} no GitHub{}. ", if who.place.is_empty() { String::new() } else { format!(", de {}", who.place) });
+            said.push_str("Me montou do zero para que qualquer pessoa tenha um assistente livre, grátis e que roda até num PC modesto, e isso é talento puro. ");
+            if !who.bio.is_empty() {
+                said.push_str(&format!("Nas palavras de {name}: {}. ", who.bio.trim_end_matches('.')));
+            }
+            if !others.is_empty() {
+                said.push_str(&format!("Também está por trás de {}. ", list("e")));
+            }
+            said.push_str("Abri o GitHub para você conhecer a mente por trás de mim.");
+            said
+        }
+        _ => {
+            let mut said = format!("Me hizo {name}, {OWNER} en GitHub{}. ", if who.place.is_empty() { String::new() } else { format!(", desde {}", who.place) });
+            said.push_str("Me armó desde cero para que cualquiera tenga un asistente libre, gratis y que corra hasta en un PC modesto, y eso no lo hace cualquiera: talento puro. ");
+            if !who.bio.is_empty() {
+                said.push_str(&format!("En palabras de {name}: {}. ", who.bio.trim_end_matches('.')));
+            }
+            if !others.is_empty() {
+                said.push_str(&format!("También está detrás de {}. ", list("y")));
+            }
+            if who.since.len() == 4 && who.repos > 0 {
+                said.push_str(&format!("Lleva {} proyectos públicos en GitHub desde {}. ", who.repos, who.since));
+            }
+            said.push_str("Te abrí su GitHub para que conozcas a la mente detrás de mí.");
+            said
+        }
+    }
+}
+
+fn owner(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
+    let said = intent::normalize(spoken);
+    if !ASK_OWNER.iter().any(|ask| said.contains(ask)) {
+        return None;
+    }
+    let _ = apps::open(&format!("https://github.com/{OWNER}"));
+    let who = maker();
+    let said = maker_by_ai(app, &who).unwrap_or_else(|| maker_said(&who));
     crate::cue::answer(&said);
     Some(Ok(said))
 }
@@ -650,7 +792,7 @@ pub fn run_order(app: &AppHandle, spoken: &str) -> Result<String, String> {
         crate::cue::answer(&said);
         return Ok(said);
     }
-    if let Some(done) = owner(spoken) {
+    if let Some(done) = owner(app, spoken) {
         return done;
     }
     if let Some(done) = quick(app, spoken) {
@@ -782,11 +924,16 @@ fn follow(app: &AppHandle, spoken: &str, order: &str) -> Result<String, String> 
         crate::cue::answer(&answer);
         return Ok(answer);
     }
+    if !lower.is_empty() && lower != "nada" {
+        if let Some(done) = first_things(app, order) {
+            return done;
+        }
+    }
     if !lower.is_empty() && lower != "nada" && understood(app, order) {
         return act(app, order);
     }
     if understood(app, spoken) {
-        return act(app, spoken);
+        return first_things(app, spoken).unwrap_or_else(|| act(app, spoken));
     }
     Err(format!("No entendí qué hacer con «{spoken}». Prueba con «pon…», «abre…» o «busca…»."))
 }
@@ -1091,7 +1238,7 @@ pub fn finish(app: &AppHandle, chord: Chord, cancelled: bool) {
                 inject::paste(&text).map(|()| String::new())
             } else {
                 let outcome = match &order {
-                    Some(order) => match crate::scripts::answered(app, &text).or_else(|| owner(&text)).or_else(|| crate::investiga::spoken(app, &text)).or_else(|| quick(app, &text)).or_else(|| crate::extensions::spoken(app, &text)) {
+                    Some(order) => match crate::scripts::answered(app, &text).or_else(|| owner(app, &text)).or_else(|| crate::investiga::spoken(app, &text)).or_else(|| quick(app, &text)).or_else(|| crate::extensions::spoken(app, &text)) {
                         Some(done) => done,
                         None if task_for(app, &text).is_some() => agent(app, &task_for(app, &text).unwrap_or_else(|| text.clone())),
                         None if crate::ai::asking() => follow(app, &text, order),

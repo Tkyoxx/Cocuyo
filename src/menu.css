@@ -1897,6 +1897,13 @@ button.ghost.pick svg {
   display: none;
 }
 
+#s-dc-guilds .chip {
+  max-width: min(100%, 190px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .srow.chips.flat {
   align-items: center;
   padding: 0;

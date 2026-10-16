@@ -46,6 +46,8 @@ export interface SpotifyStatus {
   source: "cocuyo" | "mis-notas" | null;
   hasClientId: boolean;
   connecting: boolean;
+  ownSaved: boolean;
+  ownError: string | null;
 }
 
 export interface NowPlaying {
@@ -192,6 +194,7 @@ export interface Settings {
   recReplay: boolean;
   recReplaySecs: number;
   recMonitor: string;
+  discordServer: string;
   recShowCocuyo: boolean;
 }
 
@@ -320,6 +323,7 @@ const DEFAULTS: Settings = {
   recReplay: false,
   recReplaySecs: 30,
   recMonitor: "",
+  discordServer: "",
   recShowCocuyo: true,
 };
 

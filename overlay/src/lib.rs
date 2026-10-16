@@ -4,7 +4,7 @@ mod look;
 mod shared;
 
 use std::ffi::c_void;
-use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicPtr, AtomicU32, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::Instant;
 
@@ -217,6 +217,7 @@ unsafe fn draw(chain: *mut c_void) {
     if shared.is_null() {
         return;
     }
+    AtomicU32::from_ptr(std::ptr::addr_of_mut!((*shared).frames)).fetch_add(1, Ordering::Relaxed);
     let shared = &*shared;
     let Ok(mut guard) = STAGE.try_lock() else { return };
     if shared.enabled == 0 {

@@ -118,8 +118,16 @@ investiga a fondo <tema>
 anota <texto>
 pon en cola <canción>
 dale me gusta a esta canción
+quítala de me gusta
+esta canción está en mis me gusta
+pon mis me gusta
+pon mis me gusta en aleatorio
+adelanta <número> segundos
+atrasa <número> segundos
+ve al minuto <número>
 agrega esta canción a mi lista <nombre>
 agrega <canción> a mi lista <nombre>
+quita esta canción de mi lista <nombre>
 crea una lista <nombre>
 silénciame en discord
 desmutéame en discord

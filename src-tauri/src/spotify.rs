@@ -239,26 +239,37 @@ pub enum Source {
     MisNotas,
 }
 
+static OWN_FAILED: Mutex<Option<String>> = Mutex::new(None);
+
+fn own_failed(why: Option<String>) {
+    *OWN_FAILED.lock().unwrap() = why;
+}
+
 pub fn token(app: &AppHandle) -> Option<(String, Source)> {
     if let Some(access) = ACCESS.lock().unwrap().as_ref() {
         if Instant::now() < access.expires {
             return Some((access.token.clone(), Source::Cocuyo));
         }
     }
-    if let (Some(refresh), Some(id)) = (load_refresh(app), client_id(app)) {
-        match token_request(&[("grant_type", "refresh_token"), ("refresh_token", &refresh), ("client_id", &id)]) {
-            Ok(response) => {
-                if let Ok(token) = remember(app, &response) {
+    match (load_refresh(app), client_id(app)) {
+        (Some(refresh), Some(id)) => match token_request(&[("grant_type", "refresh_token"), ("refresh_token", &refresh), ("client_id", &id)]) {
+            Ok(response) => match remember(app, &response) {
+                Ok(token) => {
+                    own_failed(None);
                     return Some((token, Source::Cocuyo));
                 }
-            }
+                Err(why) => own_failed(Some(why)),
+            },
             Err(why) if why.to_lowercase().contains("revoked") || why.to_lowercase().contains("invalid") => {
                 if let Some(file) = session_file(app) {
                     let _ = std::fs::remove_file(file);
                 }
+                own_failed(Some("Spotify ya no acepta tu sesión (la quitaste o venció). Vuelve a conectar.".into()));
             }
-            Err(_) => {}
-        }
+            Err(why) => own_failed(Some(why)),
+        },
+        (Some(_), None) => own_failed(Some("Falta el Client ID de tu app de Spotify.".into())),
+        (None, _) => {}
     }
     let port = notes::find_port()?;
     let body = notes::request(port, "GET", "/api/spotify/token", None)?;
@@ -362,20 +373,17 @@ pub struct Status {
     source: Option<Source>,
     has_client_id: bool,
     connecting: bool,
+    own_saved: bool,
+    own_error: Option<String>,
 }
 
 #[tauri::command]
 pub async fn spotify_status(app: AppHandle) -> Status {
-    let own = ACCESS.lock().unwrap().is_some() || load_refresh(&app).is_some();
-    let source = if own {
-        Some(Source::Cocuyo)
-    } else {
-        notes::find_port()
-            .and_then(|port| notes::request(port, "GET", "/api/spotify/token", None))
-            .filter(|body| body.contains("\"access_token\":\""))
-            .map(|_| Source::MisNotas)
-    };
-    Status { source, has_client_id: client_id(&app).is_some(), connecting: CONNECTING.load(Ordering::Relaxed) }
+    let connecting = CONNECTING.load(Ordering::Relaxed);
+    let source = if connecting { None } else { token(&app).map(|(_, source)| source) };
+    let own_saved = ACCESS.lock().unwrap().is_some() || load_refresh(&app).is_some();
+    let own_error = if source == Some(Source::Cocuyo) { None } else { OWN_FAILED.lock().unwrap().clone() };
+    Status { source, has_client_id: client_id(&app).is_some(), connecting, own_saved, own_error }
 }
 
 #[tauri::command]
@@ -393,6 +401,7 @@ pub fn spotify_connect(app: AppHandle) {
 #[tauri::command]
 pub fn spotify_disconnect(app: AppHandle) {
     *ACCESS.lock().unwrap() = None;
+    own_failed(None);
     if let Some(file) = session_file(&app) {
         let _ = std::fs::remove_file(file);
     }

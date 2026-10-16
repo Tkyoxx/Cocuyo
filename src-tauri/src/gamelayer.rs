@@ -260,6 +260,55 @@ pub fn finished(heard: &str, reply: &str, failed: bool, dictation: bool) {
 }
 
 #[cfg(debug_assertions)]
+pub fn wait_front(name: &str, seconds: u64) -> bool {
+    let started = std::time::Instant::now();
+    while started.elapsed().as_secs() < seconds {
+        let front = unsafe {
+            let mut process = 0;
+            GetWindowThreadProcessId(GetForegroundWindow(), Some(&mut process));
+            OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, process).ok().map(|handle| {
+                let mut path = [0u16; 520];
+                let mut len = path.len() as u32;
+                let named = QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, windows::core::PWSTR(path.as_mut_ptr()), &mut len).is_ok();
+                let _ = CloseHandle(handle);
+                if named { String::from_utf16_lossy(&path[..len as usize]).to_lowercase() } else { String::new() }
+            })
+        };
+        if front.is_some_and(|path| path.contains(&name.to_lowercase())) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    false
+}
+
+#[cfg(debug_assertions)]
+pub fn fps(app: &AppHandle, seconds: u64) -> String {
+    ENABLED.store(true, Ordering::Relaxed);
+    let front = unsafe { GetForegroundWindow() };
+    if !with_link(app, Some(front), |_| {}) {
+        return "no se pudo preparar la librería".into();
+    }
+    std::thread::sleep(Duration::from_millis(2000));
+    let count = || LINK.lock().unwrap().as_ref().map_or(0, |link| unsafe { std::ptr::read_volatile(std::ptr::addr_of!((*link.shared).frames)) });
+    let mut seen = Vec::new();
+    let mut before = count();
+    let mut clock = std::time::Instant::now();
+    for _ in 0..seconds {
+        std::thread::sleep(Duration::from_millis(1000));
+        let now = count();
+        let took = clock.elapsed().as_secs_f32();
+        clock = std::time::Instant::now();
+        seen.push((now.wrapping_sub(before) as f32 / took).round() as u32);
+        before = now;
+    }
+    let live: Vec<u32> = seen.iter().copied().filter(|fps| *fps > 0).collect();
+    let average = if live.is_empty() { 0.0 } else { live.iter().sum::<u32>() as f32 / live.len() as f32 };
+    let lowest = live.iter().min().copied().unwrap_or(0);
+    format!("cuadros por segundo {seen:?}; promedio {average:.1}, el más bajo {lowest}")
+}
+
+#[cfg(debug_assertions)]
 pub fn probe(app: &AppHandle) -> String {
     ENABLED.store(true, Ordering::Relaxed);
     TURN.fetch_add(1, Ordering::Relaxed);

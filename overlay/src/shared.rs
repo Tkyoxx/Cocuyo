@@ -24,6 +24,6 @@ pub struct Shared {
     pub who: [u16; 16],
     pub text: [u16; TEXT_LEN],
     pub recording: u32,
-    pub rec_spare: u32,
+    pub frames: u32,
     pub rec_since: u64,
 }

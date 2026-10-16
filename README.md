@@ -272,7 +272,10 @@ Cuando publico una versión nueva, Cocuyo la baja de las [publicaciones de este 
 - **Lo que suena** se le pregunta a Windows: funciona con Spotify, el navegador o cualquier reproductor, sin cuentas. Pausar, seguir, siguiente y anterior van por ahí.
 - **El volumen** de las órdenes es el de Spotify, no el del equipo. Con Spotify conectado mueve el control de la propia app, suene donde suene; sin conectar (o sin Premium) baja a Spotify en el mezclador de Windows, sin tocar las demás apps.
 - **Elegir una canción, un artista, un género, una lista o algo al azar** necesita la API de Spotify y una cuenta Premium. En **Ajustes → Spotify → Conectar**, Cocuyo inicia sesión con el Client ID de tu app de Spotify y guarda su sesión cifrada en tu equipo. Si usas [Mis Notas](https://github.com/Tkyoxx/mis-notas), toma el Client ID que ya configuraste ahí; si no, pégalo en Ajustes (la dirección de retorno de tu app de Spotify debe ser `http://127.0.0.1:5173/`).
-- Sin sesión propia, si Mis Notas está abierta y conectada, Cocuyo usa la de ella. Sin ninguna de las dos, «pon X» abre la búsqueda en Spotify.
+- Sin sesión propia, si Mis Notas está abierta y conectada, Cocuyo usa la de ella. Sin ninguna de las dos, «pon X» abre la búsqueda en Spotify. Ajustes → Música te dice cuál está usando y, si tu sesión propia falló, por qué.
+- **Tus listas y tus Me gusta:** «agrega esta canción a mi lista Gym», «sácala de mi lista Gym», «crea una lista Para el carro», «dale me gusta», «quítala de Me gusta», «¿está en mis Me gusta?». «Dale me gusta», «guárdala» o «pon me gusta» siempre guardan lo que suena, nunca ponen una canción que se llame «Me gusta».
+- **«Pon mis Me gusta»:** Spotify no deja ponerlos desde afuera, así que Cocuyo arma una lista privada «Mis Me gusta · Cocuyo» con tus últimos 500 y la pone al día solo cuando cambian.
+- **Moverte en la canción:** «adelanta 30 segundos», «atrasa 10 segundos», «ve al minuto 2». Sin conectar también sirve si la app que suena lo deja.
 
 ## Primera vez
 
@@ -319,7 +322,7 @@ Conecta tu propia app de Discord una vez (Ajustes → Juegos te lleva paso a pas
 | Dices | Hace |
 |---|---|
 | «silénciame en Discord», «desmutéame», «ensordéceme» | Tu micrófono y tu audio |
-| «métete al canal General», «sal del canal» | Entra al canal de voz (prefiere tu servidor actual) o sale |
+| «métete al canal General», «méteme a General en Los Pibes», «sal del canal» | Entra al canal de voz o sale. Si no dices el servidor, busca en el de tu llamada, luego en tu servidor predeterminado (Ajustes → Juegos) y luego en el último donde estuviste; si el nombre está en dos servidores, te pregunta cuál |
 | «¿quién está en el canal?», «¿estoy silenciado?» | Te dice con quién estás y te muestra la lista |
 | «volumen de Discord al 60», «sube mi micrófono en Discord» | El volumen de Discord y el de tu micrófono |
 | «baja a Juan en Discord», «pon a Juan al 30 en Discord», «silencia a Juan en Discord» | El volumen de cada persona, solo para ti |
@@ -409,7 +412,7 @@ No hay cuentas ni telemetría. Esto es todo lo que sale de tu PC, y cuándo:
 - **Actualizaciones:** al arrancar y cada seis horas, Cocuyo le pregunta a GitHub si hay una versión nueva. No manda nada tuyo. Se apaga en **Ajustes → Isla → Actualizarse sola**.
 - **El clima** de la pestaña Hoy viene de Open-Meteo, y si no escribiste tu ciudad, la primera vez se averigua por tu conexión (ipwho.is). Los dos son gratis y sin cuenta, y solo se consultan al abrir la pestaña o al preguntar por el clima. Para que no se use ipwho.is, escribe tu ciudad en **Ajustes → Tú**.
 - **Cocuyo en el celular** (apagado de fábrica): con Remoto encendido, tu PC se queda conectado al punto de cita. Por ahí pasan tus órdenes y sus respuestas, cifradas de punta a punta: el punto de cita ve cuándo y cuánto hablan, nunca qué dicen.
-- **Lo demás, solo cuando tú lo pides:** la descarga de la voz y de las voces que suenan a persona, la prueba de velocidad, Spotify si lo conectas, las galerías de scripts y extensiones. Las órdenes de buscar abren tu navegador o Spotify, como si lo hicieras a mano.
+- **Lo demás, solo cuando tú lo pides:** la descarga de la voz y de las voces que suenan a persona, la prueba de velocidad, Spotify y Discord si los conectas (con tu propia app de cada uno), las galerías de scripts y extensiones, «investiga a fondo» y «busca en internet» (DuckDuckGo y las páginas que lee, respetando su robots.txt), «busca en Steam» (la tienda de Steam) y «¿quién te hizo?» (el perfil público de GitHub del autor). Las demás órdenes de buscar abren tu navegador o Spotify, como si lo hicieras a mano.
 - El atajo global usa un hook de teclado de Windows. Solo distingue `Ctrl`, `Shift`, `Alt` y `Win`; no guarda ni envía ninguna tecla. Está en [`src-tauri/src/hotkeys.rs`](src-tauri/src/hotkeys.rs).
 - El historial del portapapeles vive en memoria y desaparece al cerrar la app. Lo que un gestor de contraseñas marca como privado no se guarda.
 - Las extensiones dicen si usan internet antes de instalarlas. Las de la galería se revisan antes de entrar; las que instales por tu cuenta son responsabilidad de quien las hizo.

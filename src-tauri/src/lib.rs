@@ -62,11 +62,17 @@ fn demo(app: tauri::AppHandle) {
     let Ok(steps) = std::env::var("COCUYO_DEMO") else { return };
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_secs(4));
+        let mut photo: Option<String> = None;
         for step in steps.split(',') {
             if let Some(query) = step.strip_prefix("spotify=") {
                 eprintln!("[spotify] {}", media::probe(&app, query));
             } else if let Some(path) = step.strip_prefix("api=") {
                 eprintln!("[api] {path} -> {}", media::raw(&app, path));
+            } else if let Some(name) = step.strip_prefix("al-frente=") {
+                let started = std::time::Instant::now();
+                eprintln!("[al-frente] {name}: {} en {:?}", gamelayer::wait_front(name, 240), started.elapsed());
+            } else if let Some(seconds) = step.strip_prefix("capa-fps=") {
+                eprintln!("[capa] {}", gamelayer::fps(&app, seconds.parse().unwrap_or(10)));
             } else if step == "capa" {
                 eprintln!("[capa] {}", gamelayer::probe(&app));
             } else if step == "sonando" {
@@ -150,6 +156,19 @@ fn demo(app: tauri::AppHandle) {
                 eprintln!("[orden] {text} -> {:?} en {:?}", voice::run_order(&app, text), started.elapsed());
             } else if step == "spotify-biblioteca" {
                 eprintln!("[spotify] {}", media::library_check(&app));
+            } else if step == "spotify-mudo" || step == "spotify-sonido" {
+                eprintln!("[spotify] mezclador {:?}", media::hush(step == "spotify-mudo"));
+            } else if let Some(what) = step.strip_prefix("spotify-contexto=") {
+                eprintln!("[spotify] {}", media::try_context(&app, what));
+            } else if step == "spotify-foto" {
+                photo = media::snapshot(&app);
+                eprintln!("[spotify] foto {photo:?}");
+            } else if step == "spotify-volver" {
+                eprintln!("[spotify] {}", photo.as_deref().map_or("sin foto".into(), |saved| media::restore(&app, saved)));
+            } else if let Some(name) = step.strip_prefix("spotify-borrar-lista=") {
+                eprintln!("[spotify] {}", media::drop_list(&app, name));
+            } else if step == "discord-servidores" {
+                eprintln!("[discord] {}", discord::servers(&app));
             } else if step == "discord" {
                 eprintln!("[discord] {}", discord::probe(&app));
             } else if step == "error-prueba" {
@@ -371,6 +390,7 @@ pub fn run() {
             discord::discord_conectar,
             discord::discord_quitar,
             discord::discord_panel,
+            discord::discord_servidores,
             discord::discord_hacer,
             settings::current_record_dir,
             settings::open_record_dir,

@@ -1282,6 +1282,10 @@ class SettingsPage implements Page {
            <div class="scol">
            <div class="card">
              <div class="srow"><div><b>Discord por voz</b><small id="s-dc-state">Silénciate, ensordécete y entra o sal de canales de voz hablándole a Cocuyo, también con el juego abierto.</small></div><button class="ghost" id="s-dc-go" hidden>Desconectar</button></div>
+             <div id="s-dc-def" hidden>
+               <div class="srow stack"><div><b>Servidor predeterminado</b><small id="s-dc-def-now">Ninguno.</small></div><input id="s-dc-def-find" placeholder="Busca tu servidor" spellcheck="false" autocomplete="off" /></div>
+               <div class="srow chips" id="s-dc-guilds"></div>
+             </div>
              <div class="dc-steps" id="s-dc-steps">
                <div class="srow slim"><div><b>1. Crea tu app de Discord</b><small>Es gratis y solo la usas tú. Entra al portal con la misma cuenta que tienes abierta en Discord, pulsa «New Application», ponle de nombre Cocuyo, marca la casilla y dale «Create».</small></div><button class="ghost" id="s-dc-portal">Abrir el portal</button></div>
                <div class="srow slim"><div><b>2. Agrega la dirección de vuelta</b><small>En el menú de la izquierda entra a «OAuth2». En «Redirects» pulsa «Add Redirect», pega la dirección y dale «Save Changes» abajo. Tiene que quedar una sola dirección: si hay otras, bórralas.</small></div><button class="ghost" id="s-dc-copy">Copiar la dirección</button></div>
@@ -1341,8 +1345,9 @@ class SettingsPage implements Page {
            <div class="card">
              <div class="srow"><div><b>Qué le puedes pedir</b><small>Dilo como te salga; estos son ejemplos.</small></div></div>
              <div class="srow slim"><div><b>«pon Bad Bunny», «pon rock en español», «pon mi lista de entrenar»</b><small>Suena en Spotify: la canción, el artista, un género o tu lista.</small></div></div>
-             <div class="srow slim"><div><b>«agrega esta canción a mi lista Gym», «crea una lista Para el carro»</b><small>Tus listas. Si lo conectaste antes y no te deja, dale Desconectar y Conectar otra vez: hace falta un permiso nuevo.</small></div></div>
-             <div class="srow slim"><div><b>«dale me gusta», «quítala de Me gusta», «pon en cola Despacito»</b><small>Me gusta y la cola.</small></div></div>
+             <div class="srow slim"><div><b>«agrega esta canción a mi lista Gym», «sácala de mi lista Gym», «crea una lista Para el carro»</b><small>Tus listas. Si lo conectaste antes y no te deja, dale Desconectar y Conectar otra vez: hace falta un permiso nuevo.</small></div></div>
+             <div class="srow slim"><div><b>«dale me gusta», «¿está en mis Me gusta?», «pon mis Me gusta», «pon en cola Despacito»</b><small>Me gusta y la cola. Spotify no deja poner tus Me gusta desde afuera, así que Cocuyo arma una lista privada «Mis Me gusta · Cocuyo» y la mantiene al día.</small></div></div>
+             <div class="srow slim"><div><b>«adelanta 30 segundos», «atrasa 10 segundos», «ve al minuto 2»</b><small>Moverte dentro de la canción. Sin conectar también sirve si la app lo deja.</small></div></div>
              <div class="srow slim"><div><b>«pausa», «siguiente», «súbele», «¿qué suena?»</b><small>Esto funciona aunque no conectes nada: va por los controles de música de Windows.</small></div></div>
            </div>`,
           true,
@@ -1508,7 +1513,7 @@ class SettingsPage implements Page {
       }
       this.note("");
       void call("spotify_connect");
-      this.paintSpotify({ source: this.spotify?.source ?? null, hasClientId: true, connecting: true });
+      this.paintSpotify({ source: this.spotify?.source ?? null, hasClientId: true, connecting: true, ownSaved: false, ownError: null });
     });
     on<string | null>("spotify", (error) => {
       if (error) this.note(error);
@@ -1689,11 +1694,23 @@ class SettingsPage implements Page {
       const state = await call<{ configurado: boolean; conectado: boolean }>("discord_estado", undefined, { configurado: false, conectado: false });
       q("#s-dc-go").hidden = !state.conectado;
       q("#s-dc-steps").hidden = state.conectado;
+      q("#s-dc-def").hidden = !state.conectado;
+      if (state.conectado) void this.loadGuilds();
       q("#s-dc-state").textContent = state.conectado
-        ? "Conectado. Dile «silénciame en Discord», «desmutéame», «ensordéceme», «métete al canal General» o «sal del canal»."
+        ? "Conectado. Dile «silénciame en Discord», «desmutéame», «ensordéceme», «métete al canal General», «méteme a General en Los Pibes» o «sal del canal»."
         : "Silénciate, ensordécete y entra o sal de canales de voz hablándole a Cocuyo, también con el juego abierto. Se arma una sola vez en 5 pasos:";
     };
     void paintDiscord();
+    const guildFind = q<HTMLInputElement>("#s-dc-def-find");
+    guildFind.addEventListener("pointerdown", () => host.focus(guildFind));
+    guildFind.addEventListener("input", () => this.paintGuilds());
+    q("#s-dc-guilds").addEventListener("click", async (e) => {
+      const target = (e.target as HTMLElement).closest<HTMLElement>("[data-guild]");
+      if (!target) return;
+      await this.save({ discordServer: target.dataset.guild ?? "" });
+      guildFind.value = "";
+      this.paintGuilds();
+    });
     q("#s-dc-portal").addEventListener("click", () => void call("script_action", { action: { abrir: "https://discord.com/developers/applications" } }).catch(() => {}));
     q("#s-dc-copy").addEventListener("click", async () => {
       try {
@@ -2044,7 +2061,7 @@ class SettingsPage implements Page {
 
   private async loadSpotify() {
     this.paintSpotify(
-      await call<SpotifyStatus>("spotify_status", undefined, { source: null, hasClientId: false, connecting: false }),
+      await call<SpotifyStatus>("spotify_status", undefined, { source: null, hasClientId: false, connecting: false, ownSaved: false, ownError: null }),
     );
   }
 
@@ -2060,6 +2077,8 @@ class SettingsPage implements Page {
     button.disabled = status.connecting;
     if (status.connecting) state.textContent = "Acepta en el navegador que se acaba de abrir…";
     else if (connected) state.textContent = "Conectado con su propia sesión. No necesita Mis Notas abierta.";
+    else if (status.ownError && status.source === "mis-notas") state.textContent = `Tu llave propia falló (${status.ownError.replace(/\.$/, "")}), así que estoy usando la de Mis Notas. Dale Conectar para arreglarla.`;
+    else if (status.ownError) state.textContent = `Tu llave propia falló (${status.ownError.replace(/\.$/, "")}). Dale Conectar para arreglarla.`;
     else if (status.source === "mis-notas") state.textContent = "Usando la sesión de Mis Notas mientras esté abierta. Conecta para no depender de ella.";
     else if (status.hasClientId) state.textContent = "Sin conectar. Usará el Client ID que ya tienes en Mis Notas.";
     else state.textContent = "Sin conectar. Se arma una sola vez en 4 pasos:";
@@ -2238,6 +2257,29 @@ class SettingsPage implements Page {
     const folder = await call<string | null>("current_record_dir", undefined, null);
     q("#s-rec-folder").textContent = folder ? folder + "\\" + tr("un juego o Escritorio") : "";
     q("#s-rec-reset").hidden = !s.recDir;
+  }
+
+  private guilds: { id: string; nombre: string }[] = [];
+
+  private async loadGuilds() {
+    this.guilds = await call<{ id: string; nombre: string }[]>("discord_servidores", undefined, []);
+    this.paintGuilds();
+  }
+
+  private paintGuilds() {
+    const chosen = this.settings?.discordServer ?? "";
+    const picked = this.guilds.find((guild) => guild.id === chosen);
+    const plain = (text: string) => text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const wanted = plain(this.el.querySelector<HTMLInputElement>("#s-dc-def-find")?.value.trim() ?? "");
+    const shown = this.guilds.filter((guild) => guild.id !== chosen && (!wanted || plain(guild.nombre).includes(wanted))).slice(0, wanted ? 8 : 5);
+    const chip = (id: string, label: string, on: boolean) => `<button class="chip${on ? " on" : ""}" data-guild="${esc(id)}" title="${esc(label)}">${esc(label)}</button>`;
+    this.el.querySelector("#s-dc-guilds")!.innerHTML =
+      chip("", tr("Ninguno"), !picked) + (picked ? chip(picked.id, picked.nombre, true) : "") + shown.map((guild) => chip(guild.id, guild.nombre, false)).join("");
+    this.el.querySelector("#s-dc-def-now")!.textContent = !this.guilds.length
+      ? "Abre Discord para ver tus servidores."
+      : picked
+        ? `Si no dices el servidor y no estás en una llamada, busco los canales en «${picked.nombre}».`
+        : "Ninguno: busco en el de la llamada en la que estés y, si no, en el último donde estuviste.";
   }
 
   private async paintMics() {

@@ -234,8 +234,38 @@ fn forget_link() {
     *LINK.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
 }
 
+const LOOKALIKES: [(&str, &str); 3] = [
+    ("ᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘꞯʀꜱᴛᴜᴠᴡxʏᴢ", "abcdefghijklmnopqrstuvwxyz"),
+    ("ᵃᵇᶜᵈᵉᶠᵍʰⁱʲᵏˡᵐⁿᵒᵖqʳˢᵗᵘᵛʷˣʸᶻ", "abcdefghijklmnopqrstuvwxyz"),
+    ("αβεικνορτυχωΑΒΕΗΙΚΜΝΟΡΤΥΧ", "abeikvoptuxwABEHIKMNOPTYX"),
+];
+
+fn plain_letter(c: char) -> char {
+    let code = c as u32;
+    let moved = match code {
+        0x1D400..=0x1D6A3 => {
+            let at = (code - 0x1D400) % 52;
+            if at < 26 { 'A' as u32 + at } else { 'a' as u32 + at - 26 }
+        }
+        0x1D6A8..=0x1D7C9 => {
+            let at = (code - 0x1D6A8) % 58;
+            if at < 25 { 0x391 + at } else if (26..51).contains(&at) { 0x3B1 + at - 26 } else { code }
+        }
+        0x1D7CE..=0x1D7FF => '0' as u32 + (code - 0x1D7CE) % 10,
+        0xFF10..=0xFF19 | 0xFF21..=0xFF3A | 0xFF41..=0xFF5A => code - 0xFEE0,
+        _ => code,
+    };
+    let c = char::from_u32(moved).unwrap_or(c);
+    for (fancy, plain) in LOOKALIKES {
+        if let Some(at) = fancy.chars().position(|f| f == c) {
+            return plain.chars().nth(at).unwrap_or(c);
+        }
+    }
+    c
+}
+
 fn pretty(name: &str) -> String {
-    let kept: String = name.chars().map(|c| if c.is_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.' | '\'') { c } else { ' ' }).collect();
+    let kept: String = name.chars().map(plain_letter).map(|c| if c.is_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.' | '\'') { c } else { ' ' }).collect();
     let kept = kept.split_whitespace().collect::<Vec<_>>().join(" ");
     if kept.is_empty() { name.trim().to_string() } else { kept }
 }
@@ -315,8 +345,11 @@ fn channels(pipe: &mut Pipe, kind: u64) -> Result<Vec<(String, String, String)>,
     Ok(found)
 }
 
-fn best_channel(list: Vec<(String, String, String)>, name: &str, current: &str) -> Option<(f32, String, String, String)> {
-    list.into_iter()
+static LAST_GUILD: Mutex<String> = Mutex::new(String::new());
+
+fn scored(list: Vec<(String, String, String)>, name: &str, current: &str) -> Vec<(f32, String, String, String)> {
+    let mut all: Vec<(f32, String, String, String)> = list
+        .into_iter()
         .map(|(id, title, guild)| {
             let plain = pretty(&title);
             let mut score = crate::intent::similarity(name, &plain).max(crate::intent::covers(name, &plain));
@@ -325,30 +358,121 @@ fn best_channel(list: Vec<(String, String, String)>, name: &str, current: &str) 
             }
             (score, id, title, guild)
         })
+        .collect();
+    all.sort_by(|a, b| b.0.total_cmp(&a.0));
+    all
+}
+
+fn best_channel(list: Vec<(String, String, String)>, name: &str, current: &str) -> Option<(f32, String, String, String)> {
+    scored(list, name, current).into_iter().next()
+}
+
+fn preferred(app: &AppHandle, pipe: &mut Pipe) -> String {
+    here(pipe)
+        .ok()
+        .and_then(|c| c["guild_id"].as_str().map(str::to_string))
+        .filter(|id| !id.is_empty())
+        .or_else(|| Some(crate::settings::load(app).discord_server).filter(|id| !id.is_empty()))
+        .unwrap_or_else(|| LAST_GUILD.lock().map(|last| last.clone()).unwrap_or_default())
+}
+
+fn guild_called(pipe: &mut Pipe, said: &str) -> Result<Option<String>, String> {
+    let guilds = pipe.command("GET_GUILDS", json!({}))?;
+    Ok(guilds["guilds"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|g| Some((g["id"].as_str()?.to_string(), pretty(g["name"].as_str()?))))
+        .map(|(id, title)| (crate::intent::similarity(said, &title).max(crate::intent::covers(said, &title)), id))
+        .filter(|(score, _)| *score >= 0.6)
         .max_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(_, id)| id))
+}
+
+fn aimed(pipe: &mut Pipe, name: &str, list: &[(String, String, String)]) -> Result<(String, Option<String>), String> {
+    let (channel, server) = split_server(name);
+    if let Some(server) = server {
+        let id = guild_called(pipe, &server)?.ok_or_else(|| format!("No estás en ningún servidor llamado «{server}»."))?;
+        return Ok((channel, Some(id)));
+    }
+    let words: Vec<&str> = name.split(' ').collect();
+    for at in (1..words.len().saturating_sub(1)).rev() {
+        if !matches!(words[at], "en" | "in" | "no" | "na" | "on") {
+            continue;
+        }
+        let (left, right) = (words[..at].join(" "), words[at + 1..].join(" "));
+        if right.chars().count() < 3 {
+            continue;
+        }
+        let Some(id) = guild_called(pipe, &right)? else { continue };
+        let fits = list.iter().filter(|c| c.2 == id).any(|(_, title, _)| {
+            let plain = pretty(title);
+            crate::intent::similarity(&left, &plain).max(crate::intent::covers(&left, &plain)) >= 0.6
+        });
+        if fits {
+            return Ok((left, Some(id)));
+        }
+    }
+    Ok((name.to_string(), None))
+}
+
+fn split_server(name: &str) -> (String, Option<String>) {
+    for mark in [" del servidor ", " en el servidor ", " in the server ", " on the server ", " no servidor ", " do servidor "] {
+        if let Some((channel, server)) = name.split_once(mark) {
+            return (channel.trim().to_string(), Some(server.trim().to_string()));
+        }
+    }
+    (name.to_string(), None)
 }
 
 fn join(app: &AppHandle, name: &str) -> Result<String, String> {
     with(app, |pipe| {
-        let current = here(pipe).ok().and_then(|c| c["guild_id"].as_str().map(str::to_string)).unwrap_or_default();
-        let (score, id, title, _) = best_channel(channels(pipe, 2)?, name, &current).ok_or("No encontré canales de voz en tus servidores.")?;
+        let current = preferred(app, pipe);
+        let mut list = channels(pipe, 2)?;
+        let (name, server) = aimed(pipe, name, &list)?;
+        if let Some(wanted) = &server {
+            list.retain(|(_, _, guild)| guild == wanted);
+        }
+        let all = scored(list, &name, server.as_deref().unwrap_or(&current));
+        let (score, id, title, guild) = all.first().cloned().ok_or("No encontré canales de voz en tus servidores.")?;
         if score < 0.6 {
             return Err(format!("No encontré un canal de voz llamado «{name}»."));
         }
+        if server.is_none() && guild != current {
+            if let Some(twin) = all.iter().skip(1).find(|other| other.3 != guild && score - other.0 < 0.05) {
+                let (one, two) = (guild_name(pipe, &guild), guild_name(pipe, &twin.3));
+                return Err(format!("Hay un «{}» en {one} y otro en {two}. Dime «métete a {name} del servidor …» y el nombre.", pretty(&title)));
+            }
+        }
         pipe.command("SELECT_VOICE_CHANNEL", json!({ "channel_id": id, "force": true }))?;
+        if let Ok(mut last) = LAST_GUILD.lock() {
+            *last = guild;
+        }
         Ok(format!("Entraste a «{}».", pretty(&title)))
     })
 }
 
 fn leave(app: &AppHandle) -> Result<String, String> {
-    with(app, |pipe| pipe.command("SELECT_VOICE_CHANNEL", json!({ "channel_id": Value::Null })))?;
+    with(app, |pipe| {
+        if let Some(guild) = here(pipe).ok().and_then(|c| c["guild_id"].as_str().map(str::to_string)).filter(|id| !id.is_empty()) {
+            if let Ok(mut last) = LAST_GUILD.lock() {
+                *last = guild;
+            }
+        }
+        pipe.command("SELECT_VOICE_CHANNEL", json!({ "channel_id": Value::Null }))
+    })?;
     Ok("Saliste del canal de voz.".into())
 }
 
 fn open_text(app: &AppHandle, name: &str) -> Result<String, String> {
     let (id, title, guild) = with(app, |pipe| {
-        let current = here(pipe).ok().and_then(|c| c["guild_id"].as_str().map(str::to_string)).unwrap_or_default();
-        let (score, id, title, guild) = best_channel(channels(pipe, 0)?, name, &current).ok_or("No encontré canales de texto en tus servidores.")?;
+        let current = preferred(app, pipe);
+        let mut list = channels(pipe, 0)?;
+        let (name, server) = aimed(pipe, name, &list)?;
+        if let Some(wanted) = &server {
+            list.retain(|(_, _, guild)| guild == wanted);
+        }
+        let (score, id, title, guild) = best_channel(list, &name, server.as_deref().unwrap_or(&current)).ok_or("No encontré canales de texto en tus servidores.")?;
         if score < 0.6 {
             return Err(format!("No encontré un canal de texto llamado «{name}»."));
         }
@@ -693,15 +817,31 @@ pub fn understand(spoken: &str) -> Option<Order> {
     if has(&[" ensordeceme", " deafen me", " no quiero oir a nadie"]) || (named && has(&[" ensordece", " deafen"])) {
         return Some(Order::Deaf(Some(true)));
     }
-    const LEADS: [&str; 9] = [" metete al canal ", " entra al canal ", " unete al canal ", " conectate al canal ", " metete en el canal ", " entra en el canal ", " join the channel ", " join channel ", " entra no canal "];
-    let lead = LEADS.iter().find_map(|lead| padded.find(lead).map(|at| at + lead.len()))?;
+    const LEADS: [&str; 12] = [
+        " metete al canal ", " entra al canal ", " unete al canal ", " conectate al canal ", " metete en el canal ", " entra en el canal ", " join the channel ", " join channel ",
+        " entra no canal ", " meteme al canal ", " llevame al canal ", " meteme en el canal ",
+    ];
+    const LOOSE: [&str; 10] = [" meteme a ", " meteme en ", " metete a ", " metete en ", " llevame a ", " entra a ", " unete a ", " conectame a ", " join ", " entra em "];
+    let lead = match LEADS.iter().find_map(|lead| padded.find(lead).map(|at| at + lead.len())) {
+        Some(lead) => lead,
+        None => {
+            let at = LOOSE.iter().find_map(|lead| padded.find(lead).map(|at| at + lead.len()))?;
+            let rest = format!(" {}", &padded[at..]);
+            let voiceish = [" canal", " chat", " voz", " llamada", " call", " vc", " sala", " general", " servidor", " server"].iter().any(|w| rest.contains(w));
+            if !voiceish {
+                return None;
+            }
+            at
+        }
+    };
     let name = cut_tail(&padded[lead..].replace("de voz", ""));
     (!name.is_empty()).then_some(Order::Join(name))
 }
 
 pub fn spoken(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
     let order = understand(spoken)?;
-    if load(app)["client_id"].as_str().is_none_or(str::is_empty) && !crate::intent::normalize(spoken).contains("discord") && !matches!(order, Order::Join(_)) {
+    let said = crate::intent::normalize(spoken);
+    if load(app)["client_id"].as_str().is_none_or(str::is_empty) && !said.contains("discord") && !(matches!(order, Order::Join(_)) && said.contains("canal")) {
         return None;
     }
     Some(match order {
@@ -722,9 +862,29 @@ pub fn spoken(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
 }
 
 #[cfg(debug_assertions)]
+#[cfg(debug_assertions)]
+pub fn servers(app: &AppHandle) -> String {
+    let listed = with(app, |pipe| {
+        let now = here(pipe).ok().and_then(|c| c["name"].as_str().map(str::to_string));
+        let guilds = pipe.command("GET_GUILDS", json!({}))?;
+        let mut out = format!("en llamada: {now:?}");
+        for guild in guilds["guilds"].as_array().into_iter().flatten().take(60) {
+            let (Some(id), Some(name)) = (guild["id"].as_str(), guild["name"].as_str()) else { continue };
+            let voice: Vec<String> = pipe
+                .command("GET_CHANNELS", json!({ "guild_id": id }))
+                .ok()
+                .map(|list| list["channels"].as_array().into_iter().flatten().filter(|c| c["type"].as_u64() == Some(2)).filter_map(|c| c["name"].as_str().map(str::to_string)).collect())
+                .unwrap_or_default();
+            out += &format!("\n{name} ({id}): {voice:?}");
+        }
+        Ok(out)
+    });
+    listed.unwrap_or_else(|why| format!("falló: {why}"))
+}
+
 pub fn probe(app: &AppHandle) -> String {
     match with(app, panel) {
-        Ok(panel) => format!("conectado: canal {:?}, {} personas, mute {}, salida {}", panel.canal, panel.gente.len(), panel.mute, panel.salida),
+        Ok(panel) => format!("conectado: canal {:?} en {:?}, {} personas, mute {}, deaf {}, salida {}", panel.canal, panel.servidor, panel.gente.len(), panel.mute, panel.deaf, panel.salida),
         Err(e) => format!("falló: {e}"),
     }
 }
@@ -802,6 +962,27 @@ fn panel(pipe: &mut Pipe) -> Result<Panel, String> {
         servidor: server,
         gente,
     })
+}
+
+#[derive(serde::Serialize)]
+pub struct Servidor {
+    id: String,
+    nombre: String,
+}
+
+#[tauri::command]
+pub async fn discord_servidores(app: AppHandle) -> Result<Vec<Servidor>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if !load(&app)["access"].is_string() {
+            return Ok(Vec::new());
+        }
+        with(&app, |pipe| {
+            let guilds = pipe.command("GET_GUILDS", json!({}))?;
+            Ok(guilds["guilds"].as_array().into_iter().flatten().filter_map(|g| Some(Servidor { id: g["id"].as_str()?.to_string(), nombre: pretty(g["name"].as_str()?) })).collect())
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -894,6 +1075,17 @@ mod tests {
         assert_eq!(understand("métete al canal General"), Some(Order::Join("general".into())));
         assert_eq!(understand("entra al canal de voz Squad en Discord"), Some(Order::Join("squad".into())));
         assert_eq!(understand("sal del canal"), Some(Order::Leave));
+        assert_eq!(split_server("chat de voz 1 del servidor los pibes"), ("chat de voz 1".into(), Some("los pibes".into())));
+        assert_eq!(split_server("chat de voz 1"), ("chat de voz 1".into(), None));
+        assert_eq!(understand("méteme a chat de voz 1 en marihuana, guaro, poper"), Some(Order::Join("chat 1 en marihuana guaro poper".into())));
+        assert_eq!(understand("llévame al canal General en Los Pibes"), Some(Order::Join("general en los pibes".into())));
+        assert_eq!(understand("entra a YouTube"), None);
+        assert_eq!(understand("méteme a la cola despacito"), None);
+        assert_eq!(pretty("𝑭𝑨𝑴𝑰𝑳𝑰𝑨 𝑯𝑨𝑹𝑫𝑾𝑶𝑶𝑫"), "FAMILIA HARDWOOD");
+        assert_eq!(pretty("🎃 𝐿𝘰𝜈𝑖𝑛𝑔 𝐷𝑟𝑒𝑎𝑚𝑠 ⭑ Social"), "Loving Dreams Social");
+        assert_eq!(pretty("5ᴛʜ ꜱᴛʀᴇᴇᴛꜱᴀɪɴᴛꜱ™ [M.C]"), "5th streetsaints M.C");
+        assert_eq!(pretty("ᵇˡᵒᵒᵈʸ ʰᵒˢᵖⁱᵗᵃˡ"), "bloody hospital");
+        assert_eq!(pretty("🔊|| Chat de Voz  1 ||🔊"), "Chat de Voz 1");
         assert_eq!(understand("transmite mi pantalla en discord"), Some(Order::Stream));
         assert_eq!(understand("silencia el volumen"), None);
         assert_eq!(understand("pon salsa"), None);
