@@ -5,7 +5,7 @@
 <br>
 
 <a href="https://github.com/Tkyoxx/Cocuyo/releases/latest"><img src="https://img.shields.io/github/v/release/Tkyoxx/Cocuyo?style=for-the-badge&label=Descargar&color=F2B84B&labelColor=101012" alt="Descargar"></a>
-<a href="#privacidad"><img src="https://img.shields.io/github/downloads/Tkyoxx/Cocuyo/contador/instalacion?style=for-the-badge&label=Instalaciones&color=B8FF3D&labelColor=101012" alt="Instalaciones"></a>
+<a href="#privacidad"><img src="https://img.shields.io/github/downloads/Tkyoxx/Cocuyo/contador/total?style=for-the-badge&label=Instalaciones&color=B8FF3D&labelColor=101012" alt="Instalaciones"></a>
 <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-F2B84B?style=for-the-badge&labelColor=101012" alt="Windows 10 y 11">
 <img src="https://img.shields.io/badge/Hecho%20con-Rust%20%2B%20Tauri-FF8A3D?style=for-the-badge&labelColor=101012" alt="Hecho con Rust y Tauri">
 <img src="https://img.shields.io/badge/Licencia-MIT-8C8791?style=for-the-badge&labelColor=101012" alt="Licencia MIT">
