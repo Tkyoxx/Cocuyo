@@ -449,7 +449,6 @@ struct Ear {
     rate: u32,
     gain: f32,
     clean: Option<crate::ruido::Cleaner>,
-    system: bool,
 }
 
 struct Ears {
@@ -509,18 +508,15 @@ impl Ears {
                 let clean = if what == "micrófono" { crate::ruido::Cleaner::new(noise) } else { None };
                 names.push(format!("{what}: {name}{}", if clean.is_some() { " (sin ruido)" } else { "" }));
                 streams.push(stream);
-                ears.push(Ear { queue: VecDeque::new(), left: crate::talk::Resampler::new(rate as f64, RATE as f64), right: crate::talk::Resampler::new(rate as f64, RATE as f64), rate, gain, clean, system: what == "PC" });
+                ears.push(Ear { queue: VecDeque::new(), left: crate::talk::Resampler::new(rate as f64, RATE as f64), right: crate::talk::Resampler::new(rate as f64, RATE as f64), rate, gain, clean });
             }
         }
         (!ears.is_empty()).then(|| Ears { _streams: streams, arriving, ears, written: 0 })
     }
 
     fn take(&mut self, elapsed: Duration, lag: u64) -> Option<Vec<i16>> {
-        while let Ok((who, mut samples)) = self.arriving.try_recv() {
+        while let Ok((who, samples)) = self.arriving.try_recv() {
             let ear = &mut self.ears[who];
-            if ear.system && crate::cue::quiet() {
-                samples.fill(0.0);
-            }
             if let Some(clean) = ear.clean.as_mut() {
                 let mono: Vec<f32> = samples.iter().step_by(2).copied().collect();
                 let mono = if ear.rate == RATE { mono } else { ear.left.feed(&mono) };
@@ -800,7 +796,7 @@ struct Screen {
     card: Card,
     device: ID3D11Device,
     context: ID3D11DeviceContext,
-    duplication: IDXGIOutputDuplication,
+    duplication: Option<IDXGIOutputDuplication>,
     output: IDXGIOutput1,
     source: (u32, u32),
     rotation: DXGI_MODE_ROTATION,
@@ -816,7 +812,94 @@ unsafe fn open_screen(monitor: &str) -> Result<Screen, String> {
     let _ = device.cast::<ID3D11Multithread>().map(|m| m.SetMultithreadProtected(true));
     let duplication = output.DuplicateOutput(&device).map_err(|e| format!("captura: {}", e.message()))?;
     let about = duplication.GetDesc();
-    Ok(Screen { card, device, context, duplication, output, source: (about.ModeDesc.Width, about.ModeDesc.Height), rotation: about.Rotation })
+    Ok(Screen { card, device, context, duplication: Some(duplication), output, source: (about.ModeDesc.Width, about.ModeDesc.Height), rotation: about.Rotation })
+}
+
+struct Canvas {
+    enumerator: ID3D11VideoProcessorEnumerator,
+    processor: ID3D11VideoProcessor,
+    last: ID3D11Texture2D,
+    last_view: ID3D11VideoProcessorInputView,
+    shown: Option<(ID3D11VideoProcessorInputView, ID3D11RenderTargetView, ID3D11Texture2D)>,
+}
+
+impl Canvas {
+    unsafe fn open(screen: &Screen, video: &ID3D11VideoDevice, video_context: &ID3D11VideoContext, size: (u32, u32), fps: u32, cursor: bool) -> Result<Canvas, String> {
+        let content = D3D11_VIDEO_PROCESSOR_CONTENT_DESC {
+            InputFrameFormat: D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE,
+            InputFrameRate: DXGI_RATIONAL { Numerator: fps, Denominator: 1 },
+            InputWidth: screen.source.0,
+            InputHeight: screen.source.1,
+            OutputFrameRate: DXGI_RATIONAL { Numerator: fps, Denominator: 1 },
+            OutputWidth: size.0,
+            OutputHeight: size.1,
+            Usage: D3D11_VIDEO_USAGE_PLAYBACK_NORMAL,
+        };
+        let enumerator = video.CreateVideoProcessorEnumerator(&content).at("procesador")?;
+        let processor = video.CreateVideoProcessor(&enumerator, 0).at("procesador")?;
+        video_context.VideoProcessorSetStreamColorSpace(&processor, 0, &D3D11_VIDEO_PROCESSOR_COLOR_SPACE { _bitfield: 0 });
+        video_context.VideoProcessorSetOutputColorSpace(&processor, &D3D11_VIDEO_PROCESSOR_COLOR_SPACE { _bitfield: (1 << 2) | (1 << 4) });
+        video_context.VideoProcessorSetStreamAutoProcessingMode(&processor, 0, false);
+        video_context.VideoProcessorSetStreamFrameFormat(&processor, 0, D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE);
+        let turn = match screen.rotation {
+            DXGI_MODE_ROTATION_ROTATE90 => Some(D3D11_VIDEO_PROCESSOR_ROTATION_90),
+            DXGI_MODE_ROTATION_ROTATE180 => Some(D3D11_VIDEO_PROCESSOR_ROTATION_180),
+            DXGI_MODE_ROTATION_ROTATE270 => Some(D3D11_VIDEO_PROCESSOR_ROTATION_270),
+            _ => None,
+        };
+        if let Some(turn) = turn {
+            video_context.VideoProcessorSetStreamRotation(&processor, 0, true, turn);
+        }
+        let about = D3D11_TEXTURE2D_DESC {
+            Width: screen.source.0,
+            Height: screen.source.1,
+            MipLevels: 1,
+            ArraySize: 1,
+            Format: DXGI_FORMAT_B8G8R8A8_UNORM,
+            SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
+            Usage: D3D11_USAGE_DEFAULT,
+            BindFlags: D3D11_BIND_RENDER_TARGET.0 as u32,
+            CPUAccessFlags: 0,
+            MiscFlags: 0,
+        };
+        let make = |what: &str| -> Result<ID3D11Texture2D, String> {
+            let mut texture = None;
+            screen.device.CreateTexture2D(&about, None, Some(&mut texture)).at(what)?;
+            texture.ok_or_else(|| what.to_string())
+        };
+        let input_desc = D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC {
+            FourCC: 0,
+            ViewDimension: D3D11_VPIV_DIMENSION_TEXTURE2D,
+            Anonymous: D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC_0 { Texture2D: D3D11_TEX2D_VPIV { MipSlice: 0, ArraySlice: 0 } },
+        };
+        let view_of = |texture: &ID3D11Texture2D| -> Result<ID3D11VideoProcessorInputView, String> {
+            let mut view = None;
+            video.CreateVideoProcessorInputView(texture, &enumerator, &input_desc, Some(&mut view)).at("vista")?;
+            view.ok_or_else(|| "vista".to_string())
+        };
+        let last = make("textura")?;
+        let last_view = view_of(&last)?;
+        let mut shown = None;
+        if cursor && turn.is_none() {
+            let texture = make("textura")?;
+            let mut target = None;
+            screen.device.CreateRenderTargetView(&texture, None, Some(&mut target)).at("cursor")?;
+            shown = Some((view_of(&texture)?, target.ok_or("cursor")?, texture));
+        }
+        Ok(Canvas { enumerator, processor, last, last_view, shown })
+    }
+}
+
+fn blinded(code: windows::core::HRESULT) -> bool {
+    use windows::Win32::Foundation::E_ACCESSDENIED;
+    [DXGI_ERROR_ACCESS_LOST, DXGI_ERROR_INVALID_CALL, DXGI_ERROR_DEVICE_REMOVED, DXGI_ERROR_DEVICE_RESET, DXGI_ERROR_SESSION_DISCONNECTED, E_ACCESSDENIED].contains(&code)
+}
+
+fn next_part(path: &Path) -> PathBuf {
+    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let numbered = stem.strip_suffix(')').and_then(|s| s.rsplit_once(" (")).and_then(|(head, n)| Some((head.to_string(), n.parse::<u32>().ok()?)));
+    let (head, n) = numbered.map_or((stem.clone(), 2), |(head, n)| (head, n + 1));
+    path.with_file_name(format!("{head} ({n}).mp4"))
 }
 
 fn rotated(size: (u32, u32), rotation: DXGI_MODE_ROTATION) -> (u32, u32) {
@@ -1165,7 +1248,7 @@ fn run(job: Run) -> Result<Stats, String> {
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
         let media = MFStartup(MF_VERSION, MFSTARTUP_LITE).is_ok();
-        let done = engine(job, media);
+        let done = keep_going(&job, media);
         if media {
             let _ = MFShutdown();
         }
@@ -1174,77 +1257,62 @@ fn run(job: Run) -> Result<Stats, String> {
     }
 }
 
-unsafe fn engine(job: Run, media: bool) -> Result<Stats, String> {
-    let Run { app, wanted, plan, orders, limit } = job;
+struct Lost {
+    recording: Option<Result<(PathBuf, f64), String>>,
+}
+
+unsafe fn keep_going(job: &Run, media: bool) -> Result<Stats, String> {
+    let mut part = None;
+    loop {
+        let mut lost = None;
+        let done = engine(job, media, part.take(), &mut lost);
+        let Some(Lost { recording: mut closed }) = lost else { return done };
+        let mut next = match &closed {
+            Some(Ok((path, _))) => Some(next_part(path)),
+            _ => None,
+        };
+        let since = Instant::now();
+        let mut pause = Duration::from_millis(250);
+        loop {
+            while let Ok(order) = job.orders.try_recv() {
+                match order {
+                    Order::Record(path, reply) => {
+                        next = Some(path);
+                        closed = None;
+                        let _ = reply.send(Ok(()));
+                    }
+                    Order::StopRecord(reply) => {
+                        next = None;
+                        let _ = reply.send(closed.take().unwrap_or_else(|| Err("No alcancé a grabar nada: la pantalla no estaba disponible.".into())));
+                    }
+                    Order::Save(_, reply) => {
+                        let _ = reply.send(Err("La pantalla no está disponible ahora mismo.".into()));
+                    }
+                    Order::Quit => return done,
+                }
+            }
+            if open_screen(&job.wanted.monitor).is_ok() {
+                break;
+            }
+            if since.elapsed() > Duration::from_secs(90) {
+                return Err("captura: la pantalla no volvió".into());
+            }
+            std::thread::sleep(pause);
+            pause = (pause * 2).min(Duration::from_secs(2));
+        }
+        part = next;
+    }
+}
+
+unsafe fn engine(job: &Run, media: bool, part: Option<PathBuf>, lost: &mut Option<Lost>) -> Result<Stats, String> {
+    let (app, wanted, plan, orders, limit) = (job.app, &job.wanted, &job.plan, &job.orders, job.limit);
     let mut screen = open_screen(&wanted.monitor)?;
     let fps = plan.fps.clamp(10, 240);
-    let shown_size = rotated(screen.source, screen.rotation);
-    let size = fit(shown_size, plan.alto);
+    let size = fit(rotated(screen.source, screen.rotation), plan.alto);
     let video: ID3D11VideoDevice = screen.device.cast().at("video")?;
     let video_context: ID3D11VideoContext = screen.context.cast().at("video")?;
-    let content = D3D11_VIDEO_PROCESSOR_CONTENT_DESC {
-        InputFrameFormat: D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE,
-        InputFrameRate: DXGI_RATIONAL { Numerator: fps, Denominator: 1 },
-        InputWidth: screen.source.0,
-        InputHeight: screen.source.1,
-        OutputFrameRate: DXGI_RATIONAL { Numerator: fps, Denominator: 1 },
-        OutputWidth: size.0,
-        OutputHeight: size.1,
-        Usage: D3D11_VIDEO_USAGE_PLAYBACK_NORMAL,
-    };
-    let enumerator = video.CreateVideoProcessorEnumerator(&content).at("procesador")?;
-    let processor = video.CreateVideoProcessor(&enumerator, 0).at("procesador")?;
-    video_context.VideoProcessorSetStreamColorSpace(&processor, 0, &D3D11_VIDEO_PROCESSOR_COLOR_SPACE { _bitfield: 0 });
-    video_context.VideoProcessorSetOutputColorSpace(&processor, &D3D11_VIDEO_PROCESSOR_COLOR_SPACE { _bitfield: (1 << 2) | (1 << 4) });
-    video_context.VideoProcessorSetStreamAutoProcessingMode(&processor, 0, false);
-    video_context.VideoProcessorSetStreamFrameFormat(&processor, 0, D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE);
-    let turn = match screen.rotation {
-        DXGI_MODE_ROTATION_ROTATE90 => Some(D3D11_VIDEO_PROCESSOR_ROTATION_90),
-        DXGI_MODE_ROTATION_ROTATE180 => Some(D3D11_VIDEO_PROCESSOR_ROTATION_180),
-        DXGI_MODE_ROTATION_ROTATE270 => Some(D3D11_VIDEO_PROCESSOR_ROTATION_270),
-        _ => None,
-    };
-    if let Some(turn) = turn {
-        video_context.VideoProcessorSetStreamRotation(&processor, 0, true, turn);
-    }
-
-    let canvas = D3D11_TEXTURE2D_DESC {
-        Width: screen.source.0,
-        Height: screen.source.1,
-        MipLevels: 1,
-        ArraySize: 1,
-        Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-        SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
-        Usage: D3D11_USAGE_DEFAULT,
-        BindFlags: D3D11_BIND_RENDER_TARGET.0 as u32,
-        CPUAccessFlags: 0,
-        MiscFlags: 0,
-    };
-    let make = |what: &str| -> Result<ID3D11Texture2D, String> {
-        let mut texture = None;
-        screen.device.CreateTexture2D(&canvas, None, Some(&mut texture)).at(what)?;
-        texture.ok_or_else(|| what.to_string())
-    };
-    let last = make("textura")?;
-    let input_desc = D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC {
-        FourCC: 0,
-        ViewDimension: D3D11_VPIV_DIMENSION_TEXTURE2D,
-        Anonymous: D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC_0 { Texture2D: D3D11_TEX2D_VPIV { MipSlice: 0, ArraySlice: 0 } },
-    };
-    let view_of = |texture: &ID3D11Texture2D| -> Result<ID3D11VideoProcessorInputView, String> {
-        let mut view = None;
-        video.CreateVideoProcessorInputView(texture, &enumerator, &input_desc, Some(&mut view)).at("vista")?;
-        view.ok_or_else(|| "vista".to_string())
-    };
-    let last_view = view_of(&last)?;
-    let mut pointer = if wanted.cursor && turn.is_none() { Pointer::new(&screen.device) } else { None };
-    let mut shown = None;
-    if pointer.is_some() {
-        let texture = make("textura")?;
-        let mut target = None;
-        screen.device.CreateRenderTargetView(&texture, None, Some(&mut target)).at("cursor")?;
-        shown = Some((view_of(&texture)?, target.ok_or("cursor")?, texture));
-    }
+    let mut canvas = Canvas::open(&screen, &video, &video_context, size, fps, wanted.cursor)?;
+    let mut pointer = if wanted.cursor { Pointer::new(&screen.device) } else { None };
 
     let manager = if media {
         let mut token = 0;
@@ -1284,6 +1352,12 @@ unsafe fn engine(job: Run, media: bool) -> Result<Stats, String> {
 
     let mut ring = (wanted.replay > 0).then(|| Ring { seconds: wanted.replay, video: VecDeque::new(), audio: VecDeque::new() });
     let mut file: Option<FileSink> = None;
+    if let Some(path) = part {
+        match FileSink::open(path, plan.codec, size, fps, sound) {
+            Ok(sink) => file = Some(sink),
+            Err(e) => crate::errores::note("grabadora", &e),
+        }
+    }
     let mut views: Vec<(usize, u32, ID3D11VideoProcessorOutputView)> = Vec::new();
     let frame = TICKS / fps as i64;
     let step = Duration::from_nanos(1_000_000_000 / fps as u64);
@@ -1297,6 +1371,11 @@ unsafe fn engine(job: Run, media: bool) -> Result<Stats, String> {
     let mut quitting = false;
     let mut fatal = None;
     let mut fault = false;
+    let mut moved = false;
+    let mut blind: Option<Instant> = None;
+    let mut retry_at = Instant::now();
+    let mut tries = 0u32;
+    let card_gone = |screen: &Screen| screen.device.GetDeviceRemovedReason().is_err();
     loop {
         while let Ok(order) = orders.try_recv() {
             match order {
@@ -1358,27 +1437,71 @@ unsafe fn engine(job: Run, media: bool) -> Result<Stats, String> {
         }
         let mut info = DXGI_OUTDUPL_FRAME_INFO::default();
         let mut resource: Option<IDXGIResource> = None;
-        match screen.duplication.AcquireNextFrame(0, &mut info, &mut resource) {
+        let duplication = screen.duplication.clone();
+        let got = match &duplication {
+            Some(duplication) => duplication.AcquireNextFrame(0, &mut info, &mut resource),
+            None => Err(DXGI_ERROR_ACCESS_LOST.into()),
+        };
+        match got {
             Ok(()) => {
                 if info.LastPresentTime != 0 {
                     if let Some(texture) = resource.as_ref().and_then(|resource| resource.cast::<ID3D11Texture2D>().ok()) {
-                        screen.context.CopyResource(&last, &texture);
+                        screen.context.CopyResource(&canvas.last, &texture);
                         stats.nuevos += 1;
                         dirty = true;
                     }
                 }
-                if let Some(pointer) = pointer.as_mut() {
-                    dirty |= pointer.update(&screen.device, &screen.duplication, &info);
-                }
                 drop(resource);
-                let _ = screen.duplication.ReleaseFrame();
+                if let Some(duplication) = &duplication {
+                    if let Some(pointer) = pointer.as_mut() {
+                        dirty |= pointer.update(&screen.device, duplication, &info);
+                    }
+                    let _ = duplication.ReleaseFrame();
+                }
             }
             Err(e) if e.code() == DXGI_ERROR_WAIT_TIMEOUT => {}
-            Err(e) if e.code() == DXGI_ERROR_ACCESS_LOST => {
-                if let Ok(again) = screen.output.DuplicateOutput(&screen.device) {
-                    screen.duplication = again;
+            Err(e) if blinded(e.code()) => {
+                drop(duplication);
+                screen.duplication = None;
+                let since = *blind.get_or_insert(now);
+                if card_gone(&screen) {
+                    moved = true;
+                    break;
                 }
-                continue;
+                if now >= retry_at {
+                    match screen.output.DuplicateOutput(&screen.device) {
+                        Ok(fresh) => {
+                            let about = fresh.GetDesc();
+                            let (source, rotation) = ((about.ModeDesc.Width, about.ModeDesc.Height), about.Rotation);
+                            screen.duplication = Some(fresh);
+                            if source != screen.source || rotation != screen.rotation {
+                                (screen.source, screen.rotation) = (source, rotation); // el juego se cambio de pinta: rearmamos y el video ni se entera
+                                match Canvas::open(&screen, &video, &video_context, size, fps, wanted.cursor) {
+                                    Ok(fresh) => {
+                                        canvas = fresh;
+                                        views.clear();
+                                    }
+                                    Err(_) => {
+                                        moved = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            blind = None;
+                            tries = 0;
+                            dirty = true;
+                        }
+                        Err(e) => {
+                            tries += 1;
+                            retry_at = now + Duration::from_millis((125u64 << tries.min(4)).min(2000)); // cada intento pone a bailar el mouse, entonces sin afanes
+                            let locked = e.code() == windows::Win32::Foundation::E_ACCESSDENIED;
+                            if since.elapsed() > if locked { Duration::from_secs(90) } else { Duration::from_secs(2) } {
+                                moved = true;
+                                break;
+                            }
+                        }
+                    }
+                }
             }
             Err(e) => {
                 fatal = Some(format!("captura: {}", e.message()));
@@ -1386,16 +1509,16 @@ unsafe fn engine(job: Run, media: bool) -> Result<Stats, String> {
             }
         }
         let work = Instant::now();
-        let source = match (&pointer, &shown) {
+        let source = match (&pointer, &canvas.shown) {
             (Some(pointer), Some((view, target, texture))) if pointer.visible => {
                 if dirty {
-                    screen.context.CopyResource(texture, &last);
+                    screen.context.CopyResource(texture, &canvas.last);
                     pointer.draw(&screen.context, target);
                     dirty = false;
                 }
                 view
             }
-            _ => &last_view,
+            _ => &canvas.last_view,
         };
         let input = match encoder.input() {
             Ok(Some(input)) => input,
@@ -1406,6 +1529,10 @@ unsafe fn engine(job: Run, media: bool) -> Result<Stats, String> {
                 let _ = encoder.collect(&mut packets);
                 route(&mut packets, &mut sounds, &mut ring, &mut file);
                 continue;
+            }
+            Err(_) if card_gone(&screen) => {
+                moved = true;
+                break;
             }
             Err(e) => {
                 fault = true;
@@ -1428,28 +1555,27 @@ unsafe fn engine(job: Run, media: bool) -> Result<Stats, String> {
                     D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC { ViewDimension: D3D11_VPOV_DIMENSION_TEXTURE2D, Anonymous: D3D11_VIDEO_PROCESSOR_OUTPUT_VIEW_DESC_0 { Texture2D: D3D11_TEX2D_VPOV { MipSlice: 0 } } }
                 };
                 let mut view = None;
-                video.CreateVideoProcessorOutputView(&input.texture, &enumerator, &view_desc, Some(&mut view)).at("vista de salida")?;
+                video.CreateVideoProcessorOutputView(&input.texture, &canvas.enumerator, &view_desc, Some(&mut view)).at("vista de salida")?;
                 let view = view.ok_or("vista de salida")?;
                 views.push((key, input.slice, view.clone()));
                 view
             }
         };
         let streams = [D3D11_VIDEO_PROCESSOR_STREAM { Enable: BOOL::from(true), pInputSurface: ManuallyDrop::new(Some(source.clone())), ..Default::default() }];
-        let blitted = video_context.VideoProcessorBlt(&processor, &view, 0, &streams);
+        let blitted = video_context.VideoProcessorBlt(&canvas.processor, &view, 0, &streams);
         let [stream_state] = streams;
         drop(ManuallyDrop::into_inner(stream_state.pInputSurface));
-        if let Err(e) = blitted {
-            fatal = Some(format!("conversión: {}", e.message()));
-            break;
-        }
-        if let Err(e) = encoder.submit(input, index as i64 * frame, frame) {
-            fault = true;
-            fatal = Some(e);
-            break;
-        }
-        if let Err(e) = encoder.collect(&mut packets) {
-            fault = true;
-            fatal = Some(e);
+        let sent = blitted.map_err(|e| format!("conversión: {}", e.message())).and_then(|_| {
+            encoder.submit(input, index as i64 * frame, frame)?;
+            encoder.collect(&mut packets)
+        });
+        if let Err(e) = sent {
+            if card_gone(&screen) {
+                moved = true;
+            } else {
+                fault = !e.starts_with("conversión");
+                fatal = Some(e);
+            }
             break;
         }
         let mut deaf = false;
@@ -1481,10 +1607,16 @@ unsafe fn engine(job: Run, media: bool) -> Result<Stats, String> {
     }
     route(&mut packets, &mut sounds, &mut ring, &mut file);
     let closed = file.take().map(FileSink::close);
-    drop(orders);
     stats.segundos = begin.elapsed().as_secs_f64();
     stats.cpu_pct = (process_cpu() - cpu_before) / stats.segundos.max(0.001) / threads() as f64 * 100.0;
     stats.ms_por_cuadro = spent.as_secs_f64() * 1000.0 / stats.cuadros.max(1) as f64;
+    if moved {
+        if cfg!(debug_assertions) {
+            eprintln!("[grabar] la pantalla cambió o la gráfica se reinició: rearmo el motor");
+        }
+        *lost = Some(Lost { recording: closed });
+        return Ok(stats);
+    }
     if let Some(e) = &fatal {
         crate::errores::note(
             "grabadora",
@@ -2019,6 +2151,16 @@ mod tests {
     }
 
     #[test]
+    fn when_the_screen_comes_back_it_keeps_going_in_the_next_part() {
+        let first = Path::new("C:\\Videos\\Escritorio\\Grabación 2026-10-24 10-00-00.mp4");
+        let second = next_part(first);
+        assert_eq!(second, Path::new("C:\\Videos\\Escritorio\\Grabación 2026-10-24 10-00-00 (2).mp4"));
+        assert_eq!(next_part(&second), Path::new("C:\\Videos\\Escritorio\\Grabación 2026-10-24 10-00-00 (3).mp4"));
+        assert_eq!(next_part(Path::new("Juego (beta).mp4")), Path::new("Juego (beta) (2).mp4"));
+        assert!(blinded(DXGI_ERROR_ACCESS_LOST) && blinded(DXGI_ERROR_DEVICE_REMOVED) && !blinded(DXGI_ERROR_WAIT_TIMEOUT));
+    }
+
+    #[test]
     #[ignore]
     fn records_the_screen() {
         let path = std::env::var("COCUYO_GRABAR").unwrap_or_else(|_| std::env::temp_dir().join("cocuyo-prueba.mp4").display().to_string());
@@ -2027,5 +2169,47 @@ mod tests {
         let stats = record(Path::new(&path), Wanted { codec, ..wanted("equilibrado") }, seconds).unwrap();
         println!("[grabar] {}", serde_json::to_string(&stats).unwrap());
         assert!(stats.cuadros > 0);
+    }
+
+    #[test]
+    #[ignore]
+    fn survives_the_screen_resetting() {
+        use windows::Win32::Graphics::Gdi::{ChangeDisplaySettingsExW, CDS_RESET};
+        let path = std::env::temp_dir().join("cocuyo-reinicio.mp4");
+        let shaker = std::thread::spawn(|| unsafe {
+            std::thread::sleep(Duration::from_secs(4));
+            let mut mode = DEVMODEW { dmSize: std::mem::size_of::<DEVMODEW>() as u16, ..Default::default() };
+            if EnumDisplaySettingsW(None, ENUM_CURRENT_SETTINGS, &mut mode).as_bool() {
+                let done = ChangeDisplaySettingsExW(None, Some(&mode), None, CDS_RESET, None);
+                println!("[grabar] pantalla reiniciada: {done:?}");
+            }
+        });
+        let stats = record(&path, wanted("equilibrado"), 12).unwrap();
+        let _ = shaker.join();
+        println!("[grabar] {}", serde_json::to_string(&stats).unwrap());
+        assert!(stats.nuevos > 60 * 7, "se quedó congelada: {} cuadros nuevos", stats.nuevos);
+    }
+
+    #[test]
+    #[ignore]
+    fn follows_a_game_changing_the_resolution() {
+        use windows::Win32::Graphics::Gdi::{ChangeDisplaySettingsExW, CDS_FULLSCREEN, CDS_TYPE};
+        let path = std::env::temp_dir().join("cocuyo-resolucion.mp4");
+        let _ = std::fs::remove_file(next_part(&path));
+        let shaker = std::thread::spawn(|| unsafe {
+            std::thread::sleep(Duration::from_secs(3));
+            let mut mode = DEVMODEW { dmSize: std::mem::size_of::<DEVMODEW>() as u16, ..Default::default() };
+            if EnumDisplaySettingsW(None, ENUM_CURRENT_SETTINGS, &mut mode).as_bool() {
+                let small = DEVMODEW { dmPelsWidth: 1280, dmPelsHeight: 720, dmFields: windows::Win32::Graphics::Gdi::DM_PELSWIDTH | windows::Win32::Graphics::Gdi::DM_PELSHEIGHT, ..mode };
+                println!("[grabar] a 1280x720: {:?}", ChangeDisplaySettingsExW(None, Some(&small), None, CDS_FULLSCREEN, None));
+                std::thread::sleep(Duration::from_secs(4));
+                println!("[grabar] de vuelta: {:?}", ChangeDisplaySettingsExW(None, None, None, CDS_TYPE(0), None));
+            }
+        });
+        let stats = record(&path, wanted("equilibrado"), 14).unwrap();
+        let _ = shaker.join();
+        println!("[grabar] {}", serde_json::to_string(&stats).unwrap());
+        assert!(!next_part(&path).exists(), "partió el video en dos");
+        assert!(stats.nuevos > 60 * 8, "se quedó congelada: {} cuadros nuevos", stats.nuevos);
     }
 }

@@ -230,9 +230,6 @@ fn wav(notes: &[(f32, u32)]) -> Vec<u8> {
 }
 
 pub fn ring(cue: Cue) {
-    if matches!(cue, Cue::Recording | Cue::Kept) {
-        QUIET_UNTIL.fetch_max(now_ms() + 1150, Ordering::Relaxed);
-    }
     sound(cue);
 }
 
@@ -371,16 +368,6 @@ fn chime(notes: &[(u32, f32, f32)], length_ms: u32) -> Vec<u8> {
     out.extend(data.to_le_bytes());
     out.extend(samples.iter().flat_map(|s| s.to_le_bytes()));
     out
-}
-
-static QUIET_UNTIL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-fn now_ms() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
-}
-
-pub fn quiet() -> bool {
-    now_ms() < QUIET_UNTIL.load(Ordering::Relaxed)
 }
 
 #[cfg(test)]

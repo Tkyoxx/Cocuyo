@@ -19,7 +19,7 @@ use windows::Win32::UI::Shell::{SHAppBarMessage, ABM_GETSTATE, ABM_SETSTATE, ABS
 use windows::Win32::UI::WindowsAndMessaging::{
     DispatchMessageW, EnumChildWindows, FindWindowExW, FindWindowW, GetClassNameW, GetParent, GetTopWindow, GetWindow, GetWindowRect,
     GetWindowThreadProcessId, IsWindow, IsZoomed, MsgWaitForMultipleObjectsEx, PeekMessageW, PostThreadMessageW, SendMessageTimeoutW,
-    SendNotifyMessageW, SetWindowPos, EVENT_OBJECT_CREATE, EVENT_OBJECT_HIDE, EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_REORDER, EVENT_SYSTEM_FOREGROUND, GW_HWNDNEXT, HWND_BROADCAST,
+    SendNotifyMessageW, SetWindowPos, OBJID_CARET, OBJID_CURSOR, EVENT_OBJECT_CREATE, EVENT_OBJECT_HIDE, EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_REORDER, EVENT_SYSTEM_FOREGROUND, GW_HWNDNEXT, HWND_BROADCAST,
     MSG, MWMO_INPUTAVAILABLE, PM_NOREMOVE, PM_REMOVE, QS_ALLINPUT, SMTO_ABORTIFHUNG, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, WINEVENT_OUTOFCONTEXT,
     WINEVENT_SKIPOWNPROCESS, WM_APP, WM_SETTINGCHANGE,
 };
@@ -64,7 +64,7 @@ impl Look {
 }
 
 static LOOK: Mutex<Option<Look>> = Mutex::new(None);
-static DEEP: Mutex<Deep> = Mutex::new(Deep { explorer: 0, done: None, hidden: None });
+static DEEP: Mutex<Deep> = Mutex::new(Deep { explorer: 0, done: None, hidden: None, tried: (0, 0), wait: None });
 static LAYER: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../barra/target/release/cocuyo_barra.dll"));
 const TAP: GUID = GUID::from_u128(0x6f3c1a52_8e0d_4c1b_9a37_c0c0a1b2c3d4);
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -73,6 +73,8 @@ struct Deep {
     explorer: u32,
     done: Option<bool>,
     hidden: Option<bool>,
+    tried: (u32, u32),
+    wait: Option<Instant>,
 }
 static THREAD: Mutex<Option<u32>> = Mutex::new(None);
 
@@ -227,11 +229,24 @@ fn deep(want: bool) {
     } else if want {
         poke_layer();
     }
-    if want && explorer != 0 && deep.explorer != explorer {
-        deep.explorer = explorer;
+    let calm = deep.wait.is_none_or(|at| Instant::now() >= at);
+    if deep.tried.0 != explorer {
+        deep.tried = (explorer, 0);
+    }
+    if want && explorer != 0 && deep.explorer != explorer && calm && deep.tried.1 < 8 {
         write_number(w!("BarraOcultos"), u32::MAX);
         write_number(w!("BarraFallo"), 0);
-        deep.done = Some(layer_path().ok_or_else(|| "no se pudo guardar la librería".to_string()).and_then(|dll| inject(explorer, &dll, "")).is_ok());
+        let done = layer_path().ok_or_else(|| "no se pudo guardar la librería".to_string()).and_then(|dll| inject(explorer, &dll, "")).is_ok();
+        deep.done = Some(done);
+        deep.tried.1 += 1;
+        if done {
+            deep.explorer = explorer;
+            deep.wait = None;
+        } else {
+            let at = Instant::now() + Duration::from_secs(2 << deep.tried.1.min(4)); // el explorador recien levantado no ha ni desayunado
+            deep.wait = Some(at);
+            DUE.with(|due| due.set(Some(due.get().map_or(at, |soon| soon.min(at)))));
+        }
     }
 }
 
@@ -361,7 +376,10 @@ fn set_alignment(center: bool) {
     }
 }
 
-unsafe extern "system" fn on_event(_hook: HWINEVENTHOOK, _event: u32, _hwnd: HWND, _object: i32, _child: i32, _thread: u32, _time: u32) {
+unsafe extern "system" fn on_event(_hook: HWINEVENTHOOK, _event: u32, _hwnd: HWND, object: i32, _child: i32, _thread: u32, _time: u32) {
+    if object == OBJID_CURSOR.0 || object == OBJID_CARET.0 {
+        return; // que el mouse se mueva no es noticia
+    }
     DUE.with(|due| {
         if due.get().is_none() {
             due.set(Some(Instant::now() + SETTLE));
@@ -376,7 +394,8 @@ struct Hooks {
 
 impl Hooks {
     unsafe fn set(&mut self, wanted: bool) {
-        let shell = bars().first().map(|bar| GetWindowThreadProcessId(*bar, None)).unwrap_or(0);
+        let mut explorer = 0;
+        let shell = bars().first().map(|bar| GetWindowThreadProcessId(*bar, Some(&mut explorer))).unwrap_or(0);
         if wanted && !self.on.is_empty() && shell == self.shell {
             return;
         }
@@ -384,11 +403,9 @@ impl Hooks {
             let _ = UnhookWinEvent(hook);
         }
         self.shell = 0;
-        if !wanted || shell == 0 {
+        if !wanted || shell == 0 || explorer == 0 {
             return;
         }
-        let mut explorer = 0;
-        GetWindowThreadProcessId(bars()[0], Some(&mut explorer));
         let flags = WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS;
         self.on.push(SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, None, Some(on_event), 0, 0, flags));
         for (from, to) in [(EVENT_OBJECT_CREATE, EVENT_OBJECT_HIDE), (EVENT_OBJECT_REORDER, EVENT_OBJECT_REORDER), (EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_LOCATIONCHANGE)] {
