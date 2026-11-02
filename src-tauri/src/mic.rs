@@ -25,32 +25,6 @@ static TX: OnceLock<Sender<Command>> = OnceLock::new();
 static LEVEL: AtomicU32 = AtomicU32::new(0);
 static TAP: Mutex<Option<Sender<(u32, Vec<f32>)>>> = Mutex::new(None);
 static RATE: AtomicU32 = AtomicU32::new(0);
-static RECENT: Mutex<Vec<f32>> = Mutex::new(Vec::new());
-const WINDOW: usize = 1024;
-const BANDS: [f32; 9] = [120.0, 200.0, 320.0, 500.0, 800.0, 1250.0, 2000.0, 3150.0, 5000.0];
-
-pub fn bands(samples: &[f32], rate: u32) -> [f32; 9] {
-    let mut out = [0f32; 9];
-    let n = samples.len();
-    if n < 64 || rate == 0 {
-        return out;
-    }
-    let hann: Vec<f32> = (0..n).map(|i| 0.5 - 0.5 * (std::f32::consts::TAU * i as f32 / (n - 1) as f32).cos()).collect();
-    for (band, &freq) in BANDS.iter().enumerate() {
-        let coeff = 2.0 * (std::f32::consts::TAU * freq / rate as f32).cos();
-        let (mut s1, mut s2) = (0f32, 0f32);
-        for (sample, w) in samples.iter().zip(&hann) {
-            let s0 = sample * w + coeff * s1 - s2;
-            s2 = s1;
-            s1 = s0;
-        }
-        let power = (s1 * s1 + s2 * s2 - coeff * s1 * s2).max(0.0);
-        let amp = power.sqrt() / (n as f32 / 4.0);
-        let db = 20.0 * (amp + 1e-9).log10();
-        out[band] = ((db + 72.0) / 56.0).clamp(0.0, 1.0);
-    }
-    out
-}
 static CHOSEN: Mutex<String> = Mutex::new(String::new());
 
 pub fn choose(id: &str) {
@@ -136,14 +110,6 @@ fn push<T: Copy>(data: &[T], channels: usize, buffer: &Buffer, to_f32: impl Fn(T
         out.push(sample);
     }
     LEVEL.store(peak.to_bits(), Ordering::Relaxed);
-    {
-        let mut recent = RECENT.lock().unwrap();
-        recent.extend_from_slice(&out[from..]);
-        let extra = recent.len().saturating_sub(WINDOW);
-        if extra > 0 {
-            recent.drain(..extra);
-        }
-    }
     if let Some(tap) = TAP.lock().unwrap().as_ref() {
         let _ = tap.send((RATE.load(Ordering::Relaxed), out[from..].to_vec()));
     }
@@ -202,8 +168,6 @@ pub fn spawn(app: AppHandle) {
                         Err(RecvTimeoutError::Timeout) => {
                             let level = f32::from_bits(LEVEL.load(Ordering::Relaxed));
                             let _ = app.emit_to(overlay::LABEL, "level", level);
-                            let heard = bands(&RECENT.lock().unwrap(), RATE.load(Ordering::Relaxed));
-                            let _ = app.emit_to(overlay::LABEL, "bands", heard);
                             crate::gamelayer::level(level);
                             continue;
                         }
@@ -225,7 +189,6 @@ pub fn spawn(app: AppHandle) {
                     }
                     Command::Discard => {
                         open_stream = None;
-                        RECENT.lock().unwrap().clear();
                         buffer.lock().unwrap().clear();
                         LEVEL.store(0, Ordering::Relaxed);
                         let _ = app.emit_to(overlay::LABEL, "level", 0f32);
@@ -247,26 +210,3 @@ pub fn spawn(app: AppHandle) {
         .expect("hilo del micrófono");
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn tone(freq: f32, rate: u32) -> Vec<f32> {
-        (0..WINDOW).map(|i| (std::f32::consts::TAU * freq * i as f32 / rate as f32).sin() * 0.3).collect()
-    }
-
-    #[test]
-    fn each_band_hears_its_own_pitch() {
-        for (band, &freq) in BANDS.iter().enumerate() {
-            let heard = bands(&tone(freq, 48_000), 48_000);
-            let loudest = heard.iter().enumerate().max_by(|a, b| a.1.total_cmp(b.1)).unwrap().0;
-            assert_eq!(loudest, band, "{freq} Hz cayó en {loudest}: {heard:?}");
-        }
-    }
-
-    #[test]
-    fn silence_draws_nothing() {
-        assert!(bands(&vec![0.0; WINDOW], 48_000).iter().all(|&b| b == 0.0));
-        assert!(bands(&[0.1; 10], 48_000).iter().all(|&b| b == 0.0));
-    }
-}

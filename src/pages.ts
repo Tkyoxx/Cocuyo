@@ -201,7 +201,10 @@ class SettingsPage implements Page {
   private open(section: string) {
     this.section = section;
     if (section === "extensiones") void this.paintExtensions();
-    if (section === "agente") void this.paintMcp();
+    if (section === "agente") {
+      void this.paintMcp();
+      void this.paintWhatsapp();
+    }
     if (section === "remoto") void this.paintRemote();
     if (section === "voz") {
       void this.paintMics();
@@ -466,6 +469,13 @@ class SettingsPage implements Page {
              <div class="srow slim"><div><b>Necesita</b><small id="s-agent-need">Un modelo de IA conectado en la sección IA, con formato OpenAI (Gemini viene listo).</small></div></div>
            </div>
            <div class="card">
+             <div class="srow slim"><div><b>WhatsApp sin abrir WhatsApp</b><small id="s-wa-state">Te avisa de los mensajes nuevos, te los lee y le respondes con la voz: «respóndele que ya voy». Usa GOWA, que corre aquí en tu PC.</small></div><button class="ghost pick" id="s-wa-go">Conectar</button></div>
+             <div class="wa-qr" id="s-wa-qr" hidden><img alt="QR" /><small>En el celular: WhatsApp → Dispositivos vinculados → Vincular un dispositivo, y escanea este código.</small></div>
+             <label class="srow"><div><b>Avisarme de mensajes nuevos</b><small>Una tarjeta con quién te escribió. A pantalla completa se queda callado: después pregúntale «¿qué me escribieron?».</small></div><input type="checkbox" class="switch" id="s-wa-notices"></label>
+             <label class="srow"><div><b>También de grupos</b><small>Si no, solo chats con una persona. Se aplica al volver a conectar.</small></div><input type="checkbox" class="switch" id="s-wa-groups"></label>
+             <div class="srow slim"><div><b>Ojo</b><small>WhatsApp no permite oficialmente apps que no son suyas. Mucha gente usa estas pasarelas sin problema, pero hay cuentas suspendidas por mandar mensajes en masa. Cocuyo siempre te pregunta antes de enviar.</small></div></div>
+           </div>
+           <div class="card">
              <div class="srow slim"><div><b>Servidores MCP</b><small id="s-mcp-sum">Los mismos que usa Claude Desktop: archivos, GitHub, el navegador, tu casa…</small></div><button class="ghost pick" id="s-mcp-open">Editar mcp.json</button><button class="ghost" id="s-mcp-reload">Reconectar</button></div>
              <div class="mcp-list" id="s-mcp-list"></div>
            </div>`,
@@ -540,7 +550,7 @@ class SettingsPage implements Page {
     for (const button of el.querySelectorAll<HTMLElement>("#s-lang button")) {
       button.addEventListener("click", () => this.save({ language: button.dataset.value as Settings["language"] }));
     }
-    const toggle = (sel: string, key: "hideOnFullscreen" | "askWhere" | "copyToClipboard" | "autostart" | "cueFullscreen" | "speakFullscreen" | "gameOverlay" | "aiOn" | "aiDictation" | "aiHear" | "padOn" | "checkUpdates" | "countMe" | "barCenter" | "barSolidMax" | "extensionsOn" | "aiAgent" | "agentHands" | "agentConfirm" | "aiLive" | "remoteOn" | "handsFree") => {
+    const toggle = (sel: string, key: "hideOnFullscreen" | "askWhere" | "copyToClipboard" | "autostart" | "cueFullscreen" | "speakFullscreen" | "gameOverlay" | "aiOn" | "aiDictation" | "aiHear" | "padOn" | "checkUpdates" | "countMe" | "barCenter" | "barSolidMax" | "extensionsOn" | "aiAgent" | "agentHands" | "agentConfirm" | "aiLive" | "remoteOn" | "handsFree" | "whatsappNotices" | "whatsappGroups") => {
       const input = q<HTMLInputElement>(sel);
       input.addEventListener("change", () => {
         const change: Partial<Settings> = {};
@@ -669,6 +679,9 @@ class SettingsPage implements Page {
       button.addEventListener("click", () => this.save({ dictationInto: button.dataset.value ?? "" }));
     }
     toggle("#s-hands", "handsFree");
+    toggle("#s-wa-notices", "whatsappNotices");
+    toggle("#s-wa-groups", "whatsappGroups");
+    q("#s-wa-go").addEventListener("click", () => void this.whatsappButton());
     const finder = q<HTMLInputElement>("#s-find");
     finder.addEventListener("pointerdown", () => host.focus(finder));
     finder.addEventListener("input", () => this.find(finder.value, false));
@@ -1468,6 +1481,72 @@ class SettingsPage implements Page {
         : "Ninguno: busco en el de la llamada en la que estés y, si no, en el último donde estuviste.";
   }
 
+  private waLinking = 0;
+
+  private async paintWhatsapp() {
+    const state = await call<{ instalado: boolean; corriendo: boolean; conectado: boolean; numero: string }>("whatsapp_estado", undefined, { instalado: false, corriendo: false, conectado: false, numero: "" });
+    const go = this.el.querySelector<HTMLButtonElement>("#s-wa-go")!;
+    const said = this.el.querySelector("#s-wa-state")!;
+    if (state.conectado) {
+      this.el.querySelector<HTMLElement>("#s-wa-qr")!.hidden = true;
+      window.clearInterval(this.waLinking);
+      said.textContent = `${tr("Conectado")}${state.numero ? ` · +${state.numero}` : ""}. ${tr("Dile «¿qué me escribieron?» o «respóndele que ya voy».")}`;
+    } else if (!state.corriendo) {
+      said.textContent = tr("Te avisa de los mensajes nuevos, te los lee y le respondes con la voz: «respóndele que ya voy». Usa GOWA, que corre aquí en tu PC.");
+    }
+    go.textContent = tr(state.corriendo ? "Desconectar" : "Conectar");
+    go.classList.toggle("pick", !state.corriendo);
+    return state;
+  }
+
+  private async whatsappButton() {
+    const go = this.el.querySelector<HTMLButtonElement>("#s-wa-go")!;
+    const box = this.el.querySelector<HTMLElement>("#s-wa-qr")!;
+    const said = this.el.querySelector("#s-wa-state")!;
+    const state = await this.paintWhatsapp();
+    go.disabled = true;
+    try {
+      if (state.corriendo) {
+        window.clearInterval(this.waLinking);
+        box.hidden = true;
+        await call("whatsapp_desconectar");
+      } else {
+        said.textContent = tr(state.instalado ? "Arrancando la pasarela…" : "Bajando la pasarela de WhatsApp (12 MB)…");
+        const qr = await call<string>("whatsapp_conectar");
+        if (qr) this.showQr(qr);
+      }
+    } catch (error) {
+      said.textContent = String(error);
+    } finally {
+      go.disabled = false;
+    }
+    await this.paintWhatsapp();
+  }
+
+  private showQr(qr: string) {
+    const box = this.el.querySelector<HTMLElement>("#s-wa-qr")!;
+    box.querySelector("img")!.src = qr;
+    box.hidden = false;
+    this.el.querySelector("#s-wa-state")!.textContent = tr("Escanea el código con tu celular. Se renueva solo.");
+    window.clearInterval(this.waLinking);
+    const since = Date.now();
+    let turns = 0;
+    this.waLinking = window.setInterval(async () => {
+      turns += 1;
+      const state = await this.paintWhatsapp();
+      if (state.conectado || !state.corriendo || Date.now() - since > 180_000 || this.section !== "agente") {
+        window.clearInterval(this.waLinking);
+        box.hidden = true;
+        if (!state.conectado && state.corriendo) this.el.querySelector("#s-wa-state")!.textContent = tr("Se acabó el tiempo para escanear. Toca Desconectar y vuelve a conectar.");
+        return;
+      }
+      if (turns % 12 === 0) {
+        const fresh = await call<string>("whatsapp_qr").catch(() => "");
+        if (fresh) box.querySelector("img")!.src = fresh;
+      }
+    }, 2000);
+  }
+
   private async paintHeard() {
     const lines = await call<{ said: string; reply: string; secs: number }[]>("voz_historial", undefined, []);
     const ago = (secs: number) => (secs < 60 ? tr("ahora") : secs < 3600 ? `${Math.floor(secs / 60)} min` : `${Math.floor(secs / 3600)} h`);
@@ -1812,6 +1891,8 @@ class SettingsPage implements Page {
     q<HTMLInputElement>("#s-ai").checked = s.aiOn;
     q<HTMLInputElement>("#s-ai-polish").checked = s.aiDictation;
     q<HTMLInputElement>("#s-hands").checked = s.handsFree;
+    q<HTMLInputElement>("#s-wa-notices").checked = s.whatsappNotices;
+    q<HTMLInputElement>("#s-wa-groups").checked = s.whatsappGroups;
     for (const swatch of this.el.querySelectorAll<HTMLElement>("#s-accent [data-accent]")) swatch.classList.toggle("on", swatch.dataset.accent === s.accent);
     const root = document.documentElement.style;
     const picked = root.getPropertyValue("--accent");

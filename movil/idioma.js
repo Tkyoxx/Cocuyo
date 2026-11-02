@@ -34,6 +34,13 @@ const EXACTO = {
   "Cómo llego al centro": ["Directions to downtown", "Como chego ao centro"],
   Conectado: ["Connected", "Conectado"],
   "Responder con voz": ["Answer out loud", "Responder com voz"],
+  "Avisos con la app cerrada": ["Notifications when the app is closed", "Avisos com o app fechado"],
+  "Te avisa cuando un informe está listo o suena un recordatorio y no estás en el PC. Viajan cifrados por el servicio de avisos de tu navegador.": [
+    "Lets you know when a report is ready or a reminder goes off and you're away from your PC. They travel encrypted through your browser's notification service.",
+    "Avisa quando um relatório fica pronto ou um lembrete toca e você não está no PC. Viajam cifrados pelo serviço de avisos do seu navegador.",
+  ],
+  "Los avisos están bloqueados para esta página. Actívalos en los ajustes del navegador.": ["Notifications are blocked for this page. Turn them on in your browser settings.", "Os avisos estão bloqueados para esta página. Ative-os nos ajustes do navegador."],
+  "No pude activar los avisos. Revisa que el celular tenga internet y vuelve a probar.": ["I couldn't turn on notifications. Check your phone has internet and try again.", "Não consegui ativar os avisos. Veja se o celular tem internet e tente de novo."],
   "Lee en voz alta lo que te responde.": ["Reads its answers out loud.", "Lê em voz alta o que responde."],
   "Instalar Cocuyo": ["Install Cocuyo", "Instalar o Cocuyo"],
   "Queda como una app más, abre sin internet y no se borra con el historial.": ["It stays like any other app, opens offline and isn't wiped with your history.", "Fica como mais um app, abre sem internet e não some com o histórico."],

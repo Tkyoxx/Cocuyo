@@ -165,6 +165,43 @@ impl Pair {
         out.reverse();
         Ok(out)
     }
+
+    pub fn sign(&self, data: &[u8]) -> Result<[u8; 64], String> {
+        let alg = Alg::open(BCRYPT_ECDSA_P256_ALGORITHM, BCRYPT_OPEN_ALGORITHM_PROVIDER_FLAGS(0))?;
+        let mut private = self.private.clone();
+        private[..4].copy_from_slice(&BCRYPT_ECDSA_PRIVATE_P256_MAGIC.to_le_bytes());
+        let mut handle = BCRYPT_KEY_HANDLE::default();
+        ok(unsafe { BCryptImportKeyPair(alg.0, None, BCRYPT_ECCPRIVATE_BLOB, &mut handle, &private, 0) }, "cargar la llave de firmar")?;
+        let key = Key(handle);
+        let hash = sha256(data);
+        let mut signature = [0u8; 64];
+        let mut size = 0u32;
+        ok(unsafe { BCryptSignHash(key.0, None, &hash, Some(&mut signature), &mut size, BCRYPT_FLAGS(0)) }, "firmar")?;
+        Ok(signature)
+    }
+}
+
+#[cfg(test)]
+pub fn verify(public: &[u8], data: &[u8], signature: &[u8]) -> bool {
+    let Ok(alg) = Alg::open(BCRYPT_ECDSA_P256_ALGORITHM, BCRYPT_OPEN_ALGORITHM_PROVIDER_FLAGS(0)) else { return false };
+    if public.len() != PUBLIC_LEN || signature.len() != 64 {
+        return false;
+    }
+    let blob = blob(BCRYPT_ECDSA_PUBLIC_P256_MAGIC, &[&public[1..33], &public[33..65]]);
+    let mut handle = BCRYPT_KEY_HANDLE::default();
+    if unsafe { BCryptImportKeyPair(alg.0, None, BCRYPT_ECCPUBLIC_BLOB, &mut handle, &blob, 0) }.is_err() {
+        return false;
+    }
+    let key = Key(handle);
+    unsafe { BCryptVerifySignature(key.0, None, &sha256(data), signature, BCRYPT_FLAGS(0)) }.is_ok()
+}
+
+#[cfg(test)]
+pub fn pair_from_parts(public: &[u8], private: &[u8]) -> Result<Pair, String> {
+    if public.len() != PUBLIC_LEN || private.len() != 32 {
+        return Err("llave mal formada".into());
+    }
+    Pair::from_secret(&blob(BCRYPT_ECDH_PRIVATE_P256_MAGIC, &[&public[1..33], &public[33..65], private]))
 }
 
 fn gcm(key: &[u8]) -> Result<(Alg, Key), String> {

@@ -119,7 +119,7 @@ export class Guide {
     this.keyInput.addEventListener("pointerdown", () => {
       if (this.typing) return;
       this.typing = true;
-      void call("set_focusable", { on: true }).then(() => this.keyInput.focus());
+      void call("set_focusable", { on: true }).then(() => this.keyInput.focus({ preventScroll: true }));
     });
     this.keyInput.addEventListener("change", () => void this.saveKey());
     this.keyInput.addEventListener("keydown", (e) => {

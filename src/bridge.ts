@@ -153,6 +153,8 @@ export interface Settings {
   padButtons: number;
   dictationInto: string;
   handsFree: boolean;
+  whatsappNotices: boolean;
+  whatsappGroups: boolean;
   accent: string;
   dictationStyle: string;
   dictationWords: string[];
@@ -289,6 +291,8 @@ const DEFAULTS: Settings = {
   padButtons: 0,
   dictationInto: "",
   handsFree: true,
+  whatsappNotices: true,
+  whatsappGroups: false,
   accent: "",
   dictationStyle: "natural",
   dictationWords: [],

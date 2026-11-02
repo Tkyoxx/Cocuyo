@@ -598,6 +598,7 @@ fn starting(app: &AppHandle, chord: Chord) -> ChordEvent {
         overlay::cursor_in_window(app)
     } else {
         mic::start();
+        voice::warm_engine(app, chord);
         if chord == Chord::Command {
             crate::talk::begin(app);
         }

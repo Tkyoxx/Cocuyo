@@ -89,6 +89,9 @@ pub fn start(app: &AppHandle, topic: &str) -> Result<String, String> {
                 if !sent {
                     let _ = crate::apps::open(&done.path.to_string_lossy());
                 }
+                if (phone && !crate::remoto::talking()) || (!phone && crate::avisos::away()) {
+                    crate::avisos::tell(&app, "Tu informe está listo", &done.title, "informe");
+                }
                 let calls = format!("Gasté {} llamadas a la IA.", done.calls);
                 crate::scripts::show_card(&app, "Cocuyo", &json!({
                     "titulo": done.title, "texto": format!("{} fuentes leídas. {calls}", done.sources), "icono": "🔎", "segundos": 40,

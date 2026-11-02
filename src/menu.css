@@ -19,7 +19,7 @@
   display: flex;
   gap: 6px;
   height: 28px;
-  transform: translateX(-50%);
+  transform: translateX(calc(-50% - var(--shift, 0px)));
 }
 .menu-extra {
   position: absolute;
@@ -122,6 +122,10 @@
 }
 .ask-bar input:disabled {
   opacity: 0.5;
+}
+.ask-bar .menu-meter {
+  align-self: center;
+  margin-right: -6px;
 }
 #island[data-dock="right"] .menu-extra {
   right: auto;
@@ -2502,6 +2506,25 @@ img.shop-art {
   padding-bottom: 4px;
 }
 
+.wa-qr {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  align-items: center;
+  padding: 4px 14px 12px;
+}
+.wa-qr img {
+  width: 150px;
+  height: 150px;
+  border-radius: 10px;
+  background: #fff;
+  image-rendering: pixelated;
+}
+.wa-qr small {
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 1.45;
+}
 .mcp-list {
   display: flex;
   flex-direction: column;

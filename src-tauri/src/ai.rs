@@ -1039,15 +1039,40 @@ pub fn polish(app: &AppHandle, dictated: &str, style: &str) -> Option<String> {
     (after > 0.0 && after <= before * 1.5 + 20.0 && after >= before * 0.35).then_some(clean)
 }
 
-pub fn about_file(app: &AppHandle, question: &str, name: &str, text: &str) -> Result<String, String> {
-    let system = "Eres Cocuyo, un asistente de voz para Windows. La persona soltó un archivo en la isla y preguntó algo en voz alta; \
-                  la pregunta llega transcrita por una máquina y puede traer errores de oído. Responde en el idioma de la pregunta, \
-                  directo y breve, usando solo lo que dice el archivo. Si la respuesta no está ahí, dilo.";
-    let room = (text.chars().count() as u32 / 3 + 400).clamp(MAX_TOKENS, 4000);
-    let answer = chat_up_to(app, system, &format!("Archivo «{name}»:\n{text}\n\nPregunta: {question}"), Extra::None, room.min(1200))?;
+pub fn ask_file(app: &AppHandle, question: &str, name: &str, text: Option<&str>, png: Option<&[u8]>, history: &[(String, String)]) -> Result<String, String> {
+    let system = "Eres Cocuyo, un asistente para Windows. La persona te pasó un archivo y te pregunta por él, escribiendo o en voz alta                   (en voz alta la pregunta llega transcrita por una máquina y puede traer errores de oído). Responde en el idioma de la                   pregunta usando lo que dice el archivo; si algo no está ahí, dilo en vez de inventarlo. Ve al grano. Si te preguntan de                   qué trata, da la idea general en dos o tres frases y después los puntos clave en viñetas cortas. Usa Markdown sencillo                   (negritas, viñetas, alguna tabla pequeña) solo cuando ayude a leer, sin títulos.";
+    let url = settings::load(app).ai_url;
+    let roomy = ["claude:", "googleapis.com", "anthropic.com", "openai.com"].iter().any(|host| url.contains(host));
+    let mut said = match text {
+        Some(text) => {
+            let shown: String = text.chars().take(if roomy { 400_000 } else { 60_000 }).collect();
+            let more = if shown.len() < text.len() { "
+(El archivo sigue; aquí solo va el principio.)" } else { "" };
+            format!("Archivo «{name}»:
+<<<
+{shown}
+>>>{more}
+")
+        }
+        None => format!("Archivo «{name}»: es la imagen adjunta.
+"),
+    };
+    if !history.is_empty() {
+        said.push_str("
+Lo que ya hablamos de este archivo:
+");
+        for (asked, answered) in history {
+            said.push_str(&format!("- Pregunta: {asked}
+  Respuesta: {answered}
+"));
+        }
+    }
+    said.push_str(&format!("
+Pregunta: {question}"));
+    let answer = chat_up_to(app, system, &said, png.map_or(Extra::None, Extra::Image), 1800)?;
     let answer = answer.split("</think>").last().unwrap_or("").trim().to_string();
     if answer.is_empty() {
-        return Err("El modelo no respondió nada.".into());
+        return Err(if png.is_some() { "El modelo no respondió nada. Puede que no sepa mirar imágenes: prueba con otro." } else { "El modelo no respondió nada." }.into());
     }
     Ok(answer)
 }

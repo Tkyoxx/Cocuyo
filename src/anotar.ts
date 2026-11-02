@@ -50,6 +50,7 @@ export class Anotador {
     this.el.append(this.canvas);
     document.querySelector("#island .shell")!.append(this.el);
     this.el.addEventListener("click", (e) => {
+      e.stopPropagation();
       const target = (e.target as HTMLElement).closest<HTMLElement>("button");
       if (!target) return;
       if (target.dataset.tool) {

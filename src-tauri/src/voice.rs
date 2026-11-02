@@ -307,12 +307,28 @@ fn write_wav(path: &Path, samples: &[f32]) -> std::io::Result<()> {
     std::fs::write(path, wav_bytes(samples))
 }
 
+fn threads() -> usize {
+    std::thread::available_parallelism().map_or(2, |n| n.get()).min(4)
+}
+
+pub fn warm_engine(app: &AppHandle, chord: Chord) {
+    let by_ai = crate::settings::load(app).ai_hear && crate::ai::mode(app).is_some();
+    let live = chord == Chord::Command && crate::talk::wanted(app) && !crate::bandeja::waiting();
+    if by_ai || live || PRACTICE.load(Ordering::Relaxed) {
+        return;
+    }
+    let Ok(dir) = dir(app) else { return };
+    if installed_in(&dir) {
+        std::thread::spawn(move || crate::motor::warm(&dir.join("motor").join(ENGINE_EXE), &dir.join(MODEL_FILE), threads()));
+    }
+}
+
 pub fn transcribe_file(app: &AppHandle, wav: &Path) -> Result<String, String> {
     let dir = dir(app)?;
     if !installed_in(&dir) {
         return Err("Falta la voz local. Descárgala en la pestaña Ajustes del menú.".into());
     }
-    let threads = std::thread::available_parallelism().map_or(2, |n| n.get()).min(4);
+    let threads = threads();
     let output = Command::new(dir.join("motor").join(ENGINE_EXE))
         .arg("-m")
         .arg(dir.join(MODEL_FILE))
@@ -376,19 +392,25 @@ pub fn transcribe_samples(app: &AppHandle, audio: Vec<f32>) -> Result<Option<Str
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let guide = guide(app);
-    match &guide {
+    let all = match &guide {
         Some((_, lead)) => {
             let mut all = Vec::with_capacity(lead.len() + 3_200 + speech.len());
             all.extend_from_slice(lead);
             all.resize(lead.len() + 3_200, 0.0);
             all.extend_from_slice(speech);
-            write_wav(&wav, &all)
+            all
         }
-        None => write_wav(&wav, speech),
-    }
-    .map_err(|e| e.to_string())?;
-    let text = transcribe_file(app, &wav);
-    let _ = std::fs::remove_file(&wav);
+        None => speech.to_vec(),
+    };
+    let text = match crate::motor::transcribe(&wav_bytes(&all)) {
+        Some(text) => text,
+        None => {
+            write_wav(&wav, &all).map_err(|e| e.to_string())?;
+            let text = transcribe_file(app, &wav);
+            let _ = std::fs::remove_file(&wav);
+            text
+        }
+    };
     let text = match &guide {
         Some((phrase, _)) => text.map(|t| without_guide(&t, phrase)),
         None => text,
@@ -690,6 +712,9 @@ fn owner(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
 }
 
 fn first_things(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
+    if let Some(done) = crate::whatsapp::spoken(app, spoken) {
+        return Some(done);
+    }
     if let Some(done) = crate::buscar::spoken(app, spoken) {
         return Some(done);
     }
@@ -699,7 +724,7 @@ fn first_things(app: &AppHandle, spoken: &str) -> Option<Result<String, String>>
     if let Some(done) = crate::minutes::spoken(app, spoken) {
         return Some(done);
     }
-    if let Some(done) = crate::ocr::spoken(spoken).or_else(|| crate::system::slow_spoken(spoken)).or_else(|| edit_selection(app, spoken)) {
+    if let Some(done) = crate::ocr::spoken(spoken).or_else(|| crate::system::slow_spoken(spoken)).or_else(|| about_selection(app, spoken)).or_else(|| edit_selection(app, spoken)) {
         return Some(done);
     }
     if let Some(done) = crate::system::mic_spoken(spoken) {
@@ -948,12 +973,33 @@ pub async fn orden_escrita(app: AppHandle, text: String) -> Result<String, Strin
     .map_err(|e| e.to_string())?
 }
 
+pub fn asks_about_this(spoken: &str) -> bool {
+    let clean = intent::normalize(spoken);
+    const ASKS: [&str; 22] = [
+        "de que trata esto", "de que trata este texto", "de que se trata esto", "de que va esto", "que significa esto", "que quiere decir esto", "explicame esto",
+        "explica esto", "explicamelo", "resume esto", "resumelo", "resumeme esto", "que dice esto", "what is this about", "explain this", "summarize this",
+        "what does this mean", "do que se trata isso", "explica isso", "explique isso", "resuma isso", "o que significa isso",
+    ];
+    ASKS.iter().any(|ask| clean.contains(ask))
+}
+
+fn about_selection(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
+    if !asks_about_this(spoken) || crate::ai::mode(app).is_none() {
+        return None;
+    }
+    let (selected, before) = inject::copy_selection();
+    crate::clip::ignore_own_changes();
+    inject::set_clipboard_text(before.as_deref().unwrap_or(""));
+    let selected = selected.filter(|text| text.split_whitespace().count() >= 3)?;
+    Some(crate::bandeja::about_text(app, &selected, spoken))
+}
+
 fn edit_selection(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
     let clean = intent::normalize(spoken);
-    const ASKS: [&str; 28] = [
+    const ASKS: [&str; 24] = [
         "corrige esto", "corrigelo", "corrige el texto", "corrigeme esto", "arregla esto", "arreglalo", "arregla el texto", "reescribe esto", "reescribelo",
-        "hazlo mas ", "ponlo mas ", "resume esto", "resumelo", "traduce esto", "traducelo", "mejora esto", "mejoralo", "acorta esto", "acortalo",
-        "fix this", "rewrite this", "make it ", "translate this", "summarize this", "corrija isso", "traduza isso", "resuma isso", "melhore isso",
+        "hazlo mas ", "ponlo mas ", "traduce esto", "traducelo", "mejora esto", "mejoralo", "acorta esto", "acortalo",
+        "fix this", "rewrite this", "make it ", "translate this", "corrija isso", "traduza isso", "melhore isso",
     ];
     if !ASKS.iter().any(|ask| clean.starts_with(ask)) {
         return None;
@@ -1201,6 +1247,7 @@ pub fn lasso_listen(app: &AppHandle) -> bool {
     let ready = !PRACTICE.load(Ordering::Relaxed) && dir(app).map(|d| installed_in(&d)).unwrap_or(false);
     if ready {
         mic::start();
+        warm_engine(app, Chord::Lasso);
     }
     LASSO_LISTENING.store(ready, Ordering::Relaxed);
     *QUESTION.lock().unwrap() = None;
@@ -1223,6 +1270,7 @@ pub fn lasso_heard(app: &AppHandle, cancelled: bool) -> bool {
     }
     let recording = mic::stop();
     if cancelled {
+        crate::motor::cool();
         return false;
     }
     let app = app.clone();
@@ -1346,7 +1394,16 @@ fn dictated(app: &AppHandle, heard: String, was_direct: bool) -> String {
     ready.finish(&text)
 }
 
+struct Cool;
+
+impl Drop for Cool {
+    fn drop(&mut self) {
+        crate::motor::cool();
+    }
+}
+
 pub fn finish(app: &AppHandle, chord: Chord, cancelled: bool) {
+    let _cool = Cool;
     let recording = mic::stop();
     crate::ai::maybe_distill(app);
     if chord == Chord::Command && crate::bandeja::waiting() {
@@ -1446,6 +1503,15 @@ pub fn finish(app: &AppHandle, chord: Chord, cancelled: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn asking_about_a_selected_text_is_not_editing_it() {
+        assert!(asks_about_this("¿De qué trata esto?"));
+        assert!(asks_about_this("oye, resume esto porfa"));
+        assert!(asks_about_this("Explain this"));
+        assert!(!asks_about_this("corrige esto"));
+        assert!(!asks_about_this("¿de qué trata la película Titanic?"));
+    }
 
     #[test]
     fn one_order_can_carry_several() {

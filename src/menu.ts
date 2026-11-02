@@ -56,7 +56,7 @@ export class Menu {
       this.typing = true;
       this.typingSince = performance.now();
       this.reclaimed = false;
-      void call("set_focusable", { on: true }).then(() => input.focus());
+      void call("set_focusable", { on: true }).then(() => input.focus({ preventScroll: true }));
     },
     settingsChanged: (settings) => this.onSettings(settings),
   };
@@ -77,7 +77,7 @@ export class Menu {
     this.pen.setAttribute("aria-label", "Escríbele a Cocuyo");
     this.pen.title = "Escríbele a Cocuyo";
     this.pen.addEventListener("click", () => this.toggleAsk());
-    this.extra.append(this.meter, this.pen, this.pin);
+    this.extra.append(this.pen, this.pin);
     this.root.append(this.extra);
     this.askBar.className = "ask-bar";
     this.askBar.hidden = true;
@@ -92,7 +92,7 @@ export class Menu {
         this.toggleAsk(false);
       }
     });
-    this.askBar.append(this.askInput);
+    this.askBar.append(this.askInput, this.meter);
     this.askBar.addEventListener("submit", async (e) => {
       e.preventDefault();
       const text = this.askInput.value.trim();
@@ -117,7 +117,7 @@ export class Menu {
       if (fresh && !this.reclaimed) {
         this.reclaimed = true;
         const input = this.typingIn;
-        void call("set_focusable", { on: true }).then(() => input?.focus());
+        void call("set_focusable", { on: true }).then(() => input?.focus({ preventScroll: true }));
       }
       this.blurCheck = window.setTimeout(() => {
         if (this.typing && !document.hasFocus()) this.onClose();
@@ -166,6 +166,15 @@ export class Menu {
     if (on) this.host.focus(this.askInput);
   }
 
+  ask(start: string) {
+    if (!this.open) this.onOpenRequest();
+    this.toggleAsk(true);
+    this.askInput.value = start;
+    this.askInput.setSelectionRange(start.length, start.length);
+  }
+
+  onOpenRequest = () => {};
+
   setAi(on: boolean) {
     this.ai = on;
     if (!on) this.meter.hidden = true;
@@ -189,7 +198,6 @@ export class Menu {
     const share = Math.min(1, used / budget);
     this.meter.hidden = false;
     this.meter.dataset.level = share >= 0.8 ? "alto" : share >= 0.5 ? "medio" : "bajo";
-    if (this.open) this.layout(true);
     this.meter.textContent = `IA ${used ? Math.max(1, Math.round(share * 100)) : 0} %`;
     this.meter.title = `Hoy: ${used} de ${budget} consultas.`;
   }
@@ -222,8 +230,10 @@ export class Menu {
 
   private layout(instant: boolean) {
     const page = this.current;
-    const wide = Math.max(page.w, this.tabsEl.scrollWidth + 64 + (this.extra.offsetWidth + 10) * 2);
-    const size = { w: Math.min(wide, innerWidth - 80), h: page.h, r: 30 };
+    const tabs = this.tabsEl.scrollWidth;
+    const room = this.extra.offsetWidth + 24;
+    const size = { w: Math.min(Math.max(page.w, tabs + 64, tabs + 18 + room), innerWidth - 80), h: page.h, r: 30 };
+    this.tabsEl.style.setProperty("--shift", `${Math.max(0, room - (size.w - tabs) / 2)}px`);
     this.root.style.width = `${size.w}px`;
     this.root.style.height = `${size.h}px`;
     this.root.style.marginLeft = `${-size.w / 2}px`;

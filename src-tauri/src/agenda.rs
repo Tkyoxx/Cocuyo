@@ -587,6 +587,9 @@ fn fire(app: &AppHandle, entry: &Entry, late: bool) {
         let _ = app.emit_to(crate::overlay::LABEL, "note", text.clone());
         if !entry.act {
             crate::cue::alert(&text);
+            if crate::avisos::away() {
+                crate::avisos::tell(&app, "Recordatorio", &text, "recordatorio");
+            }
         }
     });
 }

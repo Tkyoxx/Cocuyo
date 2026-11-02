@@ -28,7 +28,6 @@ export class Caption {
     });
     this.words.append(...spans);
     this.shown = { who, text };
-    this.countdown(ms);
     this.onShape();
     this.timer = window.setTimeout(() => this.hide(), ms);
   }
@@ -42,7 +41,6 @@ export class Caption {
     dots.className = "dots";
     dots.innerHTML = "<i></i><i></i><i></i>";
     this.words.replaceChildren(dots);
-    this.said.classList.remove("timed");
     this.visible = true;
     this.el.classList.add("on");
     this.onShape();
@@ -71,16 +69,8 @@ export class Caption {
 
     this.visible = true;
     this.el.classList.add("on");
-    this.countdown(ms);
     this.onShape();
     this.timer = window.setTimeout(() => this.hide(), ms);
-  }
-
-  private countdown(ms: number) {
-    this.said.classList.remove("timed");
-    this.said.style.setProperty("--life", `${ms}ms`);
-    void this.said.offsetWidth;
-    this.said.classList.add("timed");
   }
 
   hide() {

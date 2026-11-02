@@ -62,9 +62,14 @@ export function markdown(text: string) {
   const out: string[] = [];
   let list: "ul" | "ol" | null = null;
   let code: string[] | null = null;
+  let table: string[][] | null = null;
   const close = () => {
     if (list) out.push(`</${list}>`);
     list = null;
+  };
+  const flush = () => {
+    if (table) out.push(`<table>${table.map((cells, i) => `<tr>${cells.map((cell) => (i ? `<td>${cell}</td>` : `<th>${cell}</th>`)).join("")}</tr>`).join("")}</table>`);
+    table = null;
   };
   for (const line of text.replace(/\r/g, "").split("\n")) {
     if (line.trim().startsWith("```")) {
@@ -81,6 +86,13 @@ export function markdown(text: string) {
       code.push(line);
       continue;
     }
+    const row = line.match(/^\s*\|(.+)\|\s*$/);
+    if (row) {
+      close();
+      if (!/^[\s|:-]+$/.test(row[1])) (table ??= []).push(row[1].split("|").map((cell) => inline(cell.trim())));
+      continue;
+    }
+    flush();
     const bullet = line.match(/^\s*[-*•]\s+(.*)$/);
     const numbered = line.match(/^\s*\d+[.)]\s+(.*)$/);
     const heading = line.match(/^\s*#{1,4}\s+(.*)$/);
@@ -100,6 +112,7 @@ export function markdown(text: string) {
       out.push(`<p>${inline(line.trim())}</p>`);
     } else close();
   }
+  flush();
   if (code) out.push(`<pre><code>${esc((code as string[]).join("\n"))}</code></pre>`);
   close();
   return out.join("");
@@ -137,8 +150,7 @@ export class Cards {
       <div class="sc-head">${art}<div class="sc-title"><b>${esc(tr(card.titulo))}</b>${card.script ? `<small>${esc(card.script)}</small>` : ""}</div><button class="sc-x" aria-label="${tr("Cerrar")}">×</button></div>
       ${card.texto ? (card.md ? `<div class="sc-text sc-md">${markdown(card.texto)}</div>` : `<p class="sc-text">${esc(tr(card.texto))}</p>`) : ""}
       ${rows ? `<div class="sc-rows">${rows}</div>` : ""}
-      ${buttons.length ? `<div class="sc-buttons">${buttons.map((b, i) => `<button data-b="${i}">${esc(tr(b.texto))}</button>`).join("")}</div>` : ""}
-      <span class="sc-time"></span>`;
+      ${buttons.length ? `<div class="sc-buttons">${buttons.map((b, i) => `<button data-b="${i}">${esc(tr(b.texto))}</button>`).join("")}</div>` : ""}`;
     el.querySelector(".sc-x")!.addEventListener("click", () => this.drop(el));
     el.querySelectorAll<HTMLElement>("[data-abrir]").forEach((link) =>
       link.addEventListener("click", (e) => {

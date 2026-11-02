@@ -85,6 +85,10 @@ fn ask_extension(app: &AppHandle, name: &str, args: &Value) -> Result<String, St
     result
 }
 
+pub fn ask_first(app: &AppHandle, what: &str, key: &str) -> bool {
+    permission_for(app, what, key)
+}
+
 fn permission_for(app: &AppHandle, what: &str, key: &str) -> bool {
     let key = crate::intent::normalize(key);
     if !key.is_empty() && ALWAYS.lock().unwrap().contains(&key) {
@@ -663,10 +667,18 @@ pub fn send_message(app: &AppHandle, chat: &str, who: &str, text: &str) -> Resul
             text = direct.trim().trim_matches(['"', '«', '»']).to_string();
         }
     }
-    progress(app, &format!("Escribiéndole a {who}"), false);
-    crate::pc::begin();
     let confirm = crate::settings::load(app).agent_confirm;
     let key = format!("{chat} {who}");
+    if chat == "WhatsApp" {
+        if let Some((jid, name)) = crate::whatsapp::contact(who) {
+            if confirm && !permission_for(app, &format!("Enviar a {name} por WhatsApp: «{text}»"), &key) {
+                return Ok("Quedó sin enviar.".into());
+            }
+            return crate::whatsapp::send(&jid, &text).map(|()| format!("Listo, le mandé a {name}: «{text}»."));
+        }
+    }
+    progress(app, &format!("Escribiéndole a {who}"), false);
+    crate::pc::begin();
     let sent = crate::pc::message(app, chat, who, &text, &|what| !confirm || permission_for(app, what, &key));
     progress(app, "Listo", true);
     match sent? {

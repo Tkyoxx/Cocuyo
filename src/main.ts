@@ -34,6 +34,7 @@ import { emit, loadExtensions } from "./extensiones";
 import { discordPage, settingsPage } from "./pages";
 import { Anotador } from "./anotar";
 import { NOVEDADES } from "./novedades";
+import { Preguntas, SE_PREGUNTA, type Archivo } from "./preguntar";
 import { Cards, type Card, type CardButton, type Progress } from "./tarjeta";
 import type { RecState } from "./pages";
 import { Selector } from "./selector";
@@ -139,6 +140,7 @@ island.onOpen = () => {
   cards.behind = true;
   emit("menu", true);
 };
+menu.onOpenRequest = () => island.onOpen();
 island.onLeave = () => {
   if (!menu.typing && !menu.pinned) closeMenu();
 };
@@ -248,6 +250,7 @@ onPlace((place) => {
 
 const anotador = new Anotador();
 anotador.onOpen = (size) => {
+  if (preguntas.open) preguntas.close();
   closeMenu();
   cards.behind = true;
   island.setBase("anota", size);
@@ -258,25 +261,29 @@ anotador.onClose = () => {
 };
 anotador.onSay = (text) => caption.say("app", text, 3600);
 
-interface Dropped {
-  name: string;
-  path: string;
-  kind: "imagen" | "texto" | "pdf" | "otro";
-  bytes: number;
-}
+type Dropped = Archivo;
 
-const ICON_OF: Record<Dropped["kind"], string> = { imagen: "🖼️", texto: "📄", pdf: "📕", otro: "📦" };
+const ICON_OF: Record<Dropped["kind"], string> = { imagen: "🖼️", texto: "📄", pdf: "📕", documento: "📘", otro: "📦" };
+
+const preguntas = new Preguntas();
+preguntas.onOpen = (size) => {
+  if (anotador.open) anotador.close();
+  closeMenu();
+  cards.behind = true;
+  island.setBase("pregunta", size);
+};
+preguntas.onClose = () => {
+  island.setBase("idle");
+  cards.behind = false;
+};
+on<{ archivo: Dropped; pregunta: string; respuesta: string }>("bandeja-abrir", (opened) => preguntas.show(opened.archivo, opened.pregunta, opened.respuesta));
 
 function offerFile(file: Dropped, title: string, seconds: number) {
   const buttons: CardButton[] = [];
-  if (file.kind === "imagen" || file.kind === "texto") {
-    buttons.push({
-      texto: "Preguntar",
-      accion: () =>
-        void call("bandeja_preguntar", { path: file.path })
-          .then(() => caption.say("app", `Pregúntame lo que quieras de «${file.name}» con las teclas de órdenes.`, 5200))
-          .catch((error) => caption.say("app", String(error), 5200)),
-    });
+  const failed = (error: unknown) => caption.say("app", String(error), 5200);
+  if (SE_PREGUNTA.includes(file.kind)) {
+    buttons.push({ texto: "¿De qué trata?", accion: () => void preguntas.start(file, tr("¿De qué trata?")).catch(failed) });
+    buttons.push({ texto: "Preguntar", accion: () => void preguntas.start(file).catch(failed) });
     buttons.push({
       texto: "Sacar el texto",
       accion: () =>
@@ -285,9 +292,9 @@ function offerFile(file: Dropped, title: string, seconds: number) {
           .catch((error) => caption.say("app", String(error), 5200)),
     });
   }
-  if (file.kind === "imagen") buttons.push({ texto: "Anotar", accion: () => void anotador.start(file.path).catch((error) => caption.say("app", String(error), 5200)) });
+  if (file.kind === "imagen") buttons.push({ texto: "Anotar", accion: () => void anotador.start(file.path).catch(failed) });
   buttons.push({ texto: "Abrir", abrir: file.path });
-  if (file.kind !== "imagen") buttons.push({ texto: "Copiar la ruta", copiar: file.path });
+  if (file.kind === "otro") buttons.push({ texto: "Copiar la ruta", copiar: file.path });
   cards.show({ script: "Cocuyo", titulo: title, texto: "¿Qué hago con esto?", icono: ICON_OF[file.kind], segundos: seconds, botones: buttons });
 }
 
@@ -344,7 +351,6 @@ onCaptured((result) => {
 
 onChord(async (e) => {
   if (e.phase === "locked") {
-    island.setState("oye");
     caption.say("app", "Manos libres. Habla tranquilo: tócalas otra vez para pegar o Esc para cancelar.", 4200);
     return;
   }
@@ -354,7 +360,6 @@ onChord(async (e) => {
       setRegion(null);
     } else {
       pill.show();
-      island.setState("oye");
     }
     closeMenu();
     caption.hide();
@@ -365,7 +370,6 @@ onChord(async (e) => {
 
   island.setVoice(false);
   setLevel(0);
-  for (let i = 0; i < 9; i++) document.documentElement.style.removeProperty(`--b${i}`);
 
   if (e.chord !== "lasso") {
     guide.chord(e, !e.cancelled);
@@ -425,10 +429,6 @@ function setLevel(peak: number) {
   document.documentElement.style.setProperty("--lv", level.toFixed(3));
 }
 on<number>("level", setLevel);
-on<number[]>("bands", (bands) => {
-  const style = document.documentElement.style;
-  bands.forEach((band, i) => style.setProperty(`--b${i}`, band.toFixed(3)));
-});
 
 on<{ who: "you" | "app"; text: string }>("live-text", (live) => {
   if (!live.text) return;
@@ -473,6 +473,16 @@ on<Heard>("heard", (heard) => {
 });
 
 on<string>("note", (text) => caption.say("app", text, 5200));
+on<{ nombre: string; texto: string }>("whatsapp", (message) => {
+  cards.show({
+    script: "WhatsApp",
+    titulo: message.nombre,
+    texto: message.texto,
+    icono: "💬",
+    segundos: 25,
+    botones: [{ texto: "Responder", accion: () => menu.ask(tr("Respóndele que ")) }],
+  });
+});
 cards.onWaiting = (waiting) => {
   if (waiting) island.setState("espera");
   else if (island.state === "espera") island.setState(null);
@@ -519,6 +529,20 @@ void loadExtensions({
     menu.show("ajustes");
     cards.behind = true;
   }
+});
+
+on<string>("update-offer", (version) => {
+  cards.show({
+    script: "Cocuyo",
+    titulo: `${tr("Cocuyo")} ${version} ${tr("está lista")}`,
+    texto: tr("¿La pongo ahora? Tarda unos segundos y Cocuyo vuelve solo. Si no dices nada, se pone en un minuto."),
+    icono: "✨",
+    segundos: 70,
+    botones: [
+      { texto: "Actualizar ahora", accion: () => void call("update_choice", { now: true }) },
+      { texto: "Más tarde", accion: () => void call("update_choice", { now: false }) },
+    ],
+  });
 });
 
 on<{ version: string }>("update", (found) => {

@@ -250,6 +250,10 @@ Le hablas normal y Cocuyo decide: lo simple lo hace al instante y lo que tiene p
 
 **Investiga a fondo.** «Investiga a fondo qué gráfica me conviene para jugar en 1080p» parte la pregunta en varias búsquedas, las hace él mismo en DuckDuckGo (sin servicios de pago y respetando el robots.txt de cada sitio), lee las mejores páginas, toma notas, mira qué le falta, cruza las fuentes y te abre un informe con resumen, secciones, dónde se contradicen las fuentes y qué creer, conclusiones y cada fuente numerada con su enlace. Queda guardado en `Documentos\Cocuyo\Investigaciones`. Mientras trabaja ves el avance en la isla, y al final te dice cuántas llamadas a la IA gastó (suelen ser entre 8 y 15, nada para los planes gratis).
 
+**Pregúntale por un archivo.** Suelta en la isla un PDF, un Word, un Excel, un PowerPoint, una imagen o un texto y toca **¿De qué trata?**: se abre un panel con la respuesta, preguntas rápidas y una casilla para seguir preguntando, y se acuerda de lo que van hablando. También sirve con lo que selecciones en cualquier app: «¿de qué trata esto?».
+
+**WhatsApp sin abrir WhatsApp.** En **Ajustes → Agente → Conectar** escaneas un QR una vez y Cocuyo te avisa de los mensajes nuevos, te los lee («¿qué me escribieron?») y le respondes con la voz («respóndele que ya voy»), siempre con tu permiso antes de enviar. Usa la pasarela libre [GOWA](https://github.com/aldinokemal/go-whatsapp-web-multidevice), que corre en tu PC.
+
 Con las manos encendidas, «mándale a Angela por WhatsApp que llego en 10 minutos» abre WhatsApp, busca el chat, comprueba que es Angela, escribe y te pregunta «¿Lo hago?» antes de enviar. No adivina píxeles: lee los botones de la ventana con la accesibilidad de Windows, así que funciona en cualquier resolución y monitor. Si mueves el mouse, suelta todo. Cómo funciona y cómo darle herramientas nuevas, en [`sdk/`](sdk/README.md#el-modo-agente).
 
 ### La galería
@@ -319,6 +323,7 @@ Háblale o escríbele a Cocuyo desde el celular, estés donde estés: lo que pid
 - Luego pulsa **Emparejar**: sale un QR y un código de nueve letras que dura dos minutos. Escanea el QR con la cámara del celular y se empareja solo. Es una app web: en Android pulsa **Instalar**; en iPhone, Compartir → **Agregar a inicio** (y empareja desde la app instalada, que guarda sus propias llaves). Abre sin internet y queda como una app más.
 - Va cifrado de punta a punta: ECDH P-256 y AES-GCM con las llaves de Windows (CNG) en el PC y WebCrypto en el celular, llaves nuevas en cada conexión y contadores contra repeticiones. El punto de cita es un [Cloudflare Worker](remoto/) de 60 líneas que solo pasa paquetes que no puede abrir. Si prefieres montarlo a mano, `npx wrangler deploy` en `remoto/` y pon su dirección en Ajustes → Remoto.
 - Hasta cinco celulares; cada uno se quita con **Quitar**. Sin puertos abiertos en tu PC: es él quien sale a buscar al punto de cita.
+- **Avisos con la app cerrada:** en los ajustes del celular. Te llega un aviso cuando un informe está listo o suena un recordatorio y no estás en el PC. El PC los cifra y los firma él mismo (Web Push con VAPID), sin servidor propio.
 
 ## Discord
 
@@ -415,7 +420,9 @@ No hay cuentas y no se recoge nada tuyo. Esto es todo lo que sale de tu PC, y cu
 - **Sin IA, tu voz y tus capturas no salen de tu PC.** El micrófono solo se abre mientras mantienes un atajo de voz, y el audio se transcribe y se borra en tu equipo.
 - **Con IA** (Ajustes → IA, apagada de fábrica), lo que le digas va al proveedor que elegiste: como texto, o como audio si activas **Escuchar con el modelo** o el modo en vivo. También le llegan las capturas y los archivos que le pidas mirar, el título de la ventana que tienes delante si preguntas por «esto» o «esta página» (y su dirección, si es un navegador), lo que el agente lea de tu pantalla o tu portapapeles cuando le pides algo que lo necesita, lo que suena mientras tomas apuntes, los dictados si activas **Pulir los dictados** y los nombres y descripciones de tus scripts. Si el modelo corre en tu PC (Ollama, llama.cpp, LM Studio), no sale nada. En el plan gratis de Gemini, Google puede usar lo que le mandas para mejorar sus productos. Ajustes → IA te lo recuerda siempre.
 - **Tu Claude** (si lo eliges en Ajustes → IA): lo que le digas va como texto a Anthropic por tu propio Claude Code, con tu cuenta. Corre en una carpeta vacía y sin herramientas.
-- **Lo que sueltas en la isla** se copia a la carpeta de Cocuyo, el original no se toca, y se borra solo a la semana. No sale de tu PC salvo que le preguntes a la IA por él.
+- **Lo que sueltas en la isla** se copia a la carpeta de Cocuyo, el original no se toca, y se borra solo a la semana. No sale de tu PC salvo que le preguntes a la IA por él. Los PDF se leen en tu PC con el lector y el reconocimiento de texto de Windows; a la IA solo le llega el texto.
+- **WhatsApp** (apagado de fábrica, Ajustes → Agente): al conectarlo, Cocuyo baja de GitHub la pasarela libre [GOWA](https://github.com/aldinokemal/go-whatsapp-web-multidevice) (v9.7.0, comprobando su huella SHA-256) y la corre en tu PC, escuchando solo en `127.0.0.1` y con una clave nueva en cada arranque. Tu sesión queda en tu PC y los mensajes van directo de tu PC a WhatsApp. WhatsApp no permite oficialmente apps que no son suyas: úsalo sabiendo eso. Cocuyo siempre pregunta antes de enviar.
+- **Avisos en el celular con la app cerrada** (apagados de fábrica, en los ajustes del celular): cuando un informe está listo o suena un recordatorio y no estás en el PC, el aviso viaja cifrado (Web Push, RFC 8291) por el servicio de avisos del navegador de tu celular; en Android, el de Google. Ese servicio solo ve un paquete cifrado.
 - **Actualizaciones:** al arrancar y cada seis horas, Cocuyo le pregunta a GitHub si hay una versión nueva. No manda nada tuyo. Se apaga en **Ajustes → Isla → Actualizarse sola**.
 - **Instalaciones:** la primera vez que Cocuyo se abre en un PC, baja de GitHub un archivo de 1 byte (la versión [«contador»](https://github.com/Tkyoxx/Cocuyo/releases/tag/contador)), una sola vez. No lleva ningún dato: GitHub solo suma la descarga, y [`contador.yml`](.github/workflows/contador.yml) pasa ese número a la insignia de arriba. Las compilaciones de desarrollo no cuentan. Se apaga en **Ajustes → Isla → Contarme en las instalaciones**.
 - **El clima** de la pestaña Hoy viene de Open-Meteo, y si no escribiste tu ciudad, la primera vez se averigua por tu conexión (ipwho.is). Los dos son gratis y sin cuenta, y solo se consultan al abrir la pestaña o al preguntar por el clima. Para que no se use ipwho.is, escribe tu ciudad en **Ajustes → Tú**.
@@ -433,7 +440,7 @@ Free code signing provided by [SignPath.io](https://about.signpath.io/), certifi
 
 - Autores y revisores: [@Tkyoxx](https://github.com/Tkyoxx)
 - Aprobadores: [@Tkyoxx](https://github.com/Tkyoxx)
-- Privacidad: [arriba](#privacidad). This program will not transfer any information to other networked systems unless specifically requested by the user, except for the update check and the one-time 1-byte install count described there, both of which can be turned off.
+- Privacidad: [arriba](#privacidad). This program will not transfer any information to other networked systems unless specifically requested by the user, except for the update check and the one-time 1-byte install count described there, both of which can be turned off. Optional features the user turns on (AI, phone, WhatsApp, phone notifications) are described there too.
 
 ## Licencia
 

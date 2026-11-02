@@ -78,6 +78,76 @@ try {
   if (localStorage.getItem("cocuyo.hablar") === "0") $("hablar").checked = false;
 } catch {}
 
+const avisosPosibles = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window && !muestra;
+
+function recordado(nombre) {
+  try {
+    return localStorage.getItem(nombre);
+  } catch {
+    return null;
+  }
+}
+
+function recordar(nombre, valor) {
+  try {
+    if (valor === null) localStorage.removeItem(nombre);
+    else localStorage.setItem(nombre, valor);
+  } catch {}
+}
+
+function bytesDe(texto) {
+  const b64 = texto.replace(/-/g, "+").replace(/_/g, "/");
+  return Uint8Array.from(atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4)), (c) => c.charCodeAt(0));
+}
+
+async function suscribirAvisos() {
+  const llave = recordado("cocuyo.avisosLlave");
+  if (!avisosPosibles || !llave || !enlace || Notification.permission !== "granted") return false;
+  const registro = await navigator.serviceWorker.ready;
+  const clave = bytesDe(llave);
+  let suscripcion = await registro.pushManager.getSubscription();
+  const otra = suscripcion?.options?.applicationServerKey && new Uint8Array(suscripcion.options.applicationServerKey).join() !== clave.join();
+  if (otra) {
+    await suscripcion.unsubscribe();
+    suscripcion = null;
+  }
+  suscripcion ??= await registro.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: clave });
+  const datos = suscripcion.toJSON();
+  await enlace.enviar({ tipo: "avisos", endpoint: datos.endpoint, p256dh: datos.keys.p256dh, auth: datos.keys.auth });
+  return true;
+}
+
+function pintarAvisos() {
+  $("avisos-fila").hidden = !avisosPosibles || !recordado("cocuyo.avisosLlave");
+  $("avisos").checked = recordado("cocuyo.avisos") === "1" && avisosPosibles && Notification.permission === "granted";
+  if (avisosPosibles && Notification.permission === "denied") $("avisos-nota").textContent = t("Los avisos están bloqueados para esta página. Actívalos en los ajustes del navegador.");
+}
+
+$("avisos").addEventListener("change", async () => {
+  const caja = $("avisos");
+  if (!caja.checked) {
+    recordar("cocuyo.avisos", "0");
+    const suscripcion = await navigator.serviceWorker.ready.then((r) => r.pushManager.getSubscription()).catch(() => null);
+    await suscripcion?.unsubscribe().catch(() => {});
+    void enlace?.enviar({ tipo: "avisos", quitar: true }).catch(() => {});
+    return;
+  }
+  const permiso = await Notification.requestPermission().catch(() => "denied");
+  if (permiso !== "granted") {
+    caja.checked = false;
+    pintarAvisos();
+    return;
+  }
+  recordar("cocuyo.avisos", "1");
+  const listo = await suscribirAvisos().catch(() => false);
+  if (!listo) {
+    caja.checked = false;
+    recordar("cocuyo.avisos", "0");
+    $("avisos-nota").textContent = t("No pude activar los avisos. Revisa que el celular tenga internet y vuelve a probar.");
+  }
+});
+pintarAvisos();
+
 function preferencias() {
   void enlace?.enviar({ tipo: "prefs", voz: $("hablar").checked, trozos: true }).catch(() => {});
 }
@@ -225,6 +295,13 @@ function recibir(mensaje) {
     return;
   }
   if (mensaje.tipo === "informe") return void llegoInforme(mensaje.informe ?? {});
+  if (mensaje.tipo === "avisos-llave") {
+    if (!mensaje.llave) return;
+    recordar("cocuyo.avisosLlave", mensaje.llave);
+    pintarAvisos();
+    if (recordado("cocuyo.avisos") === "1") void suscribirAvisos().catch(() => {});
+    return;
+  }
   if (mensaje.tipo !== "respuesta") return;
   listo();
   yoVivo = null;

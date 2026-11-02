@@ -4,6 +4,7 @@ mod agenda;
 mod ai;
 mod amf;
 mod apps;
+mod avisos;
 mod bandeja;
 mod buscar;
 mod candado;
@@ -27,6 +28,7 @@ mod intent;
 mod live;
 mod mcp;
 mod minutes;
+mod motor;
 mod media;
 mod mic;
 mod mp4;
@@ -52,6 +54,7 @@ mod tray;
 mod tts;
 mod update;
 mod voice;
+mod whatsapp;
 mod weather;
 
 use tauri::Manager;
@@ -275,7 +278,14 @@ pub fn run() {
             palabras::dictation_apps,
             bandeja::bandeja_recibir,
             bandeja::bandeja_texto,
+            bandeja::bandeja_abrir,
+            update::update_choice,
+            whatsapp::whatsapp_estado,
+            whatsapp::whatsapp_conectar,
+            whatsapp::whatsapp_qr,
+            whatsapp::whatsapp_desconectar,
             bandeja::bandeja_preguntar,
+            bandeja::bandeja_cerrar,
             bandeja::anotar_abrir,
             bandeja::anotar_guardar,
             voice::orden_escrita,
@@ -423,6 +433,7 @@ pub fn run() {
                 let _ = system::set_autostart(true);
             }
             agenda::start(app.handle().clone(), std::env::args().any(|arg| arg == "--inicio"));
+            whatsapp::resume(app.handle());
             update::watch(app.handle().clone());
             update::count_install(app.handle().clone());
             std::env::remove_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS");

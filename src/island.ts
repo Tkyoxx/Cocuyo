@@ -5,7 +5,7 @@ import { face, leaveDelay, NOTCH, region, shrinks, size, type Base, type Look, t
 import { Spring } from "./spring";
 
 export type { Base, Size } from "./forma";
-export type State = "oye" | "piensa" | "espera" | "mal" | "bien" | "nueva";
+export type State = "piensa" | "espera" | "mal" | "bien" | "nueva";
 
 export class Island {
   base: Base = "idle";
@@ -35,6 +35,8 @@ export class Island {
   private stateTimer = 0;
 
   constructor() {
+    const shell = this.el.querySelector<HTMLElement>(".shell");
+    shell?.addEventListener("scroll", () => shell.scrollTo(0, 0));
     this.el.addEventListener("pointerenter", () => {
       clearTimeout(this.leaveTimer);
       const was = this.hover;

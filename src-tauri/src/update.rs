@@ -138,6 +138,24 @@ fn updated() -> Option<String> {
     std::env::args().find_map(|arg| arg.strip_prefix(UPDATED).map(str::to_owned))
 }
 
+static CHOICE: std::sync::Mutex<Option<std::sync::mpsc::Sender<bool>>> = std::sync::Mutex::new(None);
+
+#[tauri::command]
+pub fn update_choice(now: bool) {
+    if let Some(answer) = CHOICE.lock().unwrap().take() {
+        let _ = answer.send(now);
+    }
+}
+
+fn wants_it_now(app: &AppHandle, found: &Update) -> bool {
+    let (answer, choice) = std::sync::mpsc::channel();
+    *CHOICE.lock().unwrap() = Some(answer);
+    let _ = app.emit_to(crate::overlay::LABEL, "update-offer", &found.version);
+    let now = choice.recv_timeout(Duration::from_secs(75)).unwrap_or(true);
+    CHOICE.lock().unwrap().take();
+    now
+}
+
 pub fn watch(app: AppHandle) {
     if cfg!(debug_assertions) {
         return;
@@ -150,7 +168,7 @@ pub fn watch(app: AppHandle) {
                     while placement::fullscreen() {
                         std::thread::sleep(Duration::from_secs(60));
                     }
-                    if settings::load(&app).check_updates {
+                    if settings::load(&app).check_updates && wants_it_now(&app, &found) {
                         let _ = install(&app, &found);
                     }
                 }

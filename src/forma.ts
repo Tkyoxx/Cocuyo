@@ -8,7 +8,7 @@ export interface Size {
   r: number;
 }
 
-export type Base = "idle" | "menu" | "guide" | "install" | "anota";
+export type Base = "idle" | "menu" | "guide" | "install" | "anota" | "pregunta";
 export type Face = Base | "voice" | "peek";
 
 export interface Look {
@@ -36,7 +36,7 @@ export function face(look: Look): Face {
 
 export function size(look: Look, viewportW: number): Size {
   const now = face(look);
-  if (now === "menu" || now === "guide" || now === "install" || now === "anota") {
+  if (now === "menu" || now === "guide" || now === "install" || now === "anota" || now === "pregunta") {
     return { ...look.panel, w: Math.min(look.panel.w, viewportW - (EAR + MARGIN) * 2) };
   }
   if (look.place !== "right") return now === "voice" ? VOICE : now === "peek" ? PEEK : NOTCH;

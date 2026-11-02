@@ -427,6 +427,7 @@ pub fn remoto_quitar(app: AppHandle, id: String) -> Result<(), String> {
     let mut book = load(&app);
     book.celulares.retain(|phone| phone.id != id);
     save(&app, &book)?;
+    crate::avisos::forget(&app, &id);
     sync(&app);
     Ok(())
 }
@@ -567,6 +568,9 @@ fn listen(app: &AppHandle, phone: &Phone, link: &Arc<Link>, socket: &Socket) {
                         let greeted = send_json(socket, &answer).is_ok();
                         if greeted {
                             deliver_pending(link);
+                            if let Some(key) = crate::avisos::public_key(app) {
+                                let _ = link.send(JSON, json!({ "tipo": "avisos-llave", "llave": key }).to_string().as_bytes());
+                            }
                         }
                         if greeted && !link.talking.swap(true, Ordering::Relaxed) {
                             let _ = app.emit_to(crate::overlay::LABEL, "note", crate::i18n::tr(&format!("Tu celular «{}» se conectó a Cocuyo.", phone.nombre)));
@@ -593,7 +597,17 @@ fn listen(app: &AppHandle, phone: &Phone, link: &Arc<Link>, socket: &Socket) {
             continue;
         }
         if kind == JSON {
-            match serde_json::from_slice::<Value>(body).ok().and_then(|said| said["tipo"].as_str().map(str::to_string)).as_deref() {
+            let said = serde_json::from_slice::<Value>(body).unwrap_or_default();
+            match said["tipo"].as_str() {
+                Some("avisos") => {
+                    if said["quitar"] == true {
+                        crate::avisos::forget(app, &phone.id);
+                    } else {
+                        let field = |name: &str| said[name].as_str().unwrap_or("").to_string();
+                        let _ = crate::avisos::subscribe(app, &phone.id, &field("endpoint"), &field("p256dh"), &field("auth"));
+                    }
+                    continue;
+                }
                 Some("voz-empieza") => {
                     start_hearing(app, link);
                     continue;
@@ -930,6 +944,10 @@ fn deliver_pending(link: &Link) {
         }
     }
     PENDING.lock().unwrap().extend(left);
+}
+
+pub fn talking() -> bool {
+    !talking_links().is_empty()
 }
 
 fn talking_links() -> Vec<Arc<Link>> {

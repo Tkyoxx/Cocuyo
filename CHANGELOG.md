@@ -2,6 +2,32 @@
 
 Cada versión con lo que trae. La más nueva arriba.
 
+## 0.4.0
+
+**Lo que pediste cambiar**
+- La pastilla de cuando le hablas vuelve a ser la de antes: las cuatro barras blancas.
+- La isla abierta vuelve a su ancho de siempre. El medidor de IA pasa a la barra del lápiz.
+- Ya no sale la línea que contaba cuánto le quedaba a cada texto o tarjeta.
+
+**Preguntarle por archivos, de verdad**
+- Suelta un archivo y toca «¿De qué trata?»: se abre un panel en la isla con la respuesta, preguntas rápidas (resúmelo, lo importante, tradúcelo) y una casilla para seguir preguntando. Se acuerda de lo que van hablando, y también le puedes preguntar con la voz.
+- Ahora lee PDF (con el lector y el reconocimiento de texto de Windows), Word, Excel, PowerPoint y documentos de LibreOffice, además de imágenes y texto.
+- Selecciona un texto en cualquier app y dile «¿de qué trata esto?» o «resume esto»: te lo explica en el panel sin tocar tu texto.
+
+**Más rápido**
+- La voz local carga el modelo mientras hablas: una frase corta sale en unos 0,3 segundos en vez de 1.
+
+**WhatsApp sin abrir WhatsApp** (Ajustes → Agente)
+- Te avisa de los mensajes nuevos con una tarjeta, te los lee («¿qué me escribieron?») y le respondes con la voz o escribiendo («respóndele que ya voy»), siempre con tu permiso antes de enviar.
+- El agente manda los WhatsApp por ahí, sin mover el mouse, y entiende nombres mal oídos sin adivinar entre dos.
+
+**El celular**
+- Avisos aunque tengas la app cerrada: cuando un informe está listo o suena un recordatorio y no estás en el PC.
+
+**Por dentro**
+- Antes de actualizarse te pregunta: «Actualizar ahora» o «Más tarde».
+- Arreglos: cerrar el editor de anotar ya no abre el menú, las pestañas ya no se corren hacia arriba al escribir y Discord cerrado ya no deja un error escondido en Ajustes.
+
 ## 0.3.0
 
 **Dictado a tu manera**

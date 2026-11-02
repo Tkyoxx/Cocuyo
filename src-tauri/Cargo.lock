@@ -518,10 +518,11 @@ dependencies = [
 
 [[package]]
 name = "cocuyo"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "bzip2-rs",
  "cpal",
+ "miniz_oxide 0.8.9",
  "nnnoiseless",
  "png 0.18.1",
  "serde",

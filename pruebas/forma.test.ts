@@ -25,6 +25,12 @@ test("al anotar, la isla toma el tamaño del editor y la voz no se lo quita", ()
   assert.deepEqual(size(look({ base: "anota", panel: { w: 900, h: 600, r: 30 } }), 1920), { w: 900, h: 600, r: 30 });
 });
 
+test("al preguntar por un archivo, la voz sí se asoma y luego vuelve el panel", () => {
+  assert.equal(face(look({ base: "pregunta", voice: true })), "voice");
+  assert.equal(face(look({ base: "pregunta" })), "pregunta");
+  assert.deepEqual(size(look({ base: "pregunta", panel: { w: 600, h: 300, r: 30 } }), 1920), { w: 600, h: 300, r: 30 });
+});
+
 test("el menú nunca es más ancho que la pantalla", () => {
   assert.equal(size(look({ base: "menu" }), 1920).w, 640);
   assert.equal(size(look({ base: "menu" }), 500).w, 500 - 60);

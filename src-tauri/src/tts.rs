@@ -330,6 +330,7 @@ fn modern(name: &str, text: &str, pitch: f64, rate: f64) -> Result<Vec<u8>, Stri
     Ok(bytes)
 }
 
+#[cfg_attr(test, allow(dead_code))]
 pub fn system_wav(app: &AppHandle, text: &str, name: &str) -> Result<PathBuf, String> {
     let file = said_file(app, name, text)?;
     if !file.is_file() {
