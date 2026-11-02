@@ -161,6 +161,7 @@ const SECTIONS: [string, string][] = [
   ["musica", "Música"],
   ["ia", "IA"],
   ["agente", "Agente"],
+  ["whatsapp", "WhatsApp"],
   ["remoto", "Remoto"],
   ["extensiones", "Extensiones"],
   ["atajos", "Atajos"],
@@ -201,10 +202,8 @@ class SettingsPage implements Page {
   private open(section: string) {
     this.section = section;
     if (section === "extensiones") void this.paintExtensions();
-    if (section === "agente") {
-      void this.paintMcp();
-      void this.paintWhatsapp();
-    }
+    if (section === "agente") void this.paintMcp();
+    if (section === "whatsapp") void this.paintWhatsapp();
     if (section === "remoto") void this.paintRemote();
     if (section === "voz") {
       void this.paintMics();
@@ -272,6 +271,7 @@ class SettingsPage implements Page {
                <div><b>Dónde vive la isla</b><small id="s-dock-help"></small></div>
                <div class="segmented" id="s-dock"><span class="thumb"></span><button data-value="auto">Automática</button><button data-value="top">Arriba</button><button data-value="right">Derecha</button></div>
              </div>
+             <label class="srow"><div><b>La rayita de estado</b><small>Una línea de color bajo la isla que cambia según lo que hace Cocuyo: pensando, esperando tu permiso, algo falló o listo.</small></div><input type="checkbox" class="switch" id="s-status-line"></label>
              <div class="srow stack"><div><b>Su color</b><small>El de los botones prendidos, el saludo y los detalles de la isla.</small></div><div class="srow chips flat swatches" id="s-accent"><button class="swatch" data-accent="" style="--c:#f2b84b" aria-label="Ámbar" title="Ámbar"></button><button class="swatch" data-accent="#34d399" style="--c:#34d399" aria-label="Verde" title="Verde"></button><button class="swatch" data-accent="#5cb8ff" style="--c:#5cb8ff" aria-label="Azul" title="Azul"></button><button class="swatch" data-accent="#a78bfa" style="--c:#a78bfa" aria-label="Violeta" title="Violeta"></button><button class="swatch" data-accent="#f472b6" style="--c:#f472b6" aria-label="Rosa" title="Rosa"></button><button class="swatch" data-accent="#f4505e" style="--c:#f4505e" aria-label="Rojo" title="Rojo"></button></div></div>
              <div class="srow slim"><div><b>Tus sonidos</b><small>Pon un .wav con el nombre de un aviso en esta carpeta y Cocuyo suena con el tuyo.</small></div><button class="ghost" id="s-sounds">Abrir carpeta</button></div>
              <div class="srow slim"><div><b>Diagnóstico</b><small>Copia la versión, tu Windows y los últimos errores, sin tus claves, para pegarlo en un issue.</small></div><button class="ghost" id="s-diag">Copiar</button></div>
@@ -469,15 +469,34 @@ class SettingsPage implements Page {
              <div class="srow slim"><div><b>Necesita</b><small id="s-agent-need">Un modelo de IA conectado en la sección IA, con formato OpenAI (Gemini viene listo).</small></div></div>
            </div>
            <div class="card">
-             <div class="srow slim"><div><b>WhatsApp sin abrir WhatsApp</b><small id="s-wa-state">Te avisa de los mensajes nuevos, te los lee y le respondes con la voz: «respóndele que ya voy». Usa GOWA, que corre aquí en tu PC.</small></div><button class="ghost pick" id="s-wa-go">Conectar</button></div>
-             <div class="wa-qr" id="s-wa-qr" hidden><img alt="QR" /><small>En el celular: WhatsApp → Dispositivos vinculados → Vincular un dispositivo, y escanea este código.</small></div>
-             <label class="srow"><div><b>Avisarme de mensajes nuevos</b><small>Una tarjeta con quién te escribió. A pantalla completa se queda callado: después pregúntale «¿qué me escribieron?».</small></div><input type="checkbox" class="switch" id="s-wa-notices"></label>
-             <label class="srow"><div><b>También de grupos</b><small>Si no, solo chats con una persona. Se aplica al volver a conectar.</small></div><input type="checkbox" class="switch" id="s-wa-groups"></label>
-             <div class="srow slim"><div><b>Ojo</b><small>WhatsApp no permite oficialmente apps que no son suyas. Mucha gente usa estas pasarelas sin problema, pero hay cuentas suspendidas por mandar mensajes en masa. Cocuyo siempre te pregunta antes de enviar.</small></div></div>
-           </div>
-           <div class="card">
              <div class="srow slim"><div><b>Servidores MCP</b><small id="s-mcp-sum">Los mismos que usa Claude Desktop: archivos, GitHub, el navegador, tu casa…</small></div><button class="ghost pick" id="s-mcp-open">Editar mcp.json</button><button class="ghost" id="s-mcp-reload">Reconectar</button></div>
              <div class="mcp-list" id="s-mcp-list"></div>
+           </div>`,
+        ) +
+        section(
+          "whatsapp",
+          `<div class="scol">
+           <div class="card">
+             <div class="srow slim"><div><b>WhatsApp sin abrir WhatsApp</b><small id="s-wa-state">Te avisa de los mensajes nuevos, te los lee y le respondes con la voz: «respóndele que ya voy». Usa GOWA, que corre aquí en tu PC.</small></div><button class="ghost pick" id="s-wa-go">Conectar</button></div>
+             <div class="wa-qr" id="s-wa-qr" hidden><img alt="QR" /><small>En el celular: WhatsApp → Dispositivos vinculados → Vincular un dispositivo, y escanea este código.</small></div>
+             <div class="srow slim"><div><b>Ojo</b><small>WhatsApp no permite oficialmente apps que no son suyas. Mucha gente usa estas pasarelas sin problema, pero hay cuentas suspendidas por mandar mensajes en masa. Cocuyo nunca envía nada sin que tú lo digas.</small></div></div>
+           </div>
+           <div class="card">
+             <div class="srow stack"><div><b>Sonido</b><small>Hecho para Cocuyo: una kalimba suave que no cansa, con su familia para abrir, enviar y cerrar.</small></div><div class="srow chips flat" id="s-wa-sound"><button class="chip" data-v="kalimba">Kalimba</button><button class="chip" data-v="">Sin sonido</button></div></div>
+             <div class="srow stack"><div><b>Volumen</b><small id="s-wa-vol-n"></small></div><input type="range" class="range" id="s-wa-vol" min="5" max="100" step="5" /></div>
+             <label class="srow"><div><b>Sonidos al abrir, enviar y cerrar</b><small>Más bajitos que el aviso.</small></div><input type="checkbox" class="switch" id="s-wa-ui"></label>
+             <div class="srow slim"><div><b>Ver cómo se ve</b><small>Una burbuja de prueba: puedes responderle y nada sale de tu PC.</small></div><button class="ghost pick" id="s-wa-demo">Probar</button></div>
+           </div>
+           </div>
+           <div class="scol">
+           <div class="card">
+             <label class="srow"><div><b>Avisarme de mensajes nuevos</b><small>Llega una burbuja que flota; tócala para leer y responder ahí mismo.</small></div><input type="checkbox" class="switch" id="s-wa-notices"></label>
+             <label class="srow"><div><b>Mostrar el mensaje junto a la burbuja</b><small>Si lo apagas, solo ves la burbuja con la cara de quien te escribió.</small></div><input type="checkbox" class="switch" id="s-wa-text"></label>
+             <div class="srow stack"><div><b>Se va sola</b><small>Si no la abres. Arrástrala para moverla de lado, o lánzala fuera de la pantalla para descartarla.</small></div><div class="srow chips flat" id="s-wa-stay"><button class="chip" data-v="0">Nunca</button><button class="chip" data-v="30">30 s</button><button class="chip" data-v="120">2 min</button></div></div>
+             <div class="srow stack"><div><b>Animaciones</b><small>Suaves: sin el vuelo, el destello ni las chispas; solo aparece.</small></div><div class="srow chips flat" id="s-wa-motion"><button class="chip" data-v="completa">Completas</button><button class="chip" data-v="suave">Suaves</button></div></div>
+             <label class="srow"><div><b>También jugando</b><small>Si no, a pantalla completa se queda callada; después le preguntas «¿qué me escribieron?».</small></div><input type="checkbox" class="switch" id="s-wa-gaming"></label>
+             <label class="srow"><div><b>También de grupos</b><small>Si no, solo chats con una persona. Se aplica al volver a conectar.</small></div><input type="checkbox" class="switch" id="s-wa-groups"></label>
+           </div>
            </div>`,
         ) +
         section(
@@ -550,7 +569,7 @@ class SettingsPage implements Page {
     for (const button of el.querySelectorAll<HTMLElement>("#s-lang button")) {
       button.addEventListener("click", () => this.save({ language: button.dataset.value as Settings["language"] }));
     }
-    const toggle = (sel: string, key: "hideOnFullscreen" | "askWhere" | "copyToClipboard" | "autostart" | "cueFullscreen" | "speakFullscreen" | "gameOverlay" | "aiOn" | "aiDictation" | "aiHear" | "padOn" | "checkUpdates" | "countMe" | "barCenter" | "barSolidMax" | "extensionsOn" | "aiAgent" | "agentHands" | "agentConfirm" | "aiLive" | "remoteOn" | "handsFree" | "whatsappNotices" | "whatsappGroups") => {
+    const toggle = (sel: string, key: "hideOnFullscreen" | "askWhere" | "copyToClipboard" | "autostart" | "cueFullscreen" | "speakFullscreen" | "gameOverlay" | "aiOn" | "aiDictation" | "aiHear" | "padOn" | "checkUpdates" | "countMe" | "barCenter" | "barSolidMax" | "extensionsOn" | "aiAgent" | "agentHands" | "agentConfirm" | "aiLive" | "remoteOn" | "handsFree" | "whatsappNotices" | "whatsappGroups" | "statusLine" | "whatsappText" | "whatsappUiSounds" | "whatsappGaming") => {
       const input = q<HTMLInputElement>(sel);
       input.addEventListener("change", () => {
         const change: Partial<Settings> = {};
@@ -679,8 +698,34 @@ class SettingsPage implements Page {
       button.addEventListener("click", () => this.save({ dictationInto: button.dataset.value ?? "" }));
     }
     toggle("#s-hands", "handsFree");
+    toggle("#s-status-line", "statusLine");
     toggle("#s-wa-notices", "whatsappNotices");
     toggle("#s-wa-groups", "whatsappGroups");
+    toggle("#s-wa-text", "whatsappText");
+    toggle("#s-wa-ui", "whatsappUiSounds");
+    toggle("#s-wa-gaming", "whatsappGaming");
+    const burbuja = (detail: { probar?: boolean; oir?: string }) => window.dispatchEvent(new CustomEvent("cocuyo-burbuja", { detail }));
+    q("#s-wa-demo").addEventListener("click", () => burbuja({ probar: true }));
+    q("#s-wa-stay").addEventListener("click", (e) => {
+      const chip = (e.target as HTMLElement).closest<HTMLElement>("[data-v]");
+      if (chip) void this.save({ whatsappStay: Number(chip.dataset.v) });
+    });
+    q("#s-wa-motion").addEventListener("click", (e) => {
+      const chip = (e.target as HTMLElement).closest<HTMLElement>("[data-v]");
+      if (chip) void this.save({ whatsappMotion: chip.dataset.v ?? "completa" });
+    });
+    q("#s-wa-sound").addEventListener("click", async (e) => {
+      const chip = (e.target as HTMLElement).closest<HTMLElement>("[data-v]");
+      if (!chip) return;
+      await this.save({ whatsappSound: chip.dataset.v ?? "" });
+      if (chip.dataset.v) burbuja({ oir: chip.dataset.v });
+    });
+    const volume = q<HTMLInputElement>("#s-wa-vol");
+    volume.addEventListener("input", () => (q("#s-wa-vol-n").textContent = `${volume.value} %`));
+    volume.addEventListener("change", async () => {
+      await this.save({ whatsappVolume: Number(volume.value) });
+      burbuja({ oir: this.settings?.whatsappSound || "kalimba" });
+    });
     q("#s-wa-go").addEventListener("click", () => void this.whatsappButton());
     const finder = q<HTMLInputElement>("#s-find");
     finder.addEventListener("pointerdown", () => host.focus(finder));
@@ -1534,7 +1579,7 @@ class SettingsPage implements Page {
     this.waLinking = window.setInterval(async () => {
       turns += 1;
       const state = await this.paintWhatsapp();
-      if (state.conectado || !state.corriendo || Date.now() - since > 180_000 || this.section !== "agente") {
+      if (state.conectado || !state.corriendo || Date.now() - since > 180_000 || this.section !== "whatsapp") {
         window.clearInterval(this.waLinking);
         box.hidden = true;
         if (!state.conectado && state.corriendo) this.el.querySelector("#s-wa-state")!.textContent = tr("Se acabó el tiempo para escanear. Toca Desconectar y vuelve a conectar.");
@@ -1891,8 +1936,17 @@ class SettingsPage implements Page {
     q<HTMLInputElement>("#s-ai").checked = s.aiOn;
     q<HTMLInputElement>("#s-ai-polish").checked = s.aiDictation;
     q<HTMLInputElement>("#s-hands").checked = s.handsFree;
+    q<HTMLInputElement>("#s-status-line").checked = s.statusLine;
     q<HTMLInputElement>("#s-wa-notices").checked = s.whatsappNotices;
     q<HTMLInputElement>("#s-wa-groups").checked = s.whatsappGroups;
+    q<HTMLInputElement>("#s-wa-text").checked = s.whatsappText;
+    q<HTMLInputElement>("#s-wa-ui").checked = s.whatsappUiSounds;
+    q<HTMLInputElement>("#s-wa-gaming").checked = s.whatsappGaming;
+    q<HTMLInputElement>("#s-wa-vol").value = String(s.whatsappVolume);
+    q("#s-wa-vol-n").textContent = `${s.whatsappVolume} %`;
+    for (const [box, value] of [["#s-wa-stay", String(s.whatsappStay)], ["#s-wa-motion", s.whatsappMotion], ["#s-wa-sound", s.whatsappSound]] as const) {
+      for (const chip of this.el.querySelectorAll<HTMLElement>(`${box} [data-v]`)) chip.classList.toggle("on", chip.dataset.v === value);
+    }
     for (const swatch of this.el.querySelectorAll<HTMLElement>("#s-accent [data-accent]")) swatch.classList.toggle("on", swatch.dataset.accent === s.accent);
     const root = document.documentElement.style;
     const picked = root.getPropertyValue("--accent");

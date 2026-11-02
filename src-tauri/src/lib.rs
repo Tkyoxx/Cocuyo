@@ -284,6 +284,8 @@ pub fn run() {
             whatsapp::whatsapp_conectar,
             whatsapp::whatsapp_qr,
             whatsapp::whatsapp_desconectar,
+            whatsapp::whatsapp_responder,
+            whatsapp::whatsapp_hilo,
             bandeja::bandeja_preguntar,
             bandeja::bandeja_cerrar,
             bandeja::anotar_abrir,

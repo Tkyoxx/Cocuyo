@@ -182,6 +182,9 @@ button:focus-visible {
     box-shadow 0.35s var(--ui);
   pointer-events: none;
 }
+:root:not([data-rayita]) .st {
+  display: none;
+}
 #island[data-st] .st {
   opacity: 1;
   transform: none;

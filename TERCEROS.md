@@ -2,6 +2,8 @@
 
 Cocuyo es MIT, pero se apoya en el trabajo de mucha gente. Aquí está todo, con su licencia.
 
+Los sonidos de WhatsApp (`public/sonidos/wa-*.ogg`) son propios: los hice con los efectos de sonido de ElevenLabs desde mi cuenta.
+
 ## Lo que se descarga al usarlo
 
 Estas piezas no vienen dentro de `Cocuyo.exe`: se bajan la primera vez que las eliges y quedan en tu PC.

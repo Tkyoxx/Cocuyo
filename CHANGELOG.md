@@ -2,6 +2,24 @@
 
 Cada versión con lo que trae. La más nueva arriba.
 
+## 0.4.1
+
+**WhatsApp en una burbuja** (Ajustes → WhatsApp)
+- Los mensajes ya no salen en una tarjeta que tapa la pantalla: llega una burbuja verde que flota en una esquina, con la cara de quien te escribió y cuántos mensajes van.
+- Tócala y se despliega el chat: lees la conversación y respondes escribiendo o con respuestas rápidas, sin abrir WhatsApp. Si te escriben varios, cambias de chat arriba.
+- Arrástrala para cambiarla de lado, o lánzala fuera de la pantalla para descartarla.
+- Todo se ajusta: el mensaje al lado de la burbuja o solo la burbuja, si se va sola, animaciones completas o suaves, si avisa también jugando, el sonido y su volumen. Con «Probar» ves cómo queda sin que salga nada de tu PC.
+- Sonidos propios hechos para Cocuyo: una kalimba suave para los mensajes y su familia para abrir, enviar y cerrar. Vienen bajitos.
+- Liviana: solo la mueve la tarjeta gráfica y quieta no gasta ni un cuadro.
+
+**Lo que pediste cambiar**
+- La rayita de color bajo la isla se prende o se apaga en Ajustes → Isla, y viene apagada.
+- Al sacar una captura ya no sale «¿Qué hago con esto?»; eso queda para cuando sueltas un archivo en la isla.
+- WhatsApp pasa de Agente a su propia sección, en dos columnas.
+
+**Por dentro**
+- Cocuyo ya no le pide a Windows recortar la ventana cuando la forma no cambió: menos trabajo en cada animación.
+
 ## 0.4.0
 
 **Lo que pediste cambiar**

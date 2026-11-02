@@ -1,0 +1,501 @@
+/* la burbuja de whatsapp. el punto (0,0) de #wa es el centro de la burbuja; solo se anima transform y opacity */
+
+#wa {
+  --green: #25d366;
+  --deep: #0e7f45;
+  --glass: #111416;
+  --line: rgb(255 255 255 / 0.07);
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 40;
+  width: 0;
+  height: 0;
+  color: rgb(240 244 242);
+  font-family: var(--font);
+  will-change: transform;
+}
+#wa[hidden] {
+  display: none;
+}
+.wa-flyer {
+  position: absolute;
+  left: -30px;
+  top: -30px;
+  width: 60px;
+  height: 60px;
+}
+.wa-sweep {
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 70%, rgb(196 255 220 / 0.9) 90%, transparent 100%);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
+  opacity: 0;
+  pointer-events: none;
+}
+.wa-halo {
+  position: absolute;
+  inset: -24px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle closest-side,
+    rgb(150 255 200 / 0.62) 0%,
+    rgb(108 247 168 / 0.5) 26%,
+    rgb(52 222 120 / 0.34) 44%,
+    rgb(37 211 102 / 0.2) 58%,
+    rgb(30 196 94 / 0.1) 72%,
+    rgb(26 180 86 / 0.04) 86%,
+    rgb(26 180 86 / 0) 100%
+  );
+  opacity: 0.4;
+  pointer-events: none;
+}
+.wa-glow {
+  position: absolute;
+  inset: -14px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle closest-side,
+    rgb(170 255 210 / 0) 62%,
+    rgb(170 255 210 / 0.5) 70%,
+    rgb(90 240 155 / 0.32) 78%,
+    rgb(37 211 102 / 0.12) 88%,
+    rgb(37 211 102 / 0) 100%
+  );
+  opacity: 0;
+  pointer-events: none;
+}
+.wa-orb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 26%, #7ff3ac, var(--green) 46%, var(--deep) 100%);
+  box-shadow:
+    0 12px 30px -10px rgb(37 211 102 / 0.65),
+    inset 0 1.5px 1px rgb(255 255 255 / 0.45),
+    inset 0 -8px 16px rgb(0 70 34 / 0.35);
+  cursor: grab;
+  touch-action: none;
+}
+#wa.dragging .wa-orb {
+  cursor: grabbing;
+}
+.wa-orb svg {
+  width: 31px;
+  height: 31px;
+  filter: drop-shadow(0 1px 1.5px rgb(0 60 30 / 0.35));
+}
+.wa-orb .ring {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2.3;
+  stroke-linejoin: round;
+}
+.wa-orb .phone {
+  fill: #fff;
+}
+.wa-count {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 21px;
+  height: 21px;
+  padding: 0 6px;
+  border: 2px solid #0b0d0e;
+  border-radius: 11px;
+  background: #ff5a62;
+  color: #fff;
+  font: 700 11px/17px var(--font);
+  text-align: center;
+}
+.wa-count[hidden] {
+  display: none;
+}
+.wa-mini {
+  position: absolute;
+  left: -5px;
+  bottom: -4px;
+  line-height: 0;
+}
+.wa-mini .wa-av {
+  border: 2px solid #0b0d0e;
+}
+.wa-av {
+  display: grid;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  object-fit: cover;
+  background: linear-gradient(135deg, hsl(var(--h, 150) 62% 56%), hsl(calc(var(--h, 150) + 42) 64% 40%));
+  color: #fff;
+  font: 650 11px/1 var(--font);
+  letter-spacing: 0.02em;
+}
+
+.wa-peek {
+  position: absolute;
+  top: -30px;
+  width: max-content;
+  min-width: 170px;
+  max-width: 300px;
+  min-height: 60px;
+  padding: 10px 16px 11px;
+  border-radius: 20px;
+  background: var(--glass);
+  box-shadow:
+    0 16px 36px -14px rgb(0 0 0 / 0.75),
+    inset 0 0 0 1px var(--line);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  cursor: pointer;
+}
+#wa[data-side="right"] .wa-peek {
+  right: 18px;
+  padding-right: 24px;
+  transform-origin: calc(100% + 18px) 30px;
+}
+#wa[data-side="left"] .wa-peek {
+  left: 18px;
+  padding-left: 24px;
+  transform-origin: -18px 30px;
+}
+#wa[data-v="up"] .wa-peek {
+  top: auto;
+  bottom: -30px;
+}
+#wa[data-side="right"][data-v="up"] .wa-peek {
+  transform-origin: calc(100% + 18px) calc(100% - 30px);
+}
+#wa[data-side="left"][data-v="up"] .wa-peek {
+  transform-origin: -18px calc(100% - 30px);
+}
+.wa-peek.on {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+.wa-who {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 4px;
+  font-size: 12.5px;
+  font-weight: 650;
+}
+.wa-who span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.wa-said {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: rgb(236 241 239 / 0.92);
+  font-size: 13px;
+  line-height: 1.42;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+}
+
+.wa-panel {
+  position: absolute;
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+  gap: 10px;
+  width: 344px;
+  height: 440px;
+  padding: 14px 14px 12px;
+  border-radius: 24px;
+  background: var(--glass);
+  box-shadow:
+    0 26px 60px -16px rgb(0 0 0 / 0.75),
+    inset 0 0 0 1px var(--line);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.wa-panel.on {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+#wa[data-side="right"] .wa-panel {
+  right: -30px;
+}
+#wa[data-side="left"] .wa-panel {
+  left: -30px;
+}
+#wa[data-v="up"] .wa-panel {
+  bottom: 44px;
+}
+#wa[data-v="down"] .wa-panel {
+  top: 44px;
+}
+#wa[data-side="right"][data-v="up"] .wa-panel {
+  transform-origin: calc(100% - 30px) calc(100% + 44px);
+}
+#wa[data-side="right"][data-v="down"] .wa-panel {
+  transform-origin: calc(100% - 30px) -44px;
+}
+#wa[data-side="left"][data-v="up"] .wa-panel {
+  transform-origin: 30px calc(100% + 44px);
+}
+#wa[data-side="left"][data-v="down"] .wa-panel {
+  transform-origin: 30px -44px;
+}
+
+.wa-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.wa-htext {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+.wa-hname {
+  overflow: hidden;
+  font-size: 14px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.wa-hsub {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: rgb(200 210 205 / 0.6);
+  font-size: 11px;
+}
+.wa-hsub::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+}
+.wa-tabs {
+  display: flex;
+  gap: 4px;
+}
+.wa-tabs button {
+  position: relative;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  opacity: 0.75;
+  transition:
+    opacity 0.2s,
+    transform 0.3s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+.wa-tabs button:hover {
+  opacity: 1;
+  transform: translateY(-2px);
+}
+.wa-tabs i {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--glass);
+  border-radius: 50%;
+  background: var(--green);
+}
+.wa-close {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: var(--line);
+  color: rgb(230 236 233 / 0.8);
+  font-size: 18px;
+  transition: background 0.2s;
+}
+.wa-close:hover {
+  background: rgb(255 255 255 / 0.13);
+}
+
+.wa-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 2px 2px;
+  -webkit-mask: linear-gradient(transparent, #000 16px);
+  mask: linear-gradient(transparent, #000 16px);
+  scrollbar-width: thin;
+  user-select: text;
+}
+.wa-line {
+  align-self: flex-start;
+  max-width: 84%;
+  padding: 7px 11px 5px;
+  border-radius: 15px 15px 15px 5px;
+  background: #1c2023;
+  font-size: 13.5px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.wa-line p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.wa-line time {
+  display: block;
+  margin-top: 1px;
+  color: rgb(220 228 224 / 0.45);
+  font-size: 10.5px;
+  text-align: right;
+}
+.wa-line.yo {
+  align-self: flex-end;
+  border-radius: 15px 15px 5px 15px;
+  background: linear-gradient(160deg, #1d6a44, #134f33);
+}
+.wa-line.yo time {
+  color: rgb(220 255 236 / 0.55);
+}
+.wa-line.enviando time::after {
+  content: " ·";
+}
+.wa-line.listo time::after {
+  content: " ✓✓";
+  color: #8ff5bf;
+}
+.wa-line.mal {
+  background: #5a2228;
+}
+.wa-line.mal time::after {
+  content: " !";
+  color: #ffb3b8;
+}
+
+.wa-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.wa-q {
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--line);
+  color: rgb(234 240 237 / 0.86);
+  font: 12.5px var(--font);
+  transition:
+    background 0.18s,
+    transform 0.35s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+.wa-q:hover {
+  background: rgb(255 255 255 / 0.12);
+  transform: translateY(-1px);
+}
+.wa-q:active {
+  transform: scale(0.93);
+}
+.wa-write {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 6px 0 15px;
+  border-radius: 22px;
+  background: #1a1e21;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.wa-write::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 0 0 1px rgb(37 211 102 / 0.45),
+    0 0 0 4px rgb(37 211 102 / 0.08);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s;
+}
+.wa-write:focus-within::after {
+  opacity: 1;
+}
+.wa-write input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: inherit;
+  font: 13.5px var(--font);
+}
+.wa-write input::placeholder {
+  color: rgb(210 220 215 / 0.4);
+}
+.wa-send {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 33px;
+  height: 33px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 25%, #6cf0a2, var(--green) 55%, var(--deep));
+  transition: transform 0.35s cubic-bezier(0.3, 1.7, 0.5, 1);
+}
+.wa-send:hover {
+  transform: rotate(-12deg) scale(1.06);
+}
+.wa-send:active {
+  transform: scale(0.88);
+}
+.wa-send svg {
+  width: 16px;
+  height: 16px;
+  fill: #fff;
+}
+
+.wa-sparks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.wa-spark {
+  position: absolute;
+  left: -3px;
+  top: -3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #f2ffe4, #8affbb 55%, transparent 72%);
+  box-shadow: 0 0 9px 1px rgb(120 255 175 / 0.8);
+  opacity: 0;
+}
+.wa-ring {
+  position: absolute;
+  inset: 0;
+  border: 2px solid rgb(140 255 190 / 0.75);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+#wa.suave .wa-sweep,
+#wa.suave .wa-glow {
+  display: none;
+}

@@ -7,6 +7,9 @@ use windows::Win32::Graphics::Gdi::{
     CombineRgn, CreateRectRgn, CreateRoundRectRgn, DeleteObject, SetWindowRgn, RGN_OR,
 };
 use std::sync::atomic::{AtomicIsize, Ordering};
+use std::sync::Mutex;
+
+static LAST_REGION: Mutex<Option<Vec<[i32; 5]>>> = Mutex::new(None);
 
 use windows::Win32::UI::Shell::{DefSubclassProc, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -71,6 +74,7 @@ pub fn prepare(window: &WebviewWindow) -> tauri::Result<()> {
 pub fn apply_region(window: &WebviewWindow, shapes: Option<&[Shape]>) -> tauri::Result<()> {
     let hwnd = hwnd(window)?;
     if crate::placement::exclusive() {
+        *LAST_REGION.lock().unwrap() = Some(vec![[0, 0, 1, 1, -1]]);
         unsafe {
             SetWindowRgn(hwnd, Some(CreateRectRgn(0, 0, 1, 1)), false);
         }
@@ -78,25 +82,27 @@ pub fn apply_region(window: &WebviewWindow, shapes: Option<&[Shape]>) -> tauri::
     }
     let scale = window.scale_factor()?;
     let px = |v: f64| (v * scale).round() as i32;
+    let wanted = shapes.map(|shapes| shapes.iter().map(|s| [px(s.x), px(s.y), px(s.x + s.w) + 1, px(s.y + s.h) + 1, px(s.r * 2.0)]).collect::<Vec<_>>());
+    let key = wanted.clone().unwrap_or_else(|| vec![[0, 0, 0, 0, -2]]);
+    let same = {
+        let mut last = LAST_REGION.lock().unwrap();
+        let same = last.as_ref() == Some(&key);
+        *last = Some(key);
+        same
+    };
     unsafe {
-        let region = shapes.map(|shapes| {
-            let union = CreateRectRgn(0, 0, 0, 0);
-            for s in shapes {
-                let d = px(s.r * 2.0);
-                let part = CreateRoundRectRgn(
-                    px(s.x),
-                    px(s.y),
-                    px(s.x + s.w) + 1,
-                    px(s.y + s.h) + 1,
-                    d,
-                    d,
-                );
-                CombineRgn(Some(union), Some(union), Some(part), RGN_OR);
-                let _ = DeleteObject(part.into());
-            }
-            union
-        });
-        SetWindowRgn(hwnd, region, true);
+        if !same {
+            let region = wanted.map(|parts| {
+                let union = CreateRectRgn(0, 0, 0, 0);
+                for [l, t, r, b, d] in parts {
+                    let part = CreateRoundRectRgn(l, t, r, b, d, d);
+                    CombineRgn(Some(union), Some(union), Some(part), RGN_OR);
+                    let _ = DeleteObject(part.into());
+                }
+                union
+            });
+            SetWindowRgn(hwnd, region, true);
+        }
         let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     }

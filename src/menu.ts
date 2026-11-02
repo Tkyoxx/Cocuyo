@@ -166,15 +166,6 @@ export class Menu {
     if (on) this.host.focus(this.askInput);
   }
 
-  ask(start: string) {
-    if (!this.open) this.onOpenRequest();
-    this.toggleAsk(true);
-    this.askInput.value = start;
-    this.askInput.setSelectionRange(start.length, start.length);
-  }
-
-  onOpenRequest = () => {};
-
   setAi(on: boolean) {
     this.ai = on;
     if (!on) this.meter.hidden = true;

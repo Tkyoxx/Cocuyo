@@ -59,6 +59,15 @@ pub struct Message {
     at: Instant,
     #[serde(skip)]
     read: bool,
+    mine: bool,
+    stamp: u64,
+}
+
+#[derive(Clone, Serialize)]
+pub struct Line {
+    yo: bool,
+    texto: String,
+    hora: u64,
 }
 
 static GATEWAY: Mutex<Option<Gateway>> = Mutex::new(None);
@@ -66,6 +75,7 @@ static SECRET: Mutex<String> = Mutex::new(String::new());
 static HOOK: Mutex<u16> = Mutex::new(0);
 static INBOX: Mutex<Vec<Message>> = Mutex::new(Vec::new());
 static STARTING: Mutex<()> = Mutex::new(());
+static AVATARS: Mutex<Vec<(String, Option<String>)>> = Mutex::new(Vec::new());
 
 fn dir(app: &AppHandle) -> Option<PathBuf> {
     Some(app.path().app_local_data_dir().ok()?.join("whatsapp"))
@@ -336,29 +346,105 @@ fn receive(mut stream: TcpStream) -> Option<Value> {
     serde_json::from_slice(body).ok()
 }
 
+fn now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
+}
+
+fn keep(message: Message) {
+    let mut inbox = INBOX.lock().unwrap();
+    let echo = message.mine && inbox.iter().rev().take(6).any(|old| old.mine && old.chat == message.chat && old.text == message.text && old.at.elapsed() < Duration::from_secs(20));
+    if !echo {
+        inbox.push(message);
+    }
+    let extra = inbox.len().saturating_sub(KEEP);
+    inbox.drain(..extra);
+}
+
+fn thread(chat: &str) -> Vec<Line> {
+    let inbox = INBOX.lock().unwrap();
+    let ours: Vec<&Message> = inbox.iter().filter(|m| m.chat == chat).collect();
+    ours[ours.len().saturating_sub(12)..].iter().map(|m| Line { yo: m.mine, texto: m.text.clone(), hora: m.stamp }).collect()
+}
+
+fn avatar_of(chat: &str) -> Option<Option<String>> {
+    AVATARS.lock().unwrap().iter().find(|(known, _)| known == chat).map(|(_, face)| face.clone())
+}
+
+fn fetch_avatar(app: &AppHandle, chat: &str) {
+    let face = call("GET", &format!("/user/avatar?phone={chat}&is_preview=true"), None)
+        .ok()
+        .and_then(|said| said["results"]["url"].as_str().filter(|url| url.starts_with("https://")).map(str::to_string))
+        .and_then(|url| Command::new("curl.exe").args(["-s", "--max-time", "6", "--max-filesize", "400000", &url]).creation_flags(CREATE_NO_WINDOW).output().ok())
+        .map(|out| out.stdout)
+        .filter(|bytes| bytes.starts_with(&[0xFF, 0xD8]) || bytes.starts_with(&[0x89, b'P']))
+        .map(|bytes| format!("data:image/{};base64,{}", if bytes[0] == 0xFF { "jpeg" } else { "png" }, crate::ai::base64(&bytes)));
+    {
+        let mut faces = AVATARS.lock().unwrap();
+        faces.retain(|(known, _)| known != chat);
+        faces.push((chat.to_string(), face.clone()));
+        let extra = faces.len().saturating_sub(40);
+        faces.drain(..extra);
+    }
+    if let Some(face) = face {
+        let _ = app.emit_to(crate::overlay::LABEL, "whatsapp-avatar", json!({ "chat": chat, "avatar": face }));
+    }
+}
+
 fn arrived(app: &AppHandle, event: &Value) {
     let said = &event["payload"];
-    let text = said["body"].as_str().unwrap_or("").trim().to_string();
-    if event["event"] != "message" || said["is_from_me"].as_bool().unwrap_or(false) || text.is_empty() {
+    let text: String = said["body"].as_str().unwrap_or("").trim().chars().take(4000).collect();
+    if event["event"] != "message" || text.is_empty() {
         return;
     }
     let chat = said["chat_id"].as_str().unwrap_or("").to_string();
+    let mine = said["is_from_me"].as_bool().unwrap_or(false);
     let name = said["sender_display_name"].as_str().or(said["from_name"].as_str()).unwrap_or("Alguien").to_string();
-    {
-        let mut inbox = INBOX.lock().unwrap();
-        inbox.push(Message { chat, name: name.clone(), text: text.clone(), at: Instant::now(), read: false });
-        let extra = inbox.len().saturating_sub(KEEP);
-        inbox.drain(..extra);
-    }
-    if !crate::settings::load(app).whatsapp_notices || crate::placement::fullscreen() {
+    keep(Message { chat: chat.clone(), name: name.clone(), text: text.clone(), at: Instant::now(), read: mine, mine, stamp: now_ms() });
+    if mine {
+        let _ = app.emit_to(crate::overlay::LABEL, "whatsapp-hilo", json!({ "chat": chat, "hilo": thread(&chat) }));
         return;
     }
-    let shown: String = text.chars().take(220).collect();
-    let _ = app.emit_to(crate::overlay::LABEL, "whatsapp", json!({ "nombre": name, "texto": shown }));
+    let settings = crate::settings::load(app);
+    if !settings.whatsapp_notices || (crate::placement::fullscreen() && !settings.whatsapp_gaming) {
+        return;
+    }
+    let sonar = !settings.whatsapp_sound.is_empty() && !crate::cue::muted();
+    let face = avatar_of(&chat);
+    let _ = app.emit_to(
+        crate::overlay::LABEL,
+        "whatsapp",
+        json!({ "chat": chat, "nombre": name, "texto": text, "hora": now_ms(), "hilo": thread(&chat), "sonar": sonar, "avatar": face.clone().flatten() }),
+    );
+    if face.is_none() {
+        let app = app.clone();
+        std::thread::spawn(move || fetch_avatar(&app, &chat));
+    }
+}
+
+#[tauri::command]
+pub async fn whatsapp_responder(chat: String, texto: String) -> Result<(), String> {
+    let text = texto.trim().to_string();
+    if text.is_empty() {
+        return Err("Escribe algo.".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        send(&chat, &text)?;
+        keep(Message { chat: chat.clone(), name: String::new(), text, at: Instant::now(), read: true, mine: true, stamp: now_ms() });
+        INBOX.lock().unwrap().iter_mut().filter(|m| m.chat == chat).for_each(|m| m.read = true);
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub fn whatsapp_hilo(chat: String) -> Vec<Line> {
+    INBOX.lock().unwrap().iter_mut().filter(|m| m.chat == chat).for_each(|m| m.read = true);
+    thread(&chat)
 }
 
 fn last_chat() -> Option<(String, String)> {
-    INBOX.lock().unwrap().iter().rev().find(|message| message.at.elapsed() < REPLY_WINDOW).map(|message| (message.chat.clone(), message.name.clone()))
+    INBOX.lock().unwrap().iter().rev().find(|message| !message.mine && message.at.elapsed() < REPLY_WINDOW).map(|message| (message.chat.clone(), message.name.clone()))
 }
 
 pub fn send(chat: &str, text: &str) -> Result<(), String> {
@@ -418,7 +504,7 @@ pub fn spoken(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
     }
     if reading(spoken) {
         let mut inbox = INBOX.lock().unwrap();
-        let fresh: Vec<String> = inbox.iter().filter(|m| !m.read).map(|m| format!("{}: {}", m.name, m.text)).collect();
+        let fresh: Vec<String> = inbox.iter().filter(|m| !m.read && !m.mine).map(|m| format!("{}: {}", m.name, m.text)).collect();
         inbox.iter_mut().for_each(|m| m.read = true);
         return Some(Ok(match fresh.len() {
             0 => "No tienes mensajes nuevos de WhatsApp.".to_string(),
@@ -434,7 +520,10 @@ pub fn spoken(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
     if !crate::agent::ask_first(app, &what, &format!("WhatsApp {name}")) {
         return Some(Ok("Quedó sin enviar.".into()));
     }
-    Some(send(&chat, &text).map(|()| format!("Listo, le respondí a {name}.")))
+    Some(send(&chat, &text).map(|()| {
+        keep(Message { chat: chat.clone(), name: String::new(), text: text.clone(), at: Instant::now(), read: true, mine: true, stamp: now_ms() });
+        format!("Listo, le respondí a {name}.")
+    }))
 }
 
 #[cfg(test)]

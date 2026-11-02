@@ -26,7 +26,7 @@ It's made in Colombia and speaks Spanish first, but the whole app, the answers a
 - Give it orders however they come out: "play some salsa", "open Discord", "remind me in 20 minutes to take the laundry out".
 - Live conversation with Gemini: it listens while you talk and answers out loud right away, and uses its tools in the meantime.
 - Drop a file on the island and ask what it's about: PDF, Word, Excel, PowerPoint, images or text, with follow-up questions right there.
-- WhatsApp without opening WhatsApp: it tells you about new messages, reads them to you and you reply by voice, always asking before it sends.
+- WhatsApp without opening WhatsApp: new messages arrive in a floating bubble you can reply from, it reads them to you and you reply by voice, always asking before it sends.
 - Circle something on screen with the mouse and ask what it is.
 - Spotify, Discord, volume, weather, tasks, reminders and routines, all from the same island.
 - A screen recorder with instant replay that's lighter than OBS, live wallpapers and a taskbar your way.

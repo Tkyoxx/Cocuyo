@@ -1,6 +1,12 @@
 // lo que trae cada version, para contarlo una vez despues de actualizar. la compilacion falla si falta la de la version
 
 export const NOVEDADES: Record<string, [string, string][]> = {
+  "0.4.1": [
+    ["WhatsApp en una burbuja", "Llega una burbuja verde que flota; tócala para leer y responder ahí mismo, arrástrala de lado o lánzala fuera para descartarla."],
+    ["Sonidos hechos para Cocuyo", "Una kalimba suave para los mensajes y su familia para abrir, enviar y cerrar. Bajitos de fábrica."],
+    ["WhatsApp tiene su sección", "En Ajustes → WhatsApp eliges si sale el mensaje al lado, si se va sola, el sonido y el volumen."],
+    ["Como lo pediste", "La rayita de estado se prende o se apaga en Ajustes → Isla, y las capturas ya no te preguntan qué hacer."],
+  ],
   "0.4.0": [
     ["Pregúntale por cualquier archivo", "Suéltalo y toca «¿De qué trata?»: PDF, Word, Excel, PowerPoint, imágenes o texto, y sigues preguntando ahí mismo."],
     ["WhatsApp sin abrir WhatsApp", "Te avisa de los mensajes, te los lee y le respondes con la voz. Se conecta en Ajustes → Agente."],

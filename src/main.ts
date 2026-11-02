@@ -34,6 +34,7 @@ import { emit, loadExtensions } from "./extensiones";
 import { discordPage, settingsPage } from "./pages";
 import { Anotador } from "./anotar";
 import { NOVEDADES } from "./novedades";
+import { Burbuja } from "./burbuja";
 import { Preguntas, SE_PREGUNTA, type Archivo } from "./preguntar";
 import { Cards, type Card, type CardButton, type Progress } from "./tarjeta";
 import type { RecState } from "./pages";
@@ -56,16 +57,35 @@ const addDiscord = () => menu.addPage(discordPage);
 window.addEventListener("cocuyo-discord", addDiscord);
 void call<{ conectado: boolean }>("discord_estado", undefined, { conectado: false }).then((state) => state.conectado && addDiscord());
 const cards = new Cards();
+const burbuja = new Burbuja();
+burbuja.onFocus = (on) => void call("set_focusable", { on });
+window.addEventListener("cocuyo-burbuja", (e) => {
+  const what = (e as CustomEvent<{ probar?: boolean; oir?: string }>).detail;
+  if (what.probar) burbuja.probar();
+  if (what.oir) burbuja.oir(what.oir);
+});
 const floating = new Set<HTMLElement>();
 const floatWatch = new ResizeObserver(() => publish());
 
+let publishing = false;
+
 function publish() {
+  if (publishing) return;
+  publishing = true;
+  queueMicrotask(() => {
+    publishing = false;
+    publishNow();
+  });
+}
+
+function publishNow() {
   if (lasso.active || selector.active) return;
   const shapes: Shape[] = [];
   for (const shape of [island.shape(), caption.shape(), pill.shape()]) {
     if (shape) shapes.push(shape);
   }
   shapes.push(...cards.shapes());
+  shapes.push(...burbuja.shapes());
   for (const el of floating) {
     const r = el.getBoundingClientRect();
     if (r.width && r.height) shapes.push({ x: r.left, y: r.top, w: r.width, h: r.height, r: 0 });
@@ -77,7 +97,7 @@ function publish() {
   setRegion(shapes);
 }
 
-island.onShape = caption.onShape = pill.onShape = cards.onShape = publish;
+island.onShape = caption.onShape = pill.onShape = cards.onShape = burbuja.onShape = publish;
 
 const islandEl = document.getElementById("island")!;
 const recMini = document.getElementById("rec-mini")!;
@@ -140,7 +160,6 @@ island.onOpen = () => {
   cards.behind = true;
   emit("menu", true);
 };
-menu.onOpenRequest = () => island.onOpen();
 island.onLeave = () => {
   if (!menu.typing && !menu.pinned) closeMenu();
 };
@@ -185,6 +204,9 @@ menu.onClose = closeMenu;
 menu.onSay = (text) => caption.say("app", text);
 menu.onSize = (size) => island.setBase("menu", size);
 menu.onSettings = (s) => {
+  burbuja.setGustos(s);
+  if (s.statusLine) document.documentElement.dataset.rayita = "";
+  else delete document.documentElement.dataset.rayita;
   if (s.accent) document.documentElement.style.setProperty("--accent", s.accent);
   else document.documentElement.style.removeProperty("--accent");
   menu.setAi(s.aiOn);
@@ -320,8 +342,6 @@ function announce(result: Captured) {
   if (result.error) caption.say("app", `No se pudo guardar la captura: ${result.error}`, 5200);
   else if (result.path) {
     caption.say("app", `Captura guardada${result.copied ? " y copiada" : ""}: ${size}.`);
-    const name = result.path.split(/[\\/]/).pop() ?? result.path;
-    offerFile({ name, path: result.path, kind: "imagen", bytes: 0 }, name, 12);
   }
   else if (result.copied) caption.say("app", `Captura copiada: ${size}.`);
   else caption.say("app", "Captura sin guardar.");
@@ -473,16 +493,6 @@ on<Heard>("heard", (heard) => {
 });
 
 on<string>("note", (text) => caption.say("app", text, 5200));
-on<{ nombre: string; texto: string }>("whatsapp", (message) => {
-  cards.show({
-    script: "WhatsApp",
-    titulo: message.nombre,
-    texto: message.texto,
-    icono: "💬",
-    segundos: 25,
-    botones: [{ texto: "Responder", accion: () => menu.ask(tr("Respóndele que ")) }],
-  });
-});
 cards.onWaiting = (waiting) => {
   if (waiting) island.setState("espera");
   else if (island.state === "espera") island.setState(null);
