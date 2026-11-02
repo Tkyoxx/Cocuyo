@@ -434,6 +434,103 @@ fn github(path: &str) -> serde_json::Value {
         .unwrap_or_default()
 }
 
+const ASK_QUOTA: [&str; 8] = ["cuanto cupo", "cuantas consultas", "cuanta ia me queda", "cupo de ia", "how much quota", "how many requests", "quanta cota", "quantas consultas"];
+const ASK_REC: [&str; 6] = ["estoy grabando", "esta grabando", "estas grabando", "am i recording", "are you recording", "estou gravando"];
+const ASK_INSTALLS: [&str; 6] = ["cuantas instalaciones", "cuanta gente usa cocuyo", "cuantos usan cocuyo", "how many installs", "how many people use cocuyo", "quantas instalacoes"];
+const STATS: &str = "https://raw.githubusercontent.com/Tkyoxx/Cocuyo/estadisticas/instalaciones.json";
+
+fn known(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
+    let said = intent::normalize(spoken);
+    let has = |list: &[&str]| list.iter().any(|ask| said.contains(ask));
+    if has(&ASK_QUOTA) {
+        if crate::ai::mode(app).is_none() {
+            return Some(Ok("No tienes un modelo de IA conectado.".into()));
+        }
+        let (used, budget) = crate::ai::budget(app);
+        return Some(Ok(if budget > 0 { format!("Hoy llevas {used} de {budget} consultas de IA.") } else { format!("Hoy llevas {used} consultas de IA.") }));
+    }
+    if has(&ASK_REC) {
+        return Some(Ok(if crate::grabadora::recording() { "Sí, estás grabando.".into() } else { "No, ahora no estás grabando.".into() }));
+    }
+    if has(&ASK_INSTALLS) {
+        use std::os::windows::process::CommandExt;
+        let read = std::process::Command::new("curl.exe")
+            .args(["--silent", "--max-time", "6", "--user-agent", "Cocuyo", STATS])
+            .creation_flags(0x0800_0000)
+            .output()
+            .ok()
+            .and_then(|out| serde_json::from_slice::<serde_json::Value>(&out.stdout).ok());
+        return Some(match read.as_ref().and_then(|json| json["message"].as_str().map(str::to_owned)) {
+            Some(count) => Ok(format!("Cocuyo lleva {count} instalaciones.")),
+            None => Err("No pude ver el contador de instalaciones ahora.".into()),
+        });
+    }
+    None
+}
+
+const MAIL_VERBS: [&str; 6] = ["mandale un correo a ", "manda un correo a ", "enviale un correo a ", "envia un correo a ", "escribele un correo a ", "send an email to "];
+const MAIL_JOINS: [&str; 6] = [" diciendo que ", " diciendo ", " que diga ", " que ", " saying ", " that "];
+
+fn mail_address(who: &str) -> Option<String> {
+    let spoken = who.replace(" arroba ", "@").replace(" at ", "@").replace(" punto ", ".").replace(" dot ", ".");
+    let address: String = spoken.chars().filter(|c| !c.is_whitespace()).collect();
+    let (user, domain) = address.split_once('@')?;
+    (!user.is_empty() && domain.contains('.') && !domain.starts_with('.') && !domain.ends_with('.')).then(|| address.to_lowercase())
+}
+
+fn email(spoken: &str) -> Option<Result<String, String>> {
+    let said = intent::normalize(spoken);
+    let rest = MAIL_VERBS.iter().find_map(|verb| said.strip_prefix(verb))?;
+    let (who, body) = MAIL_JOINS.iter().find_map(|join| rest.split_once(join)).unwrap_or((rest, ""));
+    let address = mail_address(who);
+    let mut link = format!("mailto:{}", address.clone().unwrap_or_default());
+    if !body.trim().is_empty() {
+        let mut body = body.trim().to_string();
+        if let Some(first) = body.get(..1) {
+            body = format!("{}{}", first.to_uppercase(), &body[1..]);
+        }
+        link.push_str(&format!("?body={}", url_encode(&body).replace('+', "%20")));
+    }
+    Some(crate::apps::open(&link).map(|()| match address {
+        Some(address) => format!("Te dejé el correo para {address} listo. Revísalo y envíalo tú."),
+        None => format!("Te dejé el correo listo; ponle la dirección de {} y envíalo tú.", who.trim()),
+    }))
+}
+
+struct Heard20 {
+    at: std::time::SystemTime,
+    said: String,
+    reply: String,
+}
+
+static LAST_HEARD: Mutex<std::collections::VecDeque<Heard20>> = Mutex::new(std::collections::VecDeque::new());
+
+pub fn remember_heard(said: &str, reply: &str) {
+    if said.trim().is_empty() {
+        return;
+    }
+    let mut last = LAST_HEARD.lock().unwrap();
+    last.push_front(Heard20 { at: std::time::SystemTime::now(), said: said.trim().to_string(), reply: reply.trim().chars().take(160).collect() });
+    last.truncate(20);
+}
+
+#[derive(serde::Serialize)]
+pub struct HeardLine {
+    said: String,
+    reply: String,
+    secs: u64,
+}
+
+#[tauri::command]
+pub fn voz_historial() -> Vec<HeardLine> {
+    LAST_HEARD
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|h| HeardLine { said: h.said.clone(), reply: h.reply.clone(), secs: h.at.elapsed().map(|d| d.as_secs()).unwrap_or(0) })
+        .collect()
+}
+
 struct Maker {
     name: String,
     bio: String,
@@ -781,6 +878,9 @@ fn several(app: &AppHandle, spoken: &str) -> Option<Vec<String>> {
 }
 
 pub fn run_order(app: &AppHandle, spoken: &str) -> Result<String, String> {
+    if let Some(done) = crate::agent::answered_by_voice(app, spoken) {
+        return done;
+    }
     if let Some(done) = crate::scripts::answered(app, spoken) {
         return done;
     }
@@ -791,6 +891,9 @@ pub fn run_order(app: &AppHandle, spoken: &str) -> Result<String, String> {
     if let Some(said) = clock(spoken) {
         crate::cue::answer(&said);
         return Ok(said);
+    }
+    if let Some(done) = known(app, spoken).or_else(|| email(spoken)) {
+        return done;
     }
     if let Some(done) = owner(app, spoken) {
         return done;
@@ -825,6 +928,24 @@ pub fn run_order(app: &AppHandle, spoken: &str) -> Result<String, String> {
         }
         _ => act(app, spoken),
     }
+}
+
+#[tauri::command]
+pub async fn orden_escrita(app: AppHandle, text: String) -> Result<String, String> {
+    let text: String = text.trim().chars().take(1000).collect();
+    if text.is_empty() {
+        return Err(crate::i18n::tr("Escribe algo."));
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let done = crate::bandeja::answer(&app, &text).unwrap_or_else(|| run_order(&app, &text));
+        if let Ok(reply) = &done {
+            crate::ai::talked(&text, reply);
+        }
+        remember_heard(&text, done.as_ref().unwrap_or_else(|why| why));
+        done.map(|reply| crate::i18n::tr(&reply)).map_err(|why| crate::i18n::tr(&why))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 fn edit_selection(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
@@ -1183,13 +1304,58 @@ fn hear_with_ai(app: &AppHandle, recording: &mic::Recording, dictation: bool) ->
     heard.ok()
 }
 
+const IN_TIME: std::time::Duration = std::time::Duration::from_secs(5);
+
+fn in_time<T: Send + 'static>(work: impl FnOnce() -> Option<T> + Send + 'static) -> Option<T> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(work());
+    });
+    rx.recv_timeout(IN_TIME).ok().flatten()
+}
+
+fn dictated(app: &AppHandle, heard: String, was_direct: bool) -> String {
+    let settings = crate::settings::load(app);
+    let front = crate::palabras::front_app();
+    if let Some((exe, name)) = &front {
+        crate::palabras::seen(app, exe, name);
+    }
+    let ready = crate::palabras::prepare(&heard, &settings.dictation_words, &settings.dictation_snippets);
+    let ai = crate::ai::mode(app).is_some();
+    let style = crate::palabras::style_for(&settings, front.as_ref().map(|(exe, _)| exe.as_str()));
+    let mut text = ready.text.clone();
+    if ai && !was_direct && style != "tal" && text.split_whitespace().count() > 3 {
+        let (app, draft) = (app.clone(), text.clone());
+        if let Some(clean) = in_time(move || crate::ai::polish(&app, &draft, &style)).filter(|clean| ready.keeps(clean)) {
+            text = clean;
+        }
+    }
+    let language = match settings.dictation_into.as_str() {
+        "en" => Some("inglés"),
+        "pt" => Some("portugués"),
+        "es" => Some("español"),
+        _ => None,
+    };
+    if let Some(language) = language.filter(|_| ai) {
+        let (app, draft) = (app.clone(), text.clone());
+        let ask = format!("Tradúcelo al {language}. Si ya está en {language}, déjalo igual. Deja tal cual lo que vaya entre ⟦ y ⟧.");
+        if let Some(done) = in_time(move || crate::ai::edit(&app, &ask, &draft).ok()).filter(|done| ready.keeps(done)) {
+            text = done;
+        }
+    }
+    ready.finish(&text)
+}
+
 pub fn finish(app: &AppHandle, chord: Chord, cancelled: bool) {
     let recording = mic::stop();
     crate::ai::maybe_distill(app);
-    if chord == Chord::Command {
+    if chord == Chord::Command && crate::bandeja::waiting() {
+        let _ = crate::talk::finish(true);
+    } else if chord == Chord::Command {
         match crate::talk::finish(cancelled || PRACTICE.load(Ordering::Relaxed)) {
             crate::talk::Ended::Spoke(said, reply) => {
                 crate::ai::talked(&said, &reply);
+                remember_heard(&said, &reply);
                 let error = (said.is_empty() && reply.is_empty()).then(|| crate::i18n::tr("No te escuché. Mantén las teclas mientras hablas."));
                 match &error {
                     Some(error) => {
@@ -1220,25 +1386,21 @@ pub fn finish(app: &AppHandle, chord: Chord, cancelled: bool) {
     };
     match understood {
         Ok(Some((text, order, _))) => {
-            let polishing = dictation && !was_direct && text.split_whitespace().count() > 3 && crate::settings::load(app).ai_dictation && crate::ai::mode(app).is_some();
-            let text = if polishing { crate::ai::polish(app, &text).unwrap_or(text) } else { text };
-            let into = crate::settings::load(app).dictation_into;
-            let text = match into.as_str() {
-                "en" | "es" | "pt" if dictation && crate::ai::mode(app).is_some() => {
-                    let language = match into.as_str() {
-                        "en" => "inglés",
-                        "pt" => "portugués",
-                        _ => "español",
-                    };
-                    crate::ai::edit(app, &format!("Tradúcelo al {language}. Si ya está en {language}, déjalo igual."), &text).unwrap_or(text)
-                }
-                _ => text,
-            };
+            let text = if dictation { dictated(app, text, was_direct) } else { text };
             let outcome = if dictation {
-                inject::paste(&text).map(|()| String::new())
+                match inject::paste_dictation(&text) {
+                    Ok(inject::Pasted::Here) => Ok(String::new()),
+                    Ok(inject::Pasted::Copied) => Ok("Copiado. Pulsa Ctrl+V donde lo quieras pegar.".to_string()),
+                    Err(error) => Err(error),
+                }
+            } else if let Some(done) = crate::bandeja::answer(app, &text) {
+                if let Ok(reply) = &done {
+                    crate::ai::talked(&text, reply);
+                }
+                done
             } else {
                 let outcome = match &order {
-                    Some(order) => match crate::scripts::answered(app, &text).or_else(|| owner(app, &text)).or_else(|| crate::investiga::spoken(app, &text)).or_else(|| quick(app, &text)).or_else(|| crate::extensions::spoken(app, &text)) {
+                    Some(order) => match crate::agent::answered_by_voice(app, &text).or_else(|| crate::scripts::answered(app, &text)).or_else(|| known(app, &text)).or_else(|| email(&text)).or_else(|| owner(app, &text)).or_else(|| crate::investiga::spoken(app, &text)).or_else(|| quick(app, &text)).or_else(|| crate::extensions::spoken(app, &text)) {
                         Some(done) => done,
                         None if task_for(app, &text).is_some() => agent(app, &task_for(app, &text).unwrap_or_else(|| text.clone())),
                         None if crate::ai::asking() => follow(app, &text, order),
@@ -1263,6 +1425,9 @@ pub fn finish(app: &AppHandle, chord: Chord, cancelled: bool) {
     }
     heard.reply = crate::i18n::tr(&heard.reply);
     heard.error = heard.error.map(|error| crate::i18n::tr(&error));
+    if chord == Chord::Command {
+        remember_heard(&heard.text, heard.error.as_deref().unwrap_or(&heard.reply));
+    }
     match &heard.error {
         Some(error) => {
             crate::cue::play(crate::cue::Cue::Fail);
@@ -1327,6 +1492,14 @@ mod tests {
     fn resampling_keeps_the_duration() {
         assert_eq!(to_16k(&vec![0.1; 48_000], 48_000).len(), 16_000);
         assert_eq!(to_16k(&vec![0.1; 44_100], 44_100).len(), 16_000);
+    }
+
+    #[test]
+    fn spoken_emails_become_addresses() {
+        assert_eq!(mail_address("juan arroba gmail punto com").as_deref(), Some("juan@gmail.com"));
+        assert_eq!(mail_address("ana@correo.co").as_deref(), Some("ana@correo.co"));
+        assert_eq!(mail_address("enzo"), None);
+        assert_eq!(mail_address("x arroba punto"), None);
     }
 
     #[test]

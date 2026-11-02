@@ -20,17 +20,21 @@ import {
   type Heard,
   type Place,
   type Shape,
+  type Stats,
 } from "./bridge";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Caption, Pill } from "./caption";
 import { Guide } from "./guide";
-import { setLanguage } from "./i18n";
+import { setLanguage, tr } from "./i18n";
 import { Installer } from "./install";
 import { Island } from "./island";
 import { Lasso } from "./lasso";
 import { Menu } from "./menu";
 import { emit, loadExtensions } from "./extensiones";
 import { discordPage, settingsPage } from "./pages";
-import { Cards, type Card, type Progress } from "./tarjeta";
+import { Anotador } from "./anotar";
+import { NOVEDADES } from "./novedades";
+import { Cards, type Card, type CardButton, type Progress } from "./tarjeta";
 import type { RecState } from "./pages";
 import { Selector } from "./selector";
 
@@ -136,12 +140,53 @@ island.onOpen = () => {
   emit("menu", true);
 };
 island.onLeave = () => {
-  if (!menu.typing) closeMenu();
+  if (!menu.typing && !menu.pinned) closeMenu();
+};
+function reply(text: string, ms?: number) {
+  if (text.length <= 260 && !text.includes("\n")) return caption.say("app", text, ms ?? readingTime(text));
+  const first = text.split(/(?<=[.!?])\s/)[0].slice(0, 180);
+  caption.say("app", `${first}…`, 3600);
+  cards.show({ script: "Cocuyo", titulo: "Cocuyo", texto: text, md: true, segundos: 90, botones: [{ texto: "Copiar", copiar: text }] });
+}
+
+menu.onAsk = async (text) => {
+  caption.say("you", text, 1600);
+  island.setState("piensa");
+  const waiting = window.setTimeout(() => caption.typing(), 900);
+  try {
+    const said = await call<string>("orden_escrita", { text });
+    clearTimeout(waiting);
+    settled(false);
+    if (said) reply(said);
+    else caption.hide();
+  } catch (error) {
+    clearTimeout(waiting);
+    settled(true);
+    caption.say("app", String(error), 5200);
+  }
+};
+
+menu.onMeter = () => {
+  settingsPage.goTo("ia");
+  menu.show("ajustes");
+};
+island.onPeek = async () => {
+  const s = await call<Stats | null>("system_stats", undefined, null);
+  if (!s || island.base !== "idle") return;
+  const memory = s.memoryTotal ? s.memoryUsed / s.memoryTotal : 0;
+  const top = s.top[0];
+  if (s.cpu >= 85) island.vitals(`${tr("Procesador al")} ${Math.round(s.cpu)} %`, true);
+  else if (memory >= 0.9) island.vitals(`${tr("Memoria al")} ${Math.round(memory * 100)} %${top ? ` · ${top.name}` : ""}`, true);
+  else island.vitals("", false);
 };
 menu.onClose = closeMenu;
 menu.onSay = (text) => caption.say("app", text);
 menu.onSize = (size) => island.setBase("menu", size);
 menu.onSettings = (s) => {
+  if (s.accent) document.documentElement.style.setProperty("--accent", s.accent);
+  else document.documentElement.style.removeProperty("--accent");
+  menu.setAi(s.aiOn);
+  menu.setName(s.name);
   guide.setChords(s.dictationKeys, s.lassoKeys, s.commandKeys);
   setLanguage(s.language);
 };
@@ -201,10 +246,76 @@ onPlace((place) => {
   island.setPlace(place);
 });
 
+const anotador = new Anotador();
+anotador.onOpen = (size) => {
+  closeMenu();
+  cards.behind = true;
+  island.setBase("anota", size);
+};
+anotador.onClose = () => {
+  island.setBase("idle");
+  cards.behind = false;
+};
+anotador.onSay = (text) => caption.say("app", text, 3600);
+
+interface Dropped {
+  name: string;
+  path: string;
+  kind: "imagen" | "texto" | "pdf" | "otro";
+  bytes: number;
+}
+
+const ICON_OF: Record<Dropped["kind"], string> = { imagen: "🖼️", texto: "📄", pdf: "📕", otro: "📦" };
+
+function offerFile(file: Dropped, title: string, seconds: number) {
+  const buttons: CardButton[] = [];
+  if (file.kind === "imagen" || file.kind === "texto") {
+    buttons.push({
+      texto: "Preguntar",
+      accion: () =>
+        void call("bandeja_preguntar", { path: file.path })
+          .then(() => caption.say("app", `Pregúntame lo que quieras de «${file.name}» con las teclas de órdenes.`, 5200))
+          .catch((error) => caption.say("app", String(error), 5200)),
+    });
+    buttons.push({
+      texto: "Sacar el texto",
+      accion: () =>
+        void call<string>("bandeja_texto", { path: file.path })
+          .then((said) => caption.say("app", said, 3600))
+          .catch((error) => caption.say("app", String(error), 5200)),
+    });
+  }
+  if (file.kind === "imagen") buttons.push({ texto: "Anotar", accion: () => void anotador.start(file.path).catch((error) => caption.say("app", String(error), 5200)) });
+  buttons.push({ texto: "Abrir", abrir: file.path });
+  if (file.kind !== "imagen") buttons.push({ texto: "Copiar la ruta", copiar: file.path });
+  cards.show({ script: "Cocuyo", titulo: title, texto: "¿Qué hago con esto?", icono: ICON_OF[file.kind], segundos: seconds, botones: buttons });
+}
+
+if ("__TAURI_INTERNALS__" in window) void getCurrentWebview().onDragDropEvent(async (event) => {
+  const kind = event.payload.type;
+  if (kind === "enter" || kind === "over") {
+    island.dropping(true);
+    return;
+  }
+  island.dropping(false);
+  if (kind !== "drop" || !event.payload.paths.length) return;
+  island.gulp();
+  try {
+    const kept = await call<Dropped[]>("bandeja_recibir", { paths: event.payload.paths });
+    offerFile(kept[0], kept.length > 1 ? `${kept[0].name} y ${kept.length - 1} más` : kept[0].name, 30);
+  } catch (error) {
+    caption.say("app", String(error), 5200);
+  }
+});
+
 function announce(result: Captured) {
   const size = `${result.w} × ${result.h} px`;
   if (result.error) caption.say("app", `No se pudo guardar la captura: ${result.error}`, 5200);
-  else if (result.path) caption.say("app", `Captura guardada${result.copied ? " y copiada" : ""}: ${size}.`);
+  else if (result.path) {
+    caption.say("app", `Captura guardada${result.copied ? " y copiada" : ""}: ${size}.`);
+    const name = result.path.split(/[\\/]/).pop() ?? result.path;
+    offerFile({ name, path: result.path, kind: "imagen", bytes: 0 }, name, 12);
+  }
   else if (result.copied) caption.say("app", `Captura copiada: ${size}.`);
   else caption.say("app", "Captura sin guardar.");
 }
@@ -232,11 +343,19 @@ onCaptured((result) => {
 });
 
 onChord(async (e) => {
+  if (e.phase === "locked") {
+    island.setState("oye");
+    caption.say("app", "Manos libres. Habla tranquilo: tócalas otra vez para pegar o Esc para cancelar.", 4200);
+    return;
+  }
   if (e.phase === "start") {
     if (e.chord === "lasso") {
       lasso.start(e.cursor);
       setRegion(null);
-    } else pill.show();
+    } else {
+      pill.show();
+      island.setState("oye");
+    }
     closeMenu();
     caption.hide();
     island.setVoice(true);
@@ -246,12 +365,21 @@ onChord(async (e) => {
 
   island.setVoice(false);
   setLevel(0);
+  for (let i = 0; i < 9; i++) document.documentElement.style.removeProperty(`--b${i}`);
 
   if (e.chord !== "lasso") {
     guide.chord(e, !e.cancelled);
-    if (e.cancelled) pill.cancel();
-    else if (guide.open) pill.done();
-    else pill.think();
+    if (e.cancelled) {
+      pill.cancel();
+      island.setState(null);
+    } else if (guide.open) {
+      pill.done();
+      island.setState(null);
+    } else {
+      pill.think();
+      island.setState("piensa");
+      if (e.chord === "command") typingSoon();
+    }
     return;
   }
 
@@ -267,21 +395,25 @@ onChord(async (e) => {
   if (!e.asking) return announce(saved);
   pill.show();
   pill.think();
+  island.setState("piensa");
   try {
     const asked = await call<{ question: string; answer: string; live: boolean } | null>("lasso_ask");
     if (!asked) {
       pill.cancel();
+      island.setState(null);
       return announce(saved);
     }
     pill.done();
+    island.setState("bien", 1200);
     if (asked.live) {
       if (asked.answer) caption.stream("app", asked.answer, readingTime(asked.answer));
       return;
     }
     caption.say("you", asked.question, 1600);
-    setTimeout(() => caption.say("app", asked.answer, readingTime(asked.answer)), 1300);
+    setTimeout(() => reply(asked.answer), 1300);
   } catch (error) {
     pill.cancel();
+    island.setState("mal", 2600);
     caption.say("app", String(error), 5200);
   }
 });
@@ -293,14 +425,32 @@ function setLevel(peak: number) {
   document.documentElement.style.setProperty("--lv", level.toFixed(3));
 }
 on<number>("level", setLevel);
+on<number[]>("bands", (bands) => {
+  const style = document.documentElement.style;
+  bands.forEach((band, i) => style.setProperty(`--b${i}`, band.toFixed(3)));
+});
 
 on<{ who: "you" | "app"; text: string }>("live-text", (live) => {
   if (!live.text) return;
+  if (live.who === "app") clearTimeout(typingTimer);
   if (live.who === "app") pill.done();
   caption.stream(live.who, live.text, readingTime(live.text) + 1500);
 });
 
+let typingTimer = 0;
+function typingSoon() {
+  clearTimeout(typingTimer);
+  typingTimer = window.setTimeout(() => island.state === "piensa" && caption.typing(), 1200);
+}
+
+function settled(error: boolean) {
+  clearTimeout(typingTimer);
+  if (caption.isTyping) caption.hide();
+  island.setState(error ? "mal" : "bien", error ? 2600 : 1200);
+}
+
 on<Heard>("heard", (heard) => {
+  settled(!!heard.error);
   if (heard.live && !heard.error) {
     pill.done();
     if (heard.reply) caption.stream("app", heard.reply, readingTime(heard.reply));
@@ -314,13 +464,21 @@ on<Heard>("heard", (heard) => {
     return;
   }
   pill.done();
-  if (heard.chord === "dictation") return;
+  if (heard.chord === "dictation") {
+    if (heard.reply) caption.say("app", heard.reply, 4200);
+    return;
+  }
   caption.say("you", heard.text, 1600);
-  if (heard.reply) setTimeout(() => caption.say("app", heard.reply, readingTime(heard.reply)), 1300);
+  if (heard.reply) setTimeout(() => reply(heard.reply), 1300);
 });
 
 on<string>("note", (text) => caption.say("app", text, 5200));
+cards.onWaiting = (waiting) => {
+  if (waiting) island.setState("espera");
+  else if (island.state === "espera") island.setState(null);
+};
 on<Card>("script-card", (card) => cards.show(card));
+on<number>("script-card-drop", (id) => cards.dropId(id));
 on<Progress>("script-progress", (update) => cards.progress(update));
 on("extensions-off", () => location.reload());
 
@@ -363,9 +521,17 @@ void loadExtensions({
   }
 });
 
-on<{ version: string }>("update", (found) => caption.say("app", `Actualizando Cocuyo a la ${found.version}. Ya vuelvo.`, 4000));
+on<{ version: string }>("update", (found) => {
+  island.setState("nueva");
+  caption.say("app", `Actualizando Cocuyo a la ${found.version}. Ya vuelvo.`, 4000);
+});
 void call<string | null>("update_done", undefined, null).then((version) => {
-  if (version) setTimeout(() => caption.say("app", `Cocuyo se actualizó a la ${version}.`, 5000), 2500);
+  if (!version) return;
+  setTimeout(() => {
+    caption.say("app", `Cocuyo se actualizó a la ${version}.`, 5000);
+    const news = NOVEDADES[version];
+    if (news) cards.show({ script: "Cocuyo", titulo: `Novedades de la ${version}`, texto: news.map(([title, detail]) => `- **${tr(title)}**: ${tr(detail)}`).join("\n"), md: true, icono: "✨", segundos: 60 });
+  }, 2500);
 });
 
 onDemo((step) => {
@@ -411,4 +577,5 @@ publish();
 void call<string>("install_state", undefined, "portable").then((state) => {
   if (state === "fresh") setTimeout(() => installer.start(), 500);
   else if (!guide.seen) setTimeout(() => guide.start(), 500);
+  else setTimeout(() => island.greet(), 700);
 });

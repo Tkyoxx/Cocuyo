@@ -198,6 +198,13 @@ fn decode(dib: &[u8]) -> Option<Image> {
     Some(Image { w: w as u32, h: h as u32, thumb, png: Arc::new(png(&rgba, w as u32, h as u32)?), hash })
 }
 
+pub fn copy_png(png: &[u8]) -> bool {
+    let Ok(reader) = png::Decoder::new(std::io::Cursor::new(png)).read_info() else { return false };
+    let (w, h) = (reader.info().width, reader.info().height);
+    ignore_own_changes();
+    write_image(&Image { w, h, thumb: String::new(), png: Arc::new(png.to_vec()), hash: 0 })
+}
+
 fn write_image(image: &Image) -> bool {
     let decoder = png::Decoder::new(std::io::Cursor::new(image.png.as_slice()));
     let Ok(mut reader) = decoder.read_info() else { return false };

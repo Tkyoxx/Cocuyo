@@ -1,10 +1,13 @@
 // pegar y copiar con teclas de mentira
 
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::{HANDLE, HGLOBAL};
+use windows::core::{w, PCWSTR};
 use windows::Win32::System::DataExchange::{
-    CloseClipboard, EmptyClipboard, GetClipboardData, OpenClipboard, SetClipboardData,
+    CloseClipboard, EmptyClipboard, GetClipboardData, GetClipboardSequenceNumber, OpenClipboard, RegisterClipboardFormatW,
+    SetClipboardData,
 };
 use windows::Win32::System::Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -48,6 +51,23 @@ pub fn clipboard_text() -> Option<String> {
 }
 
 pub fn set_clipboard_text(text: &str) -> bool {
+    put(text, false)
+}
+
+const OUT_OF_HISTORY: [PCWSTR; 3] = [w!("ExcludeClipboardContentFromMonitorProcessing"), w!("CanIncludeInClipboardHistory"), w!("CanUploadToCloudClipboard")];
+
+unsafe fn zero_dword(format: u32) {
+    let Ok(memory) = GlobalAlloc(GMEM_MOVEABLE, 4) else { return };
+    let ptr = GlobalLock(memory) as *mut u32;
+    if ptr.is_null() {
+        return;
+    }
+    *ptr = 0;
+    let _ = GlobalUnlock(memory);
+    let _ = SetClipboardData(format, Some(HANDLE(memory.0)));
+}
+
+fn put(text: &str, private: bool) -> bool {
     let wide: Vec<u16> = text.encode_utf16().chain(Some(0)).collect();
     unsafe {
         let Ok(memory) = GlobalAlloc(GMEM_MOVEABLE, wide.len() * 2) else { return false };
@@ -62,9 +82,108 @@ pub fn set_clipboard_text(text: &str) -> bool {
         }
         let _ = EmptyClipboard();
         let placed = SetClipboardData(CF_UNICODETEXT, Some(HANDLE(memory.0))).is_ok();
+        if placed && private {
+            for name in OUT_OF_HISTORY {
+                let format = RegisterClipboardFormatW(name);
+                if format != 0 {
+                    zero_dword(format);
+                }
+            }
+        }
         let _ = CloseClipboard();
         placed
     }
+}
+
+struct Restore {
+    ours: u32,
+    previous: Option<String>,
+}
+
+static PENDING: Mutex<Option<Restore>> = Mutex::new(None);
+
+fn clipboard_seq() -> u32 {
+    unsafe { GetClipboardSequenceNumber() }
+}
+
+fn place_for_paste(text: &str) -> Result<u32, String> {
+    let previous = match PENDING.lock().unwrap().take() {
+        Some(pending) if pending.ours == clipboard_seq() => pending.previous,
+        _ => clipboard_text(),
+    };
+    if !put(text, true) {
+        return Err("No se pudo usar el portapapeles.".into());
+    }
+    let ours = clipboard_seq();
+    *PENDING.lock().unwrap() = Some(Restore { ours, previous });
+    Ok(ours)
+}
+
+fn restore_later(ours: u32) {
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(700));
+        let mut pending = PENDING.lock().unwrap();
+        if pending.as_ref().is_some_and(|p| p.ours == ours) {
+            let previous = pending.take().and_then(|p| p.previous);
+            if clipboard_seq() == ours {
+                if let Some(previous) = previous {
+                    crate::clip::ignore_own_changes();
+                    set_clipboard_text(&previous);
+                }
+            }
+        }
+    });
+}
+
+fn focused_is_text() -> Option<bool> {
+    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED};
+    use windows::Win32::UI::Accessibility::*;
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let uia: IUIAutomation = CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()?;
+        let kind = uia.GetFocusedElement().ok()?.CurrentControlType().ok()?;
+        if kind == UIA_EditControlTypeId || kind == UIA_ComboBoxControlTypeId {
+            return Some(true);
+        }
+        let never = [
+            UIA_ListItemControlTypeId,
+            UIA_ListControlTypeId,
+            UIA_ButtonControlTypeId,
+            UIA_MenuItemControlTypeId,
+            UIA_TreeItemControlTypeId,
+            UIA_TabItemControlTypeId,
+            UIA_HyperlinkControlTypeId,
+            UIA_CheckBoxControlTypeId,
+            UIA_RadioButtonControlTypeId,
+            UIA_ImageControlTypeId,
+        ];
+        never.contains(&kind).then_some(false)
+    }
+}
+
+pub fn typing_place() -> Option<bool> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(focused_is_text());
+    });
+    rx.recv_timeout(Duration::from_millis(400)).ok().flatten()
+}
+
+pub enum Pasted {
+    Here,
+    Copied,
+}
+
+pub fn paste_dictation(text: &str) -> Result<Pasted, String> {
+    if typing_place() != Some(false) {
+        return paste(text).map(|()| Pasted::Here);
+    }
+    crate::clip::ignore_own_changes();
+    PENDING.lock().unwrap().take();
+    if !put(text, true) {
+        return Err("No se pudo usar el portapapeles.".into());
+    }
+    Ok(Pasted::Copied)
 }
 
 fn key(vk: u16, up: bool) -> INPUT {
@@ -118,10 +237,7 @@ pub fn copy_selection() -> (Option<String>, Option<String>) {
 pub fn paste(text: &str) -> Result<(), String> {
     wait_for_modifiers_up();
     crate::clip::ignore_own_changes();
-    let previous = clipboard_text();
-    if !set_clipboard_text(text) {
-        return Err("No se pudo usar el portapapeles.".into());
-    }
+    let ours = place_for_paste(text)?;
     unsafe {
         let keys = [key(VK_CONTROL, false), key(VK_V, false), key(VK_V, true), key(VK_CONTROL, true)];
         let sent = SendInput(&keys, std::mem::size_of::<INPUT>() as i32);
@@ -133,8 +249,6 @@ pub fn paste(text: &str) -> Result<(), String> {
         }
     }
     std::thread::sleep(Duration::from_millis(180));
-    if let Some(previous) = previous {
-        set_clipboard_text(&previous);
-    }
+    restore_later(ours);
     Ok(())
 }

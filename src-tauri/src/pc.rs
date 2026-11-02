@@ -349,6 +349,59 @@ fn heading(seen: &Seen) -> Vec<String> {
         .collect()
 }
 
+const BROWSERS: [&str; 6] = ["chrome.exe", "msedge.exe", "opera.exe", "brave.exe", "firefox.exe", "vivaldi.exe"];
+const POINTING: [&str; 16] = [
+    "esto", "esta", "este", "aqui", "aca", "lo que estoy viendo", "lo que tengo abierto", "esta pagina", "este video", "this", "here", "what im looking at",
+    "isso", "isto", "aqui", "essa pagina",
+];
+
+pub fn points_at_screen(said: &str) -> bool {
+    let words = crate::intent::normalize(said);
+    let padded = format!(" {words} ");
+    POINTING.iter().any(|word| padded.contains(&format!(" {word} ")))
+}
+
+unsafe fn address_of(window: HWND) -> Option<String> {
+    let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+    let uia: IUIAutomation = CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()?;
+    let root = uia.ElementFromHandle(window).ok()?;
+    let cache = uia.CreateCacheRequest().ok()?;
+    let _ = cache.AddProperty(UIA_ControlTypePropertyId);
+    let _ = cache.AddProperty(UIA_ValueValuePropertyId);
+    let condition = uia.ControlViewCondition().ok()?;
+    let all = root.FindAllBuildCache(TreeScope_Descendants, &condition, &cache).ok()?;
+    for at in 0..all.Length().unwrap_or(0) {
+        let Ok(field) = all.GetElement(at) else { continue };
+        if field.CachedControlType().ok() != Some(UIA_EditControlTypeId) {
+            continue;
+        }
+        let value = field.GetCachedPropertyValue(UIA_ValueValuePropertyId).ok().and_then(|v| windows_core::BSTR::try_from(&v).ok()).map(|v| v.to_string()).unwrap_or_default();
+        let value = value.trim();
+        if !value.is_empty() && !value.contains(' ') && value.contains('.') && value.len() < 300 {
+            return Some(value.to_string());
+        }
+    }
+    None
+}
+
+pub fn in_front() -> Option<String> {
+    let (exe, name) = crate::palabras::front_app()?;
+    let window = unsafe { GetForegroundWindow() };
+    let title = plain(&unsafe { title_of(window) });
+    let mut text = if title.is_empty() { format!("{name}") } else { format!("«{title}» en {name}") };
+    if BROWSERS.contains(&exe.as_str()) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let raw = window.0 as isize;
+        std::thread::spawn(move || {
+            let _ = tx.send(unsafe { address_of(HWND(raw as *mut _)) });
+        });
+        if let Ok(Some(address)) = rx.recv_timeout(Duration::from_millis(600)) {
+            text.push_str(&format!(" ({address})"));
+        }
+    }
+    Some(text)
+}
+
 pub fn where_now() -> String {
     let seen = SEEN.lock().unwrap();
     let Some(seen) = seen.as_ref() else { return String::new() };
@@ -793,6 +846,16 @@ pub fn let_go() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_pointing_questions_send_the_window() {
+        assert!(points_at_screen("¿qué es esto?"));
+        assert!(points_at_screen("resúmeme esta página"));
+        assert!(points_at_screen("what is this"));
+        assert!(!points_at_screen("¿cuánto es 15 por 12?"));
+        assert!(!points_at_screen("pon algo de salsa"));
+        assert!(!points_at_screen("estoy cansado"));
+    }
 
     #[test]
     fn keys_are_understood_in_spanish_and_english() {

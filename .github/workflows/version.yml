@@ -26,6 +26,8 @@ jobs:
         run: |
           $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
           if ("v$version" -ne $env:GITHUB_REF_NAME) { throw "La etiqueta es $env:GITHUB_REF_NAME pero tauri.conf.json dice $version." }
+          if (-not (Select-String -Path src/novedades.ts -Pattern ([regex]::Escape("`"$version`":")) -Quiet)) { throw "Falta lo que trae la $version en src/novedades.ts." }
+          if (-not (Select-String -Path CHANGELOG.md -Pattern ([regex]::Escape("## $version")) -Quiet)) { throw "Falta la $version en CHANGELOG.md." }
           "numero=$version" >> $env:GITHUB_OUTPUT
 
       - uses: actions/setup-node@v4

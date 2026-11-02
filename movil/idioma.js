@@ -4,6 +4,8 @@ const corto = (navigator.language || "es").slice(0, 2).toLowerCase();
 export const idioma = corto === "en" || corto === "pt" ? corto : "es";
 
 const EXACTO = {
+  "Te dejé lo que compartiste en la casilla. Dime qué hago con eso y envíalo.": ["I put what you shared in the box. Tell me what to do with it and send it.", "Deixei o que você compartilhou na caixa. Diga o que faço com isso e envie."],
+  "Tu celular no tiene internet": ["Your phone has no internet", "Seu celular está sem internet"],
   "Buscando tu PC…": ["Looking for your PC…", "Procurando seu PC…"],
   "Abierto en otra ventana": ["Open in another window", "Aberto em outra janela"],
   "Conecta tu celular a Cocuyo": ["Connect your phone to Cocuyo", "Conecte seu celular ao Cocuyo"],

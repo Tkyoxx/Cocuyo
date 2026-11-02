@@ -39,12 +39,40 @@ pub fn extension_tool_done(call: u64, ok: bool, result: String) {
     }
 }
 
+static ALWAYS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+static ASKED_FOR: Mutex<Vec<(u64, String)>> = Mutex::new(Vec::new());
+const SAY_YES: [&str; 12] = ["si", "hazlo", "dale", "claro", "de una", "listo", "envialo", "mandalo", "yes", "do it", "sim", "pode"];
+const SAY_NO: [&str; 8] = ["no", "no lo hagas", "cancela", "mejor no", "para", "no no", "dont", "nao"];
+
 pub fn answered_permission(call: u64, yes: bool) {
     let mut asking = ASKING.lock().unwrap();
     if let Some(at) = asking.iter().position(|(id, _)| *id == call) {
         let (_, send) = asking.remove(at);
         let _ = send.send(yes);
     }
+}
+
+pub fn answered_always(call: u64) {
+    if let Some((_, key)) = ASKED_FOR.lock().unwrap().iter().find(|(id, _)| *id == call) {
+        let mut always = ALWAYS.lock().unwrap();
+        if !key.is_empty() && !always.contains(key) {
+            always.push(key.clone());
+        }
+    }
+    answered_permission(call, true);
+}
+
+pub fn answered_by_voice(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
+    let call = ASKING.lock().unwrap().last().map(|(id, _)| *id)?;
+    let said = crate::intent::normalize(spoken);
+    let said = said.trim_matches(|c: char| !c.is_alphanumeric());
+    let yes = SAY_YES.contains(&said);
+    if !yes && !SAY_NO.contains(&said) {
+        return None;
+    }
+    answered_permission(call, yes);
+    let _ = app.emit_to(crate::overlay::LABEL, "script-card-drop", 900_000 + call);
+    Some(Ok(if yes { "Hecho, sigo.".into() } else { "Listo, no lo hago.".into() }))
 }
 
 fn ask_extension(app: &AppHandle, name: &str, args: &Value) -> Result<String, String> {
@@ -57,7 +85,12 @@ fn ask_extension(app: &AppHandle, name: &str, args: &Value) -> Result<String, St
     result
 }
 
-fn permission(app: &AppHandle, what: &str) -> bool {
+fn permission_for(app: &AppHandle, what: &str, key: &str) -> bool {
+    let key = crate::intent::normalize(key);
+    if !key.is_empty() && ALWAYS.lock().unwrap().contains(&key) {
+        crate::cue::answer(&format!("{}. Lo hago sin preguntar: lo dejaste en siempre por hoy.", what.lines().next().unwrap_or(what)));
+        return true;
+    }
     if crate::pc::boxed_in().is_some() {
         eprintln!("[agente] permiso dentro de la caja de prueba: {what}");
         return true;
@@ -65,15 +98,20 @@ fn permission(app: &AppHandle, what: &str) -> bool {
     let call = NEXT_CALL.fetch_add(1, Ordering::Relaxed);
     let (send, wait) = channel();
     ASKING.lock().unwrap().push((call, send));
+    let mut buttons = vec![json!({ "texto": "Hazlo", "agente": call, "si": true }), json!({ "texto": "No", "agente": call, "si": false })];
+    if !key.is_empty() {
+        ASKED_FOR.lock().unwrap().push((call, key.clone()));
+        buttons.insert(1, json!({ "texto": "Siempre hoy", "agente": call, "si": true, "siempre": true }));
+    }
     let card = json!({
         "id": 900_000 + call, "script": "Cocuyo", "titulo": "¿Lo hago?", "texto": what, "imagen": "", "icono": "✋", "color": "#f2b84b",
-        "botones": [{ "texto": "Hazlo", "agente": call, "si": true }, { "texto": "No", "agente": call, "si": false }],
-        "filas": [], "segundos": 60
+        "botones": buttons, "filas": [], "segundos": 60
     });
     let _ = app.emit_to(crate::overlay::LABEL, "script-card", card);
     crate::cue::answer(&format!("{what}. ¿Lo hago?"));
     let yes = wait.recv_timeout(Duration::from_secs(60)).unwrap_or(false);
     ASKING.lock().unwrap().retain(|(id, _)| *id != call);
+    ASKED_FOR.lock().unwrap().retain(|(id, _)| *id != call);
     yes
 }
 
@@ -352,7 +390,7 @@ fn hands(app: &AppHandle, args: &Value) -> Result<Done, String> {
             let text = format!("{log}NO lo hice: el chat abierto no parece ser de «{who}» ({}). Revisa la vista y vuelve a intentarlo, o pregunta.{VIEW}{view}", crate::pc::where_now());
             return Ok(Done { text, image });
         }
-        if crate::settings::load(app).agent_confirm && !permission(app, &format!("{}\n{}", what.trim(), crate::pc::where_now())) {
+        if crate::settings::load(app).agent_confirm && !permission_for(app, &format!("{}\n{}", what.trim(), crate::pc::where_now()), &who) {
             log.push_str("La persona dijo que NO. No lo hagas ni lo intentes de otra forma; dile que quedó sin hacer.");
             return Ok(log.into());
         }
@@ -628,7 +666,8 @@ pub fn send_message(app: &AppHandle, chat: &str, who: &str, text: &str) -> Resul
     progress(app, &format!("Escribiéndole a {who}"), false);
     crate::pc::begin();
     let confirm = crate::settings::load(app).agent_confirm;
-    let sent = crate::pc::message(app, chat, who, &text, &|what| !confirm || permission(app, what));
+    let key = format!("{chat} {who}");
+    let sent = crate::pc::message(app, chat, who, &text, &|what| !confirm || permission_for(app, what, &key));
     progress(app, "Listo", true);
     match sent? {
         crate::pc::Sent::Done => Ok(format!("Listo, le mandé a {who}: «{text}».")),

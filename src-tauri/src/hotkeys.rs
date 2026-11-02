@@ -55,6 +55,9 @@ struct KeyEdge {
 }
 
 const MAX_HOLD: Duration = Duration::from_secs(90);
+const TAP_MAX: Duration = Duration::from_millis(300);
+const DOUBLE_TAP: Duration = Duration::from_millis(400);
+const HANDS_FREE_MAX: Duration = Duration::from_secs(180);
 
 static TX: OnceLock<Sender<KeyEdge>> = OnceLock::new();
 static ECHO: AtomicBool = AtomicBool::new(false);
@@ -63,6 +66,7 @@ static ACCEPT_INJECTED: AtomicBool = AtomicBool::new(false);
 static DICTATION_KEYS: AtomicU8 = AtomicU8::new(CTRL | WIN);
 static LASSO_KEYS: AtomicU8 = AtomicU8::new(CTRL | SHIFT);
 static COMMAND_KEYS: AtomicU8 = AtomicU8::new(ALT | WIN);
+static HANDS_FREE: AtomicBool = AtomicBool::new(true);
 
 #[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize, Serialize)]
 pub struct Hotkey {
@@ -77,6 +81,34 @@ pub const DEFAULT_CAPTURES: [Hotkey; 5] = [
     Hotkey { mods: CTRL | ALT, vk: 0x52 },
     Hotkey { mods: CTRL | ALT, vk: 0x47 },
 ];
+
+pub fn types_char(key: Hotkey) -> Option<char> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyboardLayoutList, MapVirtualKeyExW, ToUnicodeEx, HKL, MAPVK_VK_TO_VSC};
+    if key.mods & CTRL == 0 || key.mods & ALT == 0 || key.mods & WIN != 0 {
+        return None;
+    }
+    let mut layouts = [HKL::default(); 16];
+    let count = unsafe { GetKeyboardLayoutList(Some(&mut layouts)) }.clamp(0, 16) as usize;
+    let mut state = [0u8; 256];
+    for vk in [0x11, 0x12, 0xA2, 0xA5] {
+        state[vk] = 0x80;
+    }
+    if key.mods & SHIFT != 0 {
+        state[0x10] = 0x80;
+        state[0xA0] = 0x80;
+    }
+    for layout in &layouts[..count] {
+        let scan = unsafe { MapVirtualKeyExW(key.vk, MAPVK_VK_TO_VSC, Some(*layout)) };
+        let mut typed = [0u16; 8];
+        let n = unsafe { ToUnicodeEx(key.vk, scan, &state, &mut typed, 4, Some(*layout)) };
+        if n != 0 {
+            if let Some(c) = char::from_u32(typed[0] as u32).filter(|c| !c.is_control()) {
+                return Some(c);
+            }
+        }
+    }
+    None
+}
 
 pub fn valid_hotkey(key: Hotkey) -> bool {
     let standalone = matches!(key.vk, 0x2C | 0x13 | 0x91 | 0x70..=0x87);
@@ -98,7 +130,10 @@ pub enum Chord {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Signal {
+    Warm(Chord),
+    Cool,
     Start(Chord),
+    Lock { chord: Chord, started: bool },
     End { chord: Chord, cancelled: bool },
 }
 
@@ -107,14 +142,18 @@ enum Mode {
     Idle,
     Pending(Chord, Instant),
     Active(Chord, Instant),
+    Tapped { chord: Chord, started: bool, until: Instant },
+    Locked { chord: Chord, since: Instant, pressed: bool },
 }
 
 pub struct ChordMachine {
     pub dictation: u8,
     pub lasso: u8,
     pub command: u8,
+    pub hands_free: bool,
     held: u8,
     dirty: bool,
+    escaped: bool,
     mode: Mode,
 }
 
@@ -124,8 +163,10 @@ impl ChordMachine {
             dictation: CTRL | WIN,
             lasso: CTRL | SHIFT,
             command: ALT | WIN,
+            hands_free: false,
             held: 0,
             dirty: false,
+            escaped: false,
             mode: Mode::Idle,
         }
     }
@@ -134,13 +175,29 @@ impl ChordMachine {
         match modifier(vk) {
             Some(bit) if down => self.held |= bit,
             Some(bit) => self.held &= !bit,
-            None if down => self.dirty = true,
+            None if down => {
+                self.dirty = true;
+                self.escaped |= vk == VK_ESCAPE;
+            }
             None => {}
         }
     }
 
     pub fn held(&self) -> u8 {
         self.held
+    }
+
+    fn mask(&self, chord: Chord) -> u8 {
+        match chord {
+            Chord::Dictation => self.dictation,
+            Chord::Lasso => self.lasso,
+            Chord::Command => self.command,
+        }
+    }
+
+    fn let_go(&self, chord: Chord) -> bool {
+        let mask = self.mask(chord);
+        self.hands_free && chord == Chord::Dictation && !self.dirty && self.held & !mask == 0 && self.held != mask
     }
 
     pub fn sync(&mut self, held: u8) {
@@ -151,6 +208,8 @@ impl ChordMachine {
         match self.mode {
             Mode::Pending(_, since) => Some(since + ARM_DELAY),
             Mode::Active(_, since) => Some(since + MAX_HOLD),
+            Mode::Tapped { until, .. } => Some(until),
+            Mode::Locked { since, .. } => Some(since + HANDS_FREE_MAX),
             Mode::Idle => None,
         }
     }
@@ -168,20 +227,33 @@ impl ChordMachine {
             None
         };
 
+        let escaped = std::mem::take(&mut self.escaped);
         let mut signal = None;
         self.mode = match self.mode {
             Mode::Idle => match held {
-                Some(chord) => Mode::Pending(chord, now),
+                Some(chord) => {
+                    if chord != Chord::Lasso {
+                        signal = Some(Signal::Warm(chord));
+                    }
+                    Mode::Pending(chord, now)
+                }
                 None => Mode::Idle,
             },
             Mode::Pending(chord, since) => {
-                if held != Some(chord) {
-                    Mode::Idle
-                } else if now.duration_since(since) >= ARM_DELAY {
-                    signal = Some(Signal::Start(chord));
-                    Mode::Active(chord, now)
+                if held == Some(chord) {
+                    if now.duration_since(since) >= ARM_DELAY {
+                        signal = Some(Signal::Start(chord));
+                        Mode::Active(chord, since)
+                    } else {
+                        self.mode
+                    }
+                } else if self.let_go(chord) {
+                    Mode::Tapped { chord, started: false, until: now + DOUBLE_TAP }
                 } else {
-                    self.mode
+                    if chord != Chord::Lasso {
+                        signal = Some(Signal::Cool);
+                    }
+                    Mode::Idle
                 }
             }
             Mode::Active(chord, since) => {
@@ -191,9 +263,42 @@ impl ChordMachine {
                     Mode::Idle
                 } else if held == Some(chord) {
                     self.mode
+                } else if self.let_go(chord) && now.duration_since(since) < TAP_MAX {
+                    Mode::Tapped { chord, started: true, until: now + DOUBLE_TAP }
                 } else {
                     signal = Some(Signal::End { chord, cancelled: self.dirty });
                     Mode::Idle
+                }
+            }
+            Mode::Tapped { chord, started, until } => {
+                if !escaped && !self.dirty && self.held == self.mask(chord) {
+                    signal = Some(Signal::Lock { chord, started });
+                    Mode::Locked { chord, since: now, pressed: true }
+                } else if escaped || self.dirty || now >= until {
+                    signal = Some(if started { Signal::End { chord, cancelled: true } } else { Signal::Cool });
+                    Mode::Idle
+                } else {
+                    self.mode
+                }
+            }
+            Mode::Locked { chord, since, pressed } => {
+                let mask = self.mask(chord);
+                if escaped {
+                    self.dirty = true;
+                    signal = Some(Signal::End { chord, cancelled: true });
+                    Mode::Idle
+                } else if now.duration_since(since) >= HANDS_FREE_MAX {
+                    self.dirty = true;
+                    signal = Some(Signal::End { chord, cancelled: false });
+                    Mode::Idle
+                } else if pressed {
+                    Mode::Locked { chord, since, pressed: self.held & mask == mask }
+                } else if self.held == mask {
+                    self.dirty = true;
+                    signal = Some(Signal::End { chord, cancelled: false });
+                    Mode::Idle
+                } else {
+                    self.mode
                 }
             }
         };
@@ -217,6 +322,10 @@ struct ChordEvent {
 #[tauri::command]
 pub fn set_key_echo(on: bool) {
     ECHO.store(on, Ordering::Relaxed);
+}
+
+pub fn set_hands_free(on: bool) {
+    HANDS_FREE.store(on, Ordering::Relaxed);
 }
 
 #[tauri::command]
@@ -445,6 +554,7 @@ fn run_chords(app: AppHandle, rx: Receiver<KeyEdge>) {
             machine.dictation = DICTATION_KEYS.load(Ordering::Relaxed);
             machine.lasso = LASSO_KEYS.load(Ordering::Relaxed);
             machine.command = COMMAND_KEYS.load(Ordering::Relaxed);
+            machine.hands_free = HANDS_FREE.load(Ordering::Relaxed);
             if placement::fullscreen() || placement::exclusive() {
                 machine.lasso = 0;
             }
@@ -478,26 +588,43 @@ pub fn from_pad(app: &AppHandle, down: bool) {
     fire(app, if down { Signal::Start(Chord::Command) } else { Signal::End { chord: Chord::Command, cancelled: false } });
 }
 
+fn starting(app: &AppHandle, chord: Chord) -> ChordEvent {
+    mask_modifiers();
+    let mut asking = false;
+    let cursor = if chord == Chord::Lasso {
+        capture::begin(app);
+        overlay::open_fully(app);
+        asking = voice::lasso_listen(app);
+        overlay::cursor_in_window(app)
+    } else {
+        mic::start();
+        if chord == Chord::Command {
+            crate::talk::begin(app);
+        }
+        crate::cue::play(crate::cue::Cue::Listen);
+        crate::gamelayer::listening(app);
+        None
+    };
+    ChordEvent { chord, phase: "start", cancelled: false, cursor, asking }
+}
+
 fn fire(app: &AppHandle, signal: Signal) {
     let event = match signal {
-        Signal::Start(chord) => {
+        Signal::Warm(_) => {
             mask_modifiers();
-            let mut asking = false;
-            let cursor = if chord == Chord::Lasso {
-                capture::begin(app);
-                overlay::open_fully(app);
-                asking = voice::lasso_listen(app);
-                overlay::cursor_in_window(app)
-            } else {
-                mic::start();
-                if chord == Chord::Command {
-                    crate::talk::begin(app);
-                }
-                crate::cue::play(crate::cue::Cue::Listen);
-                crate::gamelayer::listening(app);
-                None
-            };
-            ChordEvent { chord, phase: "start", cancelled: false, cursor, asking }
+            mic::start();
+            return;
+        }
+        Signal::Cool => {
+            mic::discard();
+            return;
+        }
+        Signal::Start(chord) => starting(app, chord),
+        Signal::Lock { chord, started } => {
+            if !started {
+                let _ = app.emit_to(overlay::LABEL, "chord", starting(app, chord));
+            }
+            ChordEvent { chord, phase: "locked", cancelled: false, cursor: None, asking: false }
         }
         Signal::End { chord, cancelled } => {
             if chord != Chord::Lasso {
@@ -538,7 +665,7 @@ mod tests {
         m.key(VK_LCONTROL, true);
         assert_eq!(m.poll(t0), None);
         m.key(VK_LWIN, true);
-        assert_eq!(m.poll(after(t0, 10)), None);
+        assert_eq!(m.poll(after(t0, 10)), Some(Signal::Warm(Chord::Dictation)));
         assert_eq!(m.poll(after(t0, 160)), Some(Signal::Start(Chord::Dictation)));
         m.key(VK_LWIN, false);
         assert_eq!(
@@ -698,6 +825,107 @@ mod tests {
         m.key(VK_LWIN, true);
         m.poll(after(t0, 400));
         assert_eq!(m.poll(after(t0, 900)), None);
+    }
+
+    fn hands_free() -> ChordMachine {
+        let mut m = ChordMachine::new();
+        m.hands_free = true;
+        m
+    }
+
+    fn tap(m: &mut ChordMachine, at: Instant) -> Vec<Signal> {
+        let mut out = Vec::new();
+        m.key(VK_LCONTROL, true);
+        m.key(VK_LWIN, true);
+        out.extend(m.poll(at));
+        m.key(VK_LWIN, false);
+        out.extend(m.poll(after(at, 60)));
+        m.key(VK_LCONTROL, false);
+        out.extend(m.poll(after(at, 70)));
+        out
+    }
+
+    #[test]
+    fn two_taps_dictate_hands_free() {
+        let t0 = Instant::now();
+        let mut m = hands_free();
+        assert_eq!(tap(&mut m, t0), [Signal::Warm(Chord::Dictation)]);
+        assert_eq!(tap(&mut m, after(t0, 250)), [Signal::Lock { chord: Chord::Dictation, started: false }]);
+        m.key(VK_T, true);
+        m.key(VK_T, false);
+        assert_eq!(m.poll(after(t0, 5_000)), None, "escribir otra cosa no corta las manos libres");
+        assert_eq!(tap(&mut m, after(t0, 9_000)), [Signal::End { chord: Chord::Dictation, cancelled: false }]);
+        assert_eq!(m.poll(after(t0, 9_500)), None);
+        assert_eq!(m.deadline(), None);
+    }
+
+    #[test]
+    fn escape_cancels_hands_free() {
+        let t0 = Instant::now();
+        let mut m = hands_free();
+        tap(&mut m, t0);
+        tap(&mut m, after(t0, 200));
+        m.key(VK_ESCAPE, true);
+        assert_eq!(m.poll(after(t0, 2_000)), Some(Signal::End { chord: Chord::Dictation, cancelled: true }));
+        m.key(VK_ESCAPE, false);
+        assert_eq!(m.poll(after(t0, 2_100)), None);
+    }
+
+    #[test]
+    fn a_lonely_tap_is_dropped() {
+        let t0 = Instant::now();
+        let mut m = hands_free();
+        tap(&mut m, t0);
+        assert_eq!(m.poll(after(t0, 600)), Some(Signal::Cool));
+        assert_eq!(m.deadline(), None);
+    }
+
+    #[test]
+    fn a_short_hold_waits_for_the_second_tap() {
+        let t0 = Instant::now();
+        let mut m = hands_free();
+        m.key(VK_LCONTROL, true);
+        m.key(VK_LWIN, true);
+        m.poll(t0);
+        assert_eq!(m.poll(after(t0, 160)), Some(Signal::Start(Chord::Dictation)));
+        m.key(VK_LWIN, false);
+        m.key(VK_LCONTROL, false);
+        assert_eq!(m.poll(after(t0, 220)), None);
+        assert_eq!(m.poll(after(t0, 700)), Some(Signal::End { chord: Chord::Dictation, cancelled: true }));
+    }
+
+    #[test]
+    fn holding_still_dictates_as_always() {
+        let t0 = Instant::now();
+        let mut m = hands_free();
+        m.key(VK_LCONTROL, true);
+        m.key(VK_LWIN, true);
+        m.poll(t0);
+        m.poll(after(t0, 160));
+        m.key(VK_LWIN, false);
+        assert_eq!(m.poll(after(t0, 1_200)), Some(Signal::End { chord: Chord::Dictation, cancelled: false }));
+    }
+
+    #[test]
+    fn a_shortcut_with_the_dictation_keys_closes_the_microphone() {
+        let t0 = Instant::now();
+        let mut m = hands_free();
+        m.key(VK_LCONTROL, true);
+        m.key(VK_LWIN, true);
+        assert_eq!(m.poll(t0), Some(Signal::Warm(Chord::Dictation)));
+        m.key(0x44, true);
+        assert_eq!(m.poll(after(t0, 30)), Some(Signal::Cool));
+    }
+
+    #[test]
+    fn hands_free_is_only_for_dictation() {
+        let t0 = Instant::now();
+        let mut m = hands_free();
+        m.key(VK_LMENU, true);
+        m.key(VK_LWIN, true);
+        assert_eq!(m.poll(t0), Some(Signal::Warm(Chord::Command)));
+        m.key(VK_LWIN, false);
+        assert_eq!(m.poll(after(t0, 60)), Some(Signal::Cool));
     }
 
     #[test]

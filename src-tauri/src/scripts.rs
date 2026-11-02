@@ -511,11 +511,16 @@ pub struct Action {
     dato: Option<String>,
     agente: Option<u64>,
     si: Option<bool>,
+    siempre: Option<bool>,
 }
 
 #[tauri::command]
 pub async fn script_action(app: AppHandle, action: Action) -> Result<String, String> {
     if let Some(call) = action.agente {
+        if action.siempre.unwrap_or(false) {
+            crate::agent::answered_always(call);
+            return Ok(String::new());
+        }
         crate::agent::answered_permission(call, action.si.unwrap_or(false));
         return Ok(String::new());
     }

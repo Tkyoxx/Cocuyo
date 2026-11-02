@@ -55,6 +55,12 @@ pub struct Settings {
     pub bar_center: bool,
     pub bar_solid_max: bool,
     pub dictation_into: String,
+    pub hands_free: bool,
+    pub accent: String,
+    pub dictation_style: String,
+    pub dictation_words: Vec<String>,
+    pub dictation_snippets: Vec<crate::palabras::Snippet>,
+    pub dictation_styles: Vec<crate::palabras::AppStyle>,
     pub extensions_on: bool,
     pub ai_agent: bool,
     pub agent_hands: bool,
@@ -135,6 +141,12 @@ impl Default for Settings {
             bar_center: false,
             bar_solid_max: true,
             dictation_into: String::new(),
+            hands_free: true,
+            accent: String::new(),
+            dictation_style: "natural".into(),
+            dictation_words: Vec::new(),
+            dictation_snippets: Vec::new(),
+            dictation_styles: Vec::new(),
             extensions_on: true,
             ai_agent: true,
             agent_hands: true,
@@ -240,6 +252,7 @@ pub fn load(app: &AppHandle) -> Settings {
 pub fn apply(app: &AppHandle) {
     let settings = load(app);
     hotkeys::configure(settings.dictation_keys, settings.lasso_keys, settings.command_keys, settings.captures());
+    hotkeys::set_hands_free(settings.hands_free);
     crate::placement::refresh(app);
     crate::cue::configure(settings.cue_fullscreen, settings.speak_fullscreen, &settings.language);
     crate::gamelayer::configure(settings.game_overlay);
@@ -291,6 +304,12 @@ pub fn get_settings(app: AppHandle) -> Settings {
 #[tauri::command]
 pub fn set_settings(app: AppHandle, settings: Settings) -> Result<(), String> {
     check_keys(&settings)?;
+    let before = load(&app).captures();
+    for key in settings.captures().into_iter().filter(|key| !before.contains(key)) {
+        if let Some(typed) = hotkeys::types_char(key) {
+            return Err(crate::i18n::tr("Ese atajo escribe «{}» con uno de tus teclados (Ctrl + Alt es AltGr). Elige otro.").replacen("{}", &typed.to_string(), 1));
+        }
+    }
     if settings.autostart != load(&app).autostart {
         crate::system::set_autostart(settings.autostart)?;
     }

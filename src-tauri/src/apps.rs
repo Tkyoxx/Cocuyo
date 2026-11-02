@@ -495,7 +495,7 @@ fn top_windows() -> Vec<(isize, u32, bool)> {
     list
 }
 
-fn image_of(process: u32) -> Option<String> {
+pub(crate) fn image_of(process: u32) -> Option<String> {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION};
     unsafe {

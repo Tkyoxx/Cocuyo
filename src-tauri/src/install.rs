@@ -163,6 +163,9 @@ pub fn uninstall() {
         }
         let _ = system::set_autostart(false);
         let _ = RegDeleteTreeW(HKEY_CURRENT_USER, UNINSTALL_KEY);
+        let _ = RegDeleteTreeW(HKEY_CURRENT_USER, windows::core::w!("Software\\Cocuyo"));
+        crate::taskbar::configure(crate::taskbar::Look { style: crate::taskbar::Style::from_name("normal"), opacity: 0, center: false, solid_when_max: true });
+        std::thread::sleep(std::time::Duration::from_millis(1500));
 
         let language = env_dir("APPDATA")
             .and_then(|dir| std::fs::read(dir.join(DATA_FOLDER).join("ajustes.json")).ok())

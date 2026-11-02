@@ -19,6 +19,7 @@ const SPDFID_WaveFormatEx: GUID = GUID::from_u128(0xC31ADBAE_527F_4ff5_A230_F62B
 static NATURAL: std::sync::Mutex<Option<(tauri::AppHandle, String)>> = std::sync::Mutex::new(None);
 
 pub fn attach(app: tauri::AppHandle, voice: &str) {
+    let _ = sounds_dir(&app);
     *NATURAL.lock().unwrap() = Some((app, voice.trim().to_string()));
 }
 
@@ -286,6 +287,9 @@ pub fn alert(text: &str) {
 }
 
 fn say(text: &str) -> Result<(), String> {
+    if muted() {
+        return Ok(());
+    }
     let text = &crate::i18n::tr(text);
     if say_natural(&text.replace(['«', '»'], "")) {
         return Ok(());
@@ -305,7 +309,52 @@ fn say(text: &str) -> Result<(), String> {
     }
 }
 
+static SOUND_DIR: OnceLock<std::path::PathBuf> = OnceLock::new();
+static MUTED: AtomicBool = AtomicBool::new(false);
+
+pub fn set_muted(on: bool) {
+    MUTED.store(on, Ordering::Relaxed);
+}
+
+pub fn muted() -> bool {
+    MUTED.load(Ordering::Relaxed)
+}
+const SOUND_NAMES: [&str; 6] = ["escucho", "hecho", "fallo", "grabando", "guardado", "repeticion"];
+
+pub fn sounds_dir(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    use tauri::Manager;
+    let dir = app.path().app_config_dir().ok()?.join("sonidos");
+    let _ = SOUND_DIR.set(dir.clone());
+    Some(dir)
+}
+
+#[tauri::command]
+pub fn open_sounds_dir(app: tauri::AppHandle) -> Result<(), String> {
+    let dir = sounds_dir(&app).ok_or("No encontré la carpeta de Cocuyo.")?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let readme = dir.join("LEEME.txt");
+    if !readme.exists() {
+        let names = SOUND_NAMES.iter().map(|name| format!("{name}.wav")).collect::<Vec<_>>().join("\r\n");
+        let _ = std::fs::write(&readme, format!("Pon aqui un .wav con uno de estos nombres y Cocuyo suena con el tuyo:\r\n\r\n{names}\r\n\r\nBorralo y vuelve el de siempre.\r\n"));
+    }
+    crate::apps::open(&dir.to_string_lossy())
+}
+
+fn custom_sound(cue: Cue) -> Option<HSTRING> {
+    let file = SOUND_DIR.get()?.join(format!("{}.wav", SOUND_NAMES[cue as usize]));
+    file.is_file().then(|| HSTRING::from(file.as_os_str()))
+}
+
 fn sound(cue: Cue) {
+    if muted() {
+        return;
+    }
+    if let Some(path) = custom_sound(cue) {
+        unsafe {
+            let _ = PlaySoundW(&path, None, windows::Win32::Media::Audio::SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
+        }
+        return;
+    }
     static SOUNDS: OnceLock<[Vec<u8>; 6]> = OnceLock::new();
     let sounds = SOUNDS.get_or_init(|| {
         [

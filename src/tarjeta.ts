@@ -19,6 +19,7 @@ export interface CardRow {
 }
 
 export interface Card {
+  md?: boolean;
   id?: number;
   script?: string;
   titulo: string;
@@ -44,8 +45,70 @@ let next = 1_000_000;
 const esc = (text: string) => text.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const safeImage = (src: string) => /^(https:\/\/|data:image\/|http:\/\/asset\.localhost\/|asset:)/.test(src);
 
+const safeLink = (url: string) => (/^https?:\/\/[^\s"<>]+$/i.test(url) ? url : "");
+
+function inline(text: string) {
+  return esc(text)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+    .replace(/(^|[\s(])\*([^*\s][^*]*)\*/g, "$1<i>$2</i>")
+    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, (_, label: string, url: string) => {
+      const link = safeLink(url.replace(/&amp;/g, "&"));
+      return link ? `<a href="${esc(link)}" data-abrir="${esc(link)}">${label}</a>` : label;
+    });
+}
+
+export function markdown(text: string) {
+  const out: string[] = [];
+  let list: "ul" | "ol" | null = null;
+  let code: string[] | null = null;
+  const close = () => {
+    if (list) out.push(`</${list}>`);
+    list = null;
+  };
+  for (const line of text.replace(/\r/g, "").split("\n")) {
+    if (line.trim().startsWith("```")) {
+      if (code) {
+        out.push(`<pre><code>${esc(code.join("\n"))}</code></pre>`);
+        code = null;
+      } else {
+        close();
+        code = [];
+      }
+      continue;
+    }
+    if (code) {
+      code.push(line);
+      continue;
+    }
+    const bullet = line.match(/^\s*[-*•]\s+(.*)$/);
+    const numbered = line.match(/^\s*\d+[.)]\s+(.*)$/);
+    const heading = line.match(/^\s*#{1,4}\s+(.*)$/);
+    if (bullet || numbered) {
+      const kind = bullet ? "ul" : "ol";
+      if (list !== kind) {
+        close();
+        out.push(`<${kind}>`);
+        list = kind;
+      }
+      out.push(`<li>${inline((bullet ?? numbered)![1])}</li>`);
+    } else if (heading) {
+      close();
+      out.push(`<b class="h">${inline(heading[1])}</b>`);
+    } else if (line.trim()) {
+      close();
+      out.push(`<p>${inline(line.trim())}</p>`);
+    } else close();
+  }
+  if (code) out.push(`<pre><code>${esc((code as string[]).join("\n"))}</code></pre>`);
+  close();
+  return out.join("");
+}
+
 export class Cards {
   onShape = () => {};
+  onWaiting: (waiting: boolean) => void = () => {};
+  private waiting = false;
   onSay = (_text: string) => {};
 
   private root = document.createElement("div");
@@ -72,11 +135,17 @@ export class Cards {
     const buttons = (card.botones ?? []).slice(0, 4);
     el.innerHTML = `
       <div class="sc-head">${art}<div class="sc-title"><b>${esc(tr(card.titulo))}</b>${card.script ? `<small>${esc(card.script)}</small>` : ""}</div><button class="sc-x" aria-label="${tr("Cerrar")}">×</button></div>
-      ${card.texto ? `<p class="sc-text">${esc(tr(card.texto))}</p>` : ""}
+      ${card.texto ? (card.md ? `<div class="sc-text sc-md">${markdown(card.texto)}</div>` : `<p class="sc-text">${esc(tr(card.texto))}</p>`) : ""}
       ${rows ? `<div class="sc-rows">${rows}</div>` : ""}
       ${buttons.length ? `<div class="sc-buttons">${buttons.map((b, i) => `<button data-b="${i}">${esc(tr(b.texto))}</button>`).join("")}</div>` : ""}
       <span class="sc-time"></span>`;
     el.querySelector(".sc-x")!.addEventListener("click", () => this.drop(el));
+    el.querySelectorAll<HTMLElement>("[data-abrir]").forEach((link) =>
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        void call("script_action", { action: { abrir: link.dataset.abrir } });
+      }),
+    );
     el.querySelectorAll<HTMLButtonElement>("[data-b]").forEach((button) => {
       button.addEventListener("click", async () => {
         const chosen = buttons[Number(button.dataset.b)];
@@ -96,13 +165,18 @@ export class Cards {
     });
     el.addEventListener("pointerleave", () => {
       el.classList.remove("held");
-      this.later(el, 3);
+      if (Number(el.dataset.id) >= 900000) {
+        const left = Number(el.dataset.until ?? 0) - Date.now();
+        this.later(el, Math.max(2, left / 1000));
+      } else this.later(el, 3);
     });
     el.querySelector("img")?.addEventListener("load", () => this.onShape());
     while (this.root.children.length >= MAX) this.drop(this.root.lastElementChild as HTMLElement, true);
     this.root.prepend(el);
+    this.waitingNow();
     const seconds = Math.max(2, Math.min(120, card.segundos ?? 10));
     el.style.setProperty("--life", `${seconds}s`);
+    el.dataset.until = String(Date.now() + seconds * 1000);
     requestAnimationFrame(() => el.classList.add("on"));
     this.later(el, seconds);
     this.onShape();
@@ -130,6 +204,11 @@ export class Cards {
     this.onShape();
   }
 
+  dropId(id: number) {
+    const el = ([...this.root.children] as HTMLElement[]).find((card) => Number(card.dataset.id) === id);
+    if (el) this.drop(el);
+  }
+
   set behind(on: boolean) {
     this.root.classList.toggle("behind", on);
     this.onShape();
@@ -148,6 +227,14 @@ export class Cards {
     });
   }
 
+  private waitingNow() {
+    const waiting = ([...this.root.children] as HTMLElement[]).some((el) => Number(el.dataset.id) >= 900000 && !el.classList.contains("gone"));
+    if (waiting !== this.waiting) {
+      this.waiting = waiting;
+      this.onWaiting(waiting);
+    }
+  }
+
   private later(el: HTMLElement, seconds: number) {
     clearTimeout(this.timers.get(el));
     this.timers.set(el, window.setTimeout(() => this.drop(el), seconds * 1000));
@@ -161,6 +248,7 @@ export class Cards {
     el.classList.add("gone");
     const remove = () => {
       el.remove();
+      this.waitingNow();
       this.onShape();
     };
     if (now) remove();

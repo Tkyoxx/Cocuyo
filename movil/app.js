@@ -656,7 +656,7 @@ async function arrancar() {
     if (cual === "conectado") setTimeout(preferencias);
     if (esperando && cual === "conectado") return;
     if (cual === "conectado") estado("conectado", `Conectado a ${pcNombre}`);
-    else if (cual === "buscando") estado("buscando", `Buscando a ${pcNombre}…`);
+    else if (cual === "buscando") navigator.onLine ? estado("buscando", `Buscando a ${pcNombre}…`) : sinInternet();
     else if (cual === "dormido") estado("buscando", `${pcNombre} está apagado o sin Cocuyo`);
     else if (cual === "en-otra") estado("buscando", "Abierto en otra ventana");
   });
@@ -702,7 +702,31 @@ async function arrancar() {
   $("pc-nombre").textContent = pcNombre;
   saludar("");
   mostrar("charla");
+  llegoDeAfuera();
 }
+
+function llegoDeAfuera() {
+  const pedido = new URLSearchParams(location.search);
+  const compartido = [pedido.get("titulo"), pedido.get("texto"), pedido.get("enlace")].map((parte) => (parte ?? "").trim()).filter(Boolean);
+  const unico = compartido.filter((parte, i) => !compartido.slice(0, i).some((antes) => antes.includes(parte) || parte.includes(antes)));
+  const abrir = pedido.get("abrir");
+  if (unico.length || abrir) history.replaceState(null, "", location.pathname);
+  if (unico.length) {
+    const input = $("texto");
+    input.value = unico.join(" ").slice(0, 1000);
+    input.focus();
+    dicho("cocuyo", t("Te dejé lo que compartiste en la casilla. Dime qué hago con eso y envíalo."));
+    return;
+  }
+  if (abrir === "informes" || abrir === "ajustes") mostrar(abrir);
+  if (abrir === "escribir") $("texto").focus();
+}
+
+function sinInternet() {
+  if (!navigator.onLine) estado("buscando", "Tu celular no tiene internet");
+}
+addEventListener("offline", sinInternet);
+addEventListener("online", () => estado("buscando", `Buscando a ${pcNombre}…`));
 
 void arrancar();
 

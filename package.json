@@ -1,14 +1,15 @@
 {
   "name": "cocuyo",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Asistente de voz libre para Windows. Sin cuenta, sin telemetría, con tu propia clave.",
   "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test": "node --test \"pruebas/*.test.ts\""
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.3"

@@ -10,6 +10,10 @@
 <img src="https://img.shields.io/badge/Hecho%20con-Rust%20%2B%20Tauri-FF8A3D?style=for-the-badge&labelColor=101012" alt="Hecho con Rust y Tauri">
 <img src="https://img.shields.io/badge/Licencia-MIT-8C8791?style=for-the-badge&labelColor=101012" alt="Licencia MIT">
 
+<br>
+
+<a href="README.en.md">English</a> · <a href="CHANGELOG.md">Lo que cambió</a> · <a href="CONTRIBUTING.md">Ayudar</a>
+
 <br><br>
 
 Una isla negra arriba de tu pantalla que te escucha. Le hablas y pone música, abre apps,<br>
@@ -409,7 +413,9 @@ La voz usa [whisper.cpp](https://github.com/ggml-org/whisper.cpp) con el modelo 
 No hay cuentas y no se recoge nada tuyo. Esto es todo lo que sale de tu PC, y cuándo:
 
 - **Sin IA, tu voz y tus capturas no salen de tu PC.** El micrófono solo se abre mientras mantienes un atajo de voz, y el audio se transcribe y se borra en tu equipo.
-- **Con IA** (Ajustes → IA, apagada de fábrica), lo que le digas va al proveedor que elegiste: como texto, o como audio si activas **Escuchar con el modelo** o el modo en vivo. También le llegan las capturas que le pidas mirar, lo que el agente lea de tu pantalla o tu portapapeles cuando le pides algo que lo necesita, lo que suena mientras tomas apuntes, los dictados si activas **Pulir los dictados** y los nombres y descripciones de tus scripts. Si el modelo corre en tu PC (Ollama, llama.cpp, LM Studio), no sale nada. En el plan gratis de Gemini, Google puede usar lo que le mandas para mejorar sus productos. Ajustes → IA te lo recuerda siempre.
+- **Con IA** (Ajustes → IA, apagada de fábrica), lo que le digas va al proveedor que elegiste: como texto, o como audio si activas **Escuchar con el modelo** o el modo en vivo. También le llegan las capturas y los archivos que le pidas mirar, el título de la ventana que tienes delante si preguntas por «esto» o «esta página» (y su dirección, si es un navegador), lo que el agente lea de tu pantalla o tu portapapeles cuando le pides algo que lo necesita, lo que suena mientras tomas apuntes, los dictados si activas **Pulir los dictados** y los nombres y descripciones de tus scripts. Si el modelo corre en tu PC (Ollama, llama.cpp, LM Studio), no sale nada. En el plan gratis de Gemini, Google puede usar lo que le mandas para mejorar sus productos. Ajustes → IA te lo recuerda siempre.
+- **Tu Claude** (si lo eliges en Ajustes → IA): lo que le digas va como texto a Anthropic por tu propio Claude Code, con tu cuenta. Corre en una carpeta vacía y sin herramientas.
+- **Lo que sueltas en la isla** se copia a la carpeta de Cocuyo, el original no se toca, y se borra solo a la semana. No sale de tu PC salvo que le preguntes a la IA por él.
 - **Actualizaciones:** al arrancar y cada seis horas, Cocuyo le pregunta a GitHub si hay una versión nueva. No manda nada tuyo. Se apaga en **Ajustes → Isla → Actualizarse sola**.
 - **Instalaciones:** la primera vez que Cocuyo se abre en un PC, baja de GitHub un archivo de 1 byte (la versión [«contador»](https://github.com/Tkyoxx/Cocuyo/releases/tag/contador)), una sola vez. No lleva ningún dato: GitHub solo suma la descarga, y [`contador.yml`](.github/workflows/contador.yml) pasa ese número a la insignia de arriba. Las compilaciones de desarrollo no cuentan. Se apaga en **Ajustes → Isla → Contarme en las instalaciones**.
 - **El clima** de la pestaña Hoy viene de Open-Meteo, y si no escribiste tu ciudad, la primera vez se averigua por tu conexión (ipwho.is). Los dos son gratis y sin cuenta, y solo se consultan al abrir la pestaña o al preguntar por el clima. Para que no se use ipwho.is, escribe tu ciudad en **Ajustes → Tú**.

@@ -346,6 +346,11 @@ fn about_the_person(app: &AppHandle, said: &str) -> String {
     if !config.ai_persona.trim().is_empty() {
         text.push_str(&format!("\n\nAl usar «responde», habla así: {}", config.ai_persona.trim().chars().take(300).collect::<String>()));
     }
+    if crate::pc::points_at_screen(said) {
+        if let Some(front) = crate::pc::in_front() {
+            text.push_str(&format!("\n\nLo que tiene delante ahora mismo: {front}. Si dice «esto» o «aquí», habla de eso."));
+        }
+    }
     text
 }
 
@@ -412,7 +417,7 @@ fn send(url: &str, headers: &[String], body: Option<&Value>) -> Result<(u16, Val
     }
 
     let mut child = Command::new("curl.exe")
-        .args(["--silent", "--show-error", "--max-time", PATIENCE_SECONDS, "--connect-timeout", "6", "--config", "-"])
+        .args(["--silent", "--show-error", "--max-time", PATIENCE_SECONDS, "--connect-timeout", "6", "--max-filesize", "8000000", "--config", "-"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -530,12 +535,96 @@ pub(crate) fn ask(app: &AppHandle, system: &str, said: &str, room: u32) -> Resul
     chat_up_to(app, system, said, Extra::None, room)
 }
 
+fn claude_exe() -> Option<PathBuf> {
+    let mut places: Vec<PathBuf> = std::env::var_os("PATH")
+        .map(|path| std::env::split_paths(&path).flat_map(|dir| [dir.join("claude.exe"), dir.join("claude.cmd")]).collect())
+        .unwrap_or_default();
+    if let Some(home) = std::env::var_os("USERPROFILE").map(PathBuf::from) {
+        places.push(home.join(".local").join("bin").join("claude.exe"));
+    }
+    if let Some(roaming) = std::env::var_os("APPDATA").map(PathBuf::from) {
+        places.push(roaming.join("npm").join("claude.cmd"));
+    }
+    if let Some(found) = places.into_iter().find(|place| place.is_file()) {
+        return Some(found);
+    }
+    let bundled = std::env::var_os("LOCALAPPDATA").map(PathBuf::from)?.join("Claude-Data");
+    let inside = |dir: &std::path::Path| std::fs::read_dir(dir).into_iter().flatten().flatten().map(|entry| entry.path()).collect::<Vec<_>>();
+    inside(&bundled)
+        .iter()
+        .flat_map(|app| inside(&app.join("claude-code")))
+        .flat_map(|version| inside(&version))
+        .map(|build| build.join("claude.exe"))
+        .filter(|exe| exe.is_file())
+        .max_by_key(|exe| exe.metadata().and_then(|m| m.modified()).ok())
+}
+
+fn claude_code(app: &AppHandle, model: &str, system: &str, said: &str, extra: &Extra) -> Result<String, String> {
+    if !matches!(extra, Extra::None) {
+        return Err("Tu Claude no recibe imágenes ni audio desde Cocuyo. Para eso usa Gemini.".into());
+    }
+    let exe = claude_exe().ok_or("No encontré Claude Code. Instálalo, abre «claude» una vez para iniciar sesión y vuelve a probar.")?;
+    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?.join("claude-vacio");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let mut child = Command::new(&exe)
+        .args(["-p", "--output-format", "json", "--model", model])
+        .args(["--system-prompt", "Sigue las instrucciones del mensaje y responde solo lo que se pide, sin usar herramientas."])
+        .args(["--tools", "", "--setting-sources", "", "--strict-mcp-config", "--no-session-persistence", "--disable-slash-commands"])
+        .current_dir(&dir)
+        .env_remove("CLAUDECODE")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn()
+        .map_err(|e| format!("No se pudo abrir Claude Code: {e}"))?;
+    if let Some(mut input) = child.stdin.take() {
+        let _ = input.write_all(format!("{system}\n\n---\n\n{said}").as_bytes());
+    }
+    let pid = child.id();
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(child.wait_with_output());
+    });
+    let output = match rx.recv_timeout(Duration::from_secs(90)) {
+        Ok(done) => done.map_err(|e| e.to_string())?,
+        Err(_) => {
+            let _ = Command::new("taskkill").args(["/PID", &pid.to_string(), "/T", "/F"]).creation_flags(CREATE_NO_WINDOW).status();
+            return Err("Tu Claude tardó demasiado en responder.".into());
+        }
+    };
+    count(app, model);
+    let reply: Value = serde_json::from_slice(&output.stdout).map_err(|_| {
+        let detail = String::from_utf8_lossy(&output.stderr);
+        match detail.lines().rev().find(|line| !line.trim().is_empty()) {
+            Some(line) => format!("Claude Code no respondió: {}", line.trim()),
+            None => "Claude Code no respondió. ¿Ya iniciaste sesión abriendo «claude»?".into(),
+        }
+    })?;
+    let text = reply["result"].as_str().unwrap_or("").trim().to_string();
+    if reply["is_error"].as_bool().unwrap_or(false) || text.is_empty() {
+        let lost = text.contains("authenticate") || text.contains("OAuth") || text.contains("/login");
+        return Err(if lost {
+            "Tu Claude Code no tiene la sesión iniciada. Abre una terminal, escribe «claude», inicia sesión una vez y vuelve a probar.".into()
+        } else if text.is_empty() {
+            "Claude Code no devolvió nada.".into()
+        } else {
+            format!("Claude Code dijo: {text}")
+        });
+    }
+    Ok(text)
+}
+
 fn chat(app: &AppHandle, system: &str, said: &str, extra: Extra) -> Result<String, String> {
     chat_up_to(app, system, said, extra, MAX_TOKENS)
 }
 
 fn chat_up_to(app: &AppHandle, system: &str, said: &str, extra: Extra, room: u32) -> Result<String, String> {
     let config = settings::load(app);
+    if config.ai_url.starts_with("claude:") {
+        let model = models(&config.ai_model).into_iter().next().unwrap_or_else(|| "haiku".into());
+        return claude_code(app, &model, system, said, &extra);
+    }
     let key = key(app);
     let anthropic = config.ai_format == "anthropic";
     let headers = headers(anthropic, key.as_deref());
@@ -934,15 +1023,33 @@ pub fn summarize_minutes(app: &AppHandle, transcript: &str) -> Result<String, St
     Ok(reply)
 }
 
-pub fn polish(app: &AppHandle, dictated: &str) -> Option<String> {
-    let system = "Recibes un dictado transcrito por una máquina. Devuélvelo limpio y nada más: pon la puntuación y las mayúsculas, \
-                  corrige las palabras claramente mal oídas, quita las muletillas y los arranques en falso (eh, este, o sea) y, si la \
-                  persona se corrige a mitad de frase, deja solo la versión final. No añadas nada, no contestes a lo que dice, \
-                  no lo resumas y no cambies el idioma ni el sentido.";
-    let clean = chat(app, system, dictated, Extra::None).ok()?;
+pub fn polish(app: &AppHandle, dictated: &str, style: &str) -> Option<String> {
+    let base = "Recibes un dictado transcrito por una máquina. Devuélvelo limpio y nada más: pon la puntuación y las mayúsculas, \
+                corrige las palabras claramente mal oídas, quita las muletillas y los arranques en falso (eh, este, o sea) y, si la \
+                persona se corrige a mitad de frase, deja solo la versión final. No añadas nada, no contestes a lo que dice, \
+                no lo resumas y no cambies el idioma ni el sentido. Deja exactamente igual lo que vaya entre ⟦ y ⟧.";
+    let system = if style == "pulido" {
+        format!("{base} Además déjalo bien redactado: frases claras y completas, un tono cuidado y sin repetir palabras, como si lo hubiera escrito con calma.")
+    } else {
+        base.to_string()
+    };
+    let clean = chat(app, &system, dictated, Extra::None).ok()?;
     let clean = clean.split("</think>").last()?.trim().trim_matches(|c: char| matches!(c, '"' | '«' | '»' | '“' | '”' | '`')).trim().to_string();
     let (before, after) = (dictated.chars().count() as f32, clean.chars().count() as f32);
     (after > 0.0 && after <= before * 1.5 + 20.0 && after >= before * 0.35).then_some(clean)
+}
+
+pub fn about_file(app: &AppHandle, question: &str, name: &str, text: &str) -> Result<String, String> {
+    let system = "Eres Cocuyo, un asistente de voz para Windows. La persona soltó un archivo en la isla y preguntó algo en voz alta; \
+                  la pregunta llega transcrita por una máquina y puede traer errores de oído. Responde en el idioma de la pregunta, \
+                  directo y breve, usando solo lo que dice el archivo. Si la respuesta no está ahí, dilo.";
+    let room = (text.chars().count() as u32 / 3 + 400).clamp(MAX_TOKENS, 4000);
+    let answer = chat_up_to(app, system, &format!("Archivo «{name}»:\n{text}\n\nPregunta: {question}"), Extra::None, room.min(1200))?;
+    let answer = answer.split("</think>").last().unwrap_or("").trim().to_string();
+    if answer.is_empty() {
+        return Err("El modelo no respondió nada.".into());
+    }
+    Ok(answer)
 }
 
 pub fn edit(app: &AppHandle, instruction: &str, text: &str) -> Result<String, String> {

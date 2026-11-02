@@ -7,15 +7,86 @@
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "categories": ["utilities", "productivity"],
+  "categories": [
+    "utilities",
+    "productivity"
+  ],
   "background_color": "#000000",
   "theme_color": "#000000",
   "lang": "es",
   "icons": [
-    { "src": "icono.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
-    { "src": "icono-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icono-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icono-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
-    { "src": "icono-180.png", "sizes": "180x180", "type": "image/png" }
+    {
+      "src": "icono.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icono-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icono-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icono-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icono-180.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ],
+  "share_target": {
+    "action": "./",
+    "method": "GET",
+    "params": {
+      "title": "titulo",
+      "text": "texto",
+      "url": "enlace"
+    }
+  },
+  "shortcuts": [
+    {
+      "name": "Escribirle",
+      "short_name": "Escribir",
+      "url": "./?abrir=escribir",
+      "icons": [
+        {
+          "src": "icono-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Informes",
+      "short_name": "Informes",
+      "url": "./?abrir=informes",
+      "icons": [
+        {
+          "src": "icono-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Ajustes",
+      "short_name": "Ajustes",
+      "url": "./?abrir=ajustes",
+      "icons": [
+        {
+          "src": "icono-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
   ]
 }

@@ -4,6 +4,7 @@ mod agenda;
 mod ai;
 mod amf;
 mod apps;
+mod bandeja;
 mod buscar;
 mod candado;
 mod capture;
@@ -35,6 +36,7 @@ mod nvenc;
 mod ocr;
 mod overlay;
 mod pad;
+mod palabras;
 mod pc;
 mod placement;
 mod player;
@@ -207,7 +209,7 @@ fn demo(app: tauri::AppHandle) {
                 }
                 eprintln!("[loquendero] voces de Windows: {:?}", tauri::async_runtime::block_on(tts::system_voices()).len());
             } else if let Some(text) = step.strip_prefix("pulir=") {
-                eprintln!("[pulir] {:?}", ai::polish(&app, text));
+                eprintln!("[pulir] {:?}", ai::polish(&app, text, "natural"));
             } else if step == "atrapar" {
                 eprintln!("[fondo] atento a las descargas: {:?}", live::catch_downloads(&app));
             } else if let Some(phrase) = step.strip_prefix("frase=") {
@@ -270,6 +272,16 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
         .invoke_handler(tauri::generate_handler![
+            palabras::dictation_apps,
+            bandeja::bandeja_recibir,
+            bandeja::bandeja_texto,
+            bandeja::bandeja_preguntar,
+            bandeja::anotar_abrir,
+            bandeja::anotar_guardar,
+            voice::orden_escrita,
+            voice::voz_historial,
+            cue::open_sounds_dir,
+            errores::diagnostico,
             overlay::set_region,
             overlay::set_focusable,
             hotkeys::set_key_echo,
@@ -413,6 +425,7 @@ pub fn run() {
             agenda::start(app.handle().clone(), std::env::args().any(|arg| arg == "--inicio"));
             update::watch(app.handle().clone());
             update::count_install(app.handle().clone());
+            std::env::remove_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS");
             hotkeys::spawn(app.handle().clone());
             let handle = app.handle().clone();
             std::thread::spawn(move || live::restore(&handle));

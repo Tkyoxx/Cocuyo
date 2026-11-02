@@ -1,795 +1,22 @@
-// las pestañas del menu. es largo, si, algun dia lo parto
+// los ajustes. las demas pestañas viven en paginas/
 
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { PERMISOS, type ExtensionInfo, type Permiso } from "./extensiones";
-import { locale, tr, weekLetters } from "./i18n";
+import { locale, tr } from "./i18n";
 import { qrSvg } from "./qr";
-import {
-  call,
-  captureKeysAvailable,
-  currentCaptureDir,
-  getSettings,
-  on,
-  pickCaptureDir,
-  setChordsPaused,
-  setKeyEcho,
-  setSettings,
-  type AppEntry,
-  type ClipListing,
-  type NowPlaying,
-  type Dns,
-  type Settings,
-  type Speed,
-  type SpotifyStatus,
-  type Stats,
-  type Todo,
-  type VoiceProgress,
-  type VoiceStatus,
-} from "./bridge";
+import { call, captureKeysAvailable, currentCaptureDir, getSettings, on, pickCaptureDir, setChordsPaused, setKeyEcho, setSettings, type Settings, type SpotifyStatus, type VoiceProgress, type VoiceStatus } from "./bridge";
 import { countKeys, keyLabel, keysOf } from "./keys";
+import { appsPage } from "./paginas/apps";
+import { Host, Page, esc, ic } from "./paginas/comun";
+import { energia } from "./paginas/energia";
+import { equipo } from "./paginas/equipo";
+import { fondos } from "./paginas/fondos";
+import { controles, hoy } from "./paginas/inicio";
+import { portapapeles } from "./paginas/portapapeles";
+import { red } from "./paginas/red";
+export { discordPage } from "./paginas/discord";
+export type { Host, Page } from "./paginas/comun";
 
-export interface Host {
-  say(text: string): void;
-  close(): void;
-  focus(input: HTMLInputElement): void;
-  settingsChanged(settings: Settings): void;
-}
-
-export interface Page {
-  id: string;
-  label: string;
-  w: number;
-  h: number;
-  html(): string;
-  mount?(el: HTMLElement, host: Host): void;
-  show?(el: HTMLElement, host: Host): void;
-  hide?(): void;
-}
-
-const ICONS: Record<string, string> = {
-  wifi: "M4 10a12 12 0 0116 0M7 13.5a7.5 7.5 0 0110 0M10 17a3 3 0 014 0",
-  bluetooth: "M7 7l10 10-5 4V3l5 4L7 17",
-  moon: "M20 14.5A8 8 0 019.5 4 8 8 0 1020 14.5z",
-  plane: "M3 13l18-8-6 16-3-7-9-1z",
-  cast: "M4 6h16v12h-6M4 14a4 4 0 014 4M4 10a8 8 0 018 8",
-  volume: "M4 10v4h3l5 4V6L7 10H4zM16 9a4 4 0 010 6M18.5 6.5a8 8 0 010 11",
-  mute: "M4 10v4h3l5 4V6L7 10H4zM16 9.5l5 5M21 9.5l-5 5",
-  search: "M11 4a7 7 0 100 14 7 7 0 000-14zM20 20l-4-4",
-  mic: "M12 3a3 3 0 00-3 3v5a3 3 0 006 0V6a3 3 0 00-3-3zM6 11a6 6 0 0012 0M12 17v4M9 21h6",
-  headset: "M4 15v-3a8 8 0 0116 0v3M4 15a2 2 0 002 2h1v-5H6a2 2 0 00-2 2zM20 15a2 2 0 01-2 2h-1v-5h1a2 2 0 012 2z",
-  leave: "M3 14c5-5 13-5 18 0l-2 3-4-1v-3a10 10 0 00-6 0v3l-4 1-2-3z",
-  wave: "M3 12h2l2-5 3 10 3-12 3 9 2-2h3",
-  echo: "M4 15a8 8 0 0116 0M7 15a5 5 0 0110 0M10 15a2 2 0 014 0",
-  hand: "M8 13V6a1.5 1.5 0 013 0v5M11 11V4.5a1.5 1.5 0 013 0V11M14 11V6a1.5 1.5 0 013 0v8a6 6 0 01-6 6h-1a6 6 0 01-5-2.7L3 14a1.5 1.5 0 012.5-1.6L8 15",
-  sun: "M12 7a5 5 0 100 10 5 5 0 000-10zM12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4",
-  cloud: "M7 18a4 4 0 01-.5-7.97A5.5 5.5 0 0117.2 11.5 3.3 3.3 0 0117 18H7z",
-  rain: "M7 15a4 4 0 01-.5-7.97A5.5 5.5 0 0117.2 8.5 3.3 3.3 0 0117 15H7zM8 18l-1 3M12 18l-1 3M16 18l-1 3",
-  storm: "M7 15a4 4 0 01-.5-7.97A5.5 5.5 0 0117.2 8.5 3.3 3.3 0 0117 15H7zM13 16l-2.5 3.5h3L11 23",
-  snow: "M7 15a4 4 0 01-.5-7.97A5.5 5.5 0 0117.2 8.5 3.3 3.3 0 0117 15H7zM8 19v.01M12 19v.01M16 19v.01M10 22v.01M14 22v.01",
-  fog: "M4 8h16M4 12h16M6 16h12M8 20h8",
-  lock: "M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 017 0v3",
-  restart: "M20 12a8 8 0 11-2.6-5.9M20 4v5h-5",
-  power: "M12 3v9M6.3 6.3a8 8 0 1011.4 0",
-  text: "M5 6h14M5 12h14M5 18h9",
-  folder: "M3 7h6l2 2h10v10H3z",
-  plus: "M12 5v14M5 12h14",
-  close: "M6 6l12 12M18 6L6 18",
-  image: "M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4",
-  down: "M12 4v12M6 11l6 6 6-6M5 20h14",
-  up: "M12 20V8M6 13l6-6 6 6M5 4h14",
-};
-const SOLID: Record<string, string> = {
-  play: "M8 5v14l11-7z",
-  pause: "M7 5h4v14H7zM13 5h4v14h-4z",
-  prev: "M6 5h2v14H6zM20 5v14l-10-7z",
-  next: "M16 5h2v14h-2zM4 5v14l10-7z",
-};
-
-const ic = (name: string) =>
-  name in SOLID
-    ? `<svg class="ic solid" viewBox="0 0 24 24"><path d="${SOLID[name]}"/></svg>`
-    : `<svg class="ic" viewBox="0 0 24 24"><path d="${ICONS[name]}"/></svg>`;
-
-const esc = (text: string) =>
-  text.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
-
-const gb = (bytes: number) => (bytes / 2 ** 30).toFixed(1).replace(".", ",");
-
-const SHORTCUTS: [string, string, string][] = [
-  ["wifi", "Wi‑Fi", "network-wifi"],
-  ["bluetooth", "Bluetooth", "bluetooth"],
-  ["moon", "No molestar", "quiethours"],
-  ["plane", "Modo avión", "network-airplanemode"],
-];
-
-const controles: Page = {
-  id: "controles",
-  label: "Controles",
-  w: 700,
-  h: 260,
-  html: () =>
-    SHORTCUTS.map(
-      ([icon, title, page]) =>
-        `<button class="tile" data-page-link="${page}"><span class="ti">${ic(icon)}</span><span><b>${title}</b><small>Abrir ajustes</small></span></button>`,
-    ).join("") +
-    `<button class="tile" id="c-mic"><span class="ti">${ic("mic")}</span><span><b>Micrófono</b><small></small></span></button>
-     <button class="tile" id="c-mute"><span class="ti">${ic("mute")}</span><span><b>Silencio</b><small></small></span></button>
-     <div class="vslider" id="c-vol"><span class="fill"></span><em></em>${ic("volume")}</div>
-     <div class="card media">
-       <span class="cover" id="m-art"></span>
-       <span class="meta"><b id="m-title"></b><small id="m-artist"></small></span>
-       <span class="progress"><i id="m-bar"></i></span>
-       <span class="times"><span id="m-pos"></span><span id="m-dur"></span></span>
-       <span class="transport"><button data-media="previous">${ic("prev")}</button><button class="play" data-media="play" id="m-play">${ic("play")}</button><button data-media="next">${ic("next")}</button></span>
-     </div>`,
-  mount(el, host) {
-    for (const tile of el.querySelectorAll<HTMLElement>("[data-page-link]")) {
-      tile.addEventListener("click", () => {
-        void call("open_settings_page", { page: tile.dataset.pageLink });
-        host.close();
-      });
-    }
-    for (const button of el.querySelectorAll<HTMLElement>("[data-media]")) {
-      button.addEventListener("click", async () => {
-        await call("media_key", { action: button.dataset.media });
-        setTimeout(() => void paintMedia(el), 350);
-      });
-    }
-
-    const mic = el.querySelector<HTMLElement>("#c-mic")!;
-    mic.addEventListener("click", async () => {
-      await call("mic_mute", { on: !mic.classList.contains("on") }).catch((error) => host.say(String(error)));
-      void paintMic(el);
-    });
-
-    const mute = el.querySelector<HTMLElement>("#c-mute")!;
-    mute.addEventListener("click", async () => {
-      const muted = !mute.classList.contains("on");
-      await call("volume_set", { muted });
-      paintVolume(el);
-    });
-
-    const track = el.querySelector<HTMLElement>(".progress")!;
-    const fill = el.querySelector<HTMLElement>("#m-bar")!;
-    const point = (e: PointerEvent) => {
-      const r = track.getBoundingClientRect();
-      return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
-    };
-    const preview = (e: PointerEvent) => {
-      fill.style.transition = "none";
-      fill.style.width = `${point(e) * 100}%`;
-      el.querySelector("#m-pos")!.textContent = clock(point(e) * mediaLength);
-    };
-    track.addEventListener("pointerdown", (e) => {
-      if (!mediaLength) return;
-      track.setPointerCapture(e.pointerId);
-      seeking = true;
-      track.classList.add("drag");
-      preview(e);
-    });
-    track.addEventListener("pointermove", (e) => {
-      if (seeking) preview(e);
-    });
-    const release = async (e: PointerEvent) => {
-      if (!seeking) return;
-      track.classList.remove("drag");
-      await call("media_seek", { seconds: point(e) * mediaLength });
-      seeking = false;
-      setTimeout(() => void paintMedia(el), 400);
-    };
-    track.addEventListener("pointerup", (e) => void release(e));
-    track.addEventListener("pointercancel", () => {
-      seeking = false;
-      track.classList.remove("drag");
-    });
-
-    const slider = el.querySelector<HTMLElement>("#c-vol")!;
-    const drag = (e: PointerEvent) => {
-      const r = slider.getBoundingClientRect();
-      const level = Math.min(1, Math.max(0, 1 - (e.clientY - r.top) / r.height));
-      setVolumeUi(el, level);
-      void call("volume_set", { level });
-    };
-    slider.addEventListener("pointerdown", (e) => {
-      slider.setPointerCapture(e.pointerId);
-      drag(e);
-    });
-    slider.addEventListener("pointermove", (e) => {
-      if (slider.hasPointerCapture(e.pointerId)) drag(e);
-    });
-  },
-  show(el) {
-    void paintVolume(el);
-    void paintMedia(el);
-    mediaTimer = window.setInterval(() => void paintMedia(el), 2000);
-  },
-  hide: () => clearInterval(mediaTimer),
-};
-
-let mediaTimer = 0;
-let mediaKey: string | null = null;
-let mediaLength = 0;
-let seeking = false;
-
-const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
-
-async function paintMedia(el: HTMLElement) {
-  const now = await call<NowPlaying | null>("media_now", { known: mediaKey }, null);
-  const q = (id: string) => el.querySelector<HTMLElement>(`#${id}`)!;
-  mediaLength = now?.duration ?? 0;
-  if (seeking) return;
-  if (!now) {
-    mediaKey = null;
-    q("m-title").textContent = "Nada sonando";
-    q("m-artist").textContent = "Abre Spotify o cualquier reproductor";
-    q("m-art").style.backgroundImage = "";
-    q("m-bar").style.width = "0";
-    q("m-pos").textContent = q("m-dur").textContent = "";
-    q("m-play").innerHTML = ic("play");
-    return;
-  }
-  q("m-title").textContent = now.title;
-  q("m-artist").textContent = [now.artist, now.source].filter(Boolean).join(" · ");
-  if (now.key !== mediaKey) {
-    mediaKey = now.key;
-    q("m-art").style.backgroundImage = now.art ? `url(${now.art})` : "";
-  }
-  const bar = q("m-bar");
-  const share = (seconds: number) => (now.duration ? `${Math.min(100, (seconds / now.duration) * 100)}%` : "0");
-  bar.style.transition = "none";
-  bar.style.width = share(now.position);
-  if (now.playing && now.duration) {
-    void bar.offsetWidth;
-    bar.style.transition = "width 2s linear";
-    bar.style.width = share(now.position + 2);
-  }
-  q("m-pos").textContent = now.duration ? clock(now.position) : "";
-  q("m-dur").textContent = now.duration ? clock(now.duration) : "";
-  q("m-play").innerHTML = ic(now.playing ? "pause" : "play");
-}
-
-function setVolumeUi(el: HTMLElement, level: number) {
-  const slider = el.querySelector<HTMLElement>("#c-vol")!;
-  slider.style.setProperty("--v", String(level));
-  slider.querySelector("em")!.textContent = String(Math.round(level * 100));
-}
-
-async function paintVolume(el: HTMLElement) {
-  const volume = await call<{ level: number; muted: boolean } | null>("volume_get", undefined, { level: 0.5, muted: false });
-  if (!volume) return;
-  setVolumeUi(el, volume.level);
-  const mute = el.querySelector<HTMLElement>("#c-mute")!;
-  mute.classList.toggle("on", volume.muted);
-  mute.querySelector("small")!.textContent = volume.muted ? "Activado" : "Apagado";
-}
-
-async function paintMic(el: HTMLElement) {
-  const muted = await call<boolean | null>("mic_muted", undefined, null);
-  const mic = el.querySelector<HTMLElement>("#c-mic")!;
-  mic.classList.toggle("on", muted === true);
-  mic.querySelector("small")!.textContent = muted === null ? "Sin micrófono" : muted ? "Silenciado" : "Abierto";
-}
-
-let clockTimer = 0;
-let who = "";
-let todos: Todo[] = [];
-let planned: { id: number; what: string; act: boolean; when: string }[] = [];
-
-function paintClock(el: HTMLElement) {
-  const now = new Date();
-  const hh = String(now.getHours()).padStart(2, "0");
-  const mm = String(now.getMinutes()).padStart(2, "0");
-  el.querySelector("#clock-time")!.innerHTML = `${hh}<i>:</i>${mm}`;
-  el.querySelector("#clock-date")!.textContent = now.toLocaleDateString(locale(), { weekday: "long", day: "numeric", month: "long" });
-  const greeting = now.getHours() < 5 ? "Buenas noches" : now.getHours() < 12 ? "Buenos días" : now.getHours() < 19 ? "Buenas tardes" : "Buenas noches";
-  el.querySelector("#clock-hi")!.textContent = who ? `${tr(greeting)}, ${who}` : greeting;
-
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
-  const jan4 = new Date(now.getFullYear(), 0, 4);
-  const week = 1 + Math.round((monday.getTime() - jan4.getTime()) / 6048e5 + ((jan4.getDay() + 6) % 7) / 7);
-  el.querySelector("#clock-week")!.textContent = `Semana ${week}`;
-  el.querySelector("#week")!.innerHTML = [...weekLetters()]
-    .map((letter, i) => {
-      const day = new Date(monday);
-      day.setDate(monday.getDate() + i);
-      return `<span class="${day.toDateString() === now.toDateString() ? "today" : ""}">${letter}<b>${day.getDate()}</b></span>`;
-    })
-    .join("");
-
-  clockTimer = window.setTimeout(() => paintClock(el), 60000 - (now.getSeconds() * 1000 + now.getMilliseconds()) + 50);
-}
-
-interface Weather {
-  place: string;
-  temp: number;
-  feels: number;
-  code: number;
-  day: boolean;
-  max: number;
-  min: number;
-  rain: number;
-  hours: { hour: number; temp: number; rain: number; code: number }[];
-  text: string;
-}
-
-const skyIcon = (code: number, day = true) =>
-  code <= 1 ? (day ? "sun" : "moon") : code <= 3 ? "cloud" : code <= 48 ? "fog" : code <= 67 || (code >= 80 && code <= 82) ? "rain" : code <= 86 ? "snow" : "storm";
-
-function paintWeather(el: HTMLElement, weather: Weather | null | undefined, problem = "") {
-  const q = <T extends HTMLElement>(sel: string) => el.querySelector<T>(sel)!;
-  const asking = !weather;
-  q("#wx").classList.toggle("asking", asking);
-  q("#wx-note").textContent = asking ? problem || "Escribe tu ciudad y pulsa Enter." : "";
-  if (!weather) return;
-  const deg = (value: number) => `${Math.round(value)}°`;
-  q("#wx-place").textContent = weather.place;
-  q("#wx-ic").innerHTML = ic(skyIcon(weather.code, weather.day));
-  q("#wx-temp").textContent = deg(weather.temp);
-  q("#wx-desc").textContent = weather.text;
-  q("#wx-feels").textContent = `Sensación de ${deg(weather.feels)}`;
-  q("#wx-day").innerHTML = `<span>${ic("up")} ${deg(weather.max)}</span><span>${ic("down")} ${deg(weather.min)}</span><span>${ic("rain")} ${weather.rain} %</span>`;
-  q("#wx-hours").innerHTML = weather.hours
-    .map((hour) => `<div><small>${String(hour.hour).padStart(2, "0")}:00</small>${ic(skyIcon(hour.code, hour.hour >= 6 && hour.hour < 19))}<b>${deg(hour.temp)}</b><small>${hour.rain} %</small></div>`)
-    .join("");
-}
-
-function paintTodos(el: HTMLElement) {
-  const done = todos.filter((t) => t.done).length;
-  el.querySelector("#todo-count")!.textContent = [todos.length ? `${done}/${todos.length}` : "", planned.length ? `${planned.length} con hora` : ""]
-    .filter(Boolean)
-    .join(" · ");
-  const timed = planned
-    .map(
-      (plan) =>
-        `<div class="todo-row plan"><span class="what"><i>${esc(plan.when)}</i>${esc(plan.act ? `«${plan.what}»` : plan.what)}</span><button class="x" data-plan="${plan.id}" aria-label="Quitar">${ic("close")}</button></div>`,
-    )
-    .join("");
-  const loose = todos
-    .map(
-      (t, i) =>
-        `<div class="todo-row ${t.done ? "done" : ""}"><button data-toggle="${i}">${esc(t.text)}</button><button class="x" data-remove="${i}" aria-label="Quitar">${ic("close")}</button></div>`,
-    )
-    .join("");
-  el.querySelector("#todo-list")!.innerHTML = timed || loose ? timed + loose : `<small>Nada pendiente. Escribe una tarea, o algo con hora: «a las 6 abre Spotify».</small>`;
-}
-
-const hoy: Page = {
-  id: "hoy",
-  label: "Hoy",
-  w: 740,
-  h: 330,
-  html: () =>
-    `<div class="card clock"><span class="lbl" id="clock-hi">Ahora</span><div class="time" id="clock-time"></div><div class="date" id="clock-date"></div><small class="foot" id="clock-week"></small></div>
-     <div class="card wx" id="wx">
-       <header><span class="lbl">Clima</span><button class="wx-place" id="wx-place" title="Cambiar de ciudad"></button></header>
-       <div class="wx-now"><span class="wx-ic" id="wx-ic"></span><b id="wx-temp"></b><div><span id="wx-desc"></span><small id="wx-feels"></small></div></div>
-       <div class="wx-day" id="wx-day"></div>
-       <div class="wx-hours" id="wx-hours"></div>
-       <input id="wx-city" placeholder="Tu ciudad…" maxlength="60" spellcheck="false" />
-       <small class="wx-note" id="wx-note"></small>
-     </div>
-     <div class="daycol">
-       <div class="card week" id="week"></div>
-       <div class="card todo"><header><span class="lbl">Tareas</span><small id="todo-count"></small></header>
-         <div id="todo-list"></div>
-         <input id="todo-add" placeholder="Tarea, o «en 10 minutos recuérdame…»" maxlength="120" />
-       </div>
-     </div>`,
-  mount(el, host) {
-    const city = el.querySelector<HTMLInputElement>("#wx-city")!;
-    city.addEventListener("pointerdown", () => host.focus(city));
-    city.addEventListener("keydown", async (e) => {
-      if (e.key !== "Enter" || !city.value.trim()) return;
-      el.querySelector("#wx-note")!.textContent = "Buscando…";
-      try {
-        paintWeather(el, await call<Weather>("weather_city", { city: city.value }));
-        city.value = "";
-      } catch (error) {
-        paintWeather(el, null, String(error));
-      }
-    });
-    el.querySelector("#wx-place")!.addEventListener("click", () => {
-      paintWeather(el, null);
-      host.focus(city);
-    });
-    const save = () => {
-      paintTodos(el);
-      void call("todos_set", { todos });
-    };
-    el.querySelector("#todo-list")!.addEventListener("click", (e) => {
-      const target = (e.target as HTMLElement).closest<HTMLElement>("[data-toggle],[data-remove],[data-plan]");
-      if (!target) return;
-      if (target.dataset.plan) {
-        const id = Number(target.dataset.plan);
-        planned = planned.filter((plan) => plan.id !== id);
-        paintTodos(el);
-        return void call("agenda_remove", { id });
-      }
-      if (target.dataset.remove) todos.splice(Number(target.dataset.remove), 1);
-      else todos[Number(target.dataset.toggle)].done = !todos[Number(target.dataset.toggle)].done;
-      save();
-    });
-    const input = el.querySelector<HTMLInputElement>("#todo-add")!;
-    input.addEventListener("pointerdown", () => host.focus(input));
-    input.addEventListener("keydown", async (e) => {
-      const text = input.value.trim();
-      if (e.key !== "Enter" || !text) return;
-      input.value = "";
-      const scheduled = await call<string | null>("agenda_add", { text }, null);
-      if (scheduled) return host.say(scheduled);
-      todos.push({ text, done: false });
-      save();
-    });
-    on("agenda", async () => {
-      planned = await call<typeof planned>("agenda_list", undefined, []);
-      paintTodos(el);
-    });
-  },
-  async show(el) {
-    who = (await getSettings()).name.trim();
-    paintClock(el);
-    void call<Weather>("weather")
-      .then((weather) => paintWeather(el, weather))
-      .catch((error) => {
-        const why = String(error);
-        paintWeather(el, null, why.startsWith("Escribe") ? "" : why);
-      });
-    todos = await call<Todo[]>("todos_get", undefined, []);
-    planned = await call<typeof planned>("agenda_list", undefined, []);
-    paintTodos(el);
-  },
-  hide: () => clearTimeout(clockTimer),
-};
-
-let statsTimer = 0;
-
-const gauge = (id: string, color: string, title: string) =>
-  `<div class="card gauge" id="${id}" style="--p:0;--c:${color}">
-     <svg viewBox="0 0 68 68"><circle class="track" cx="34" cy="34" r="26"/><circle class="arc" cx="34" cy="34" r="26"/></svg>
-     <span class="pct"></span><b>${title}</b><small></small>
-   </div>`;
-
-const mini = (id: string, label: string) => `<div class="card mini"><span class="lbl">${label}</span><b id="${id}"></b></div>`;
-
-function paintGauge(el: HTMLElement, id: string, fraction: number, sub: string) {
-  const card = el.querySelector<HTMLElement>(`#${id}`)!;
-  card.style.setProperty("--p", String(fraction));
-  card.querySelector(".pct")!.textContent = `${Math.round(fraction * 100)}%`;
-  card.querySelector("small")!.textContent = sub;
-}
-
-async function paintStats(el: HTMLElement) {
-  const s = await call<Stats | null>("system_stats", undefined, null);
-  if (!s) return;
-  paintGauge(el, "g-cpu", s.cpu / 100, `${s.threads} hilos`);
-  paintGauge(el, "g-ram", s.memoryUsed / s.memoryTotal, `${gb(s.memoryUsed)} de ${gb(s.memoryTotal)} GB`);
-  paintGauge(el, "g-disk", s.diskTotal ? s.diskUsed / s.diskTotal : 0, "Disco C:");
-  el.querySelector("#m-ram")!.textContent = `${gb(s.memoryTotal - s.memoryUsed)} GB`;
-  el.querySelector("#m-disk")!.textContent = `${gb(s.diskTotal - s.diskUsed)} GB`;
-  const hours = Math.floor(s.uptimeSecs / 3600);
-  el.querySelector("#m-up")!.textContent = `${hours} h ${Math.floor((s.uptimeSecs % 3600) / 60)} min`;
-  paintTop(el, s.top);
-}
-
-function paintTop(el: HTMLElement, top: Stats["top"]) {
-  const most = top[0]?.bytes ?? 1;
-  el.querySelector("#top-rows")!.innerHTML = top
-    .map(({ name, bytes, path }) => {
-      const known = programs.get(path);
-      if (path && known === undefined) {
-        programs.set(path, null);
-        void call<Program | null>("program_info", { path }, null).then((info) => {
-          if (!info?.icon) {
-            programs.delete(path);
-            if (!info) return;
-          }
-          if (info.icon) programs.set(path, info);
-          paintTop(el, top);
-        });
-      }
-      const icon = known?.icon ? `<img src="${known.icon}" alt="" />` : `<em style="background:${tint(name)}">${esc(name[0]?.toUpperCase() ?? "")}</em>`;
-      return `<div class="row">${icon}<span>${esc(known?.name ?? name)}</span><i style="--p:${bytes / most}"></i><small>${gb(bytes)} GB</small></div>`;
-    })
-    .join("");
-}
-
-interface Program {
-  name: string | null;
-  icon: string | null;
-}
-const programs = new Map<string, Program | null>();
-
-const equipo: Page = {
-  id: "equipo",
-  label: "Equipo",
-  w: 760,
-  h: 294,
-  html: () =>
-    gauge("g-cpu", "#f2a23a", "CPU") +
-    gauge("g-ram", "#8ed46a", "RAM") +
-    gauge("g-disk", "#b48cf0", "Disco") +
-    `<div class="sidecol"><div class="card top"><header><span class="lbl">Lo que más memoria ocupa</span></header><div id="top-rows"></div></div></div>` +
-    mini("m-ram", "Memoria libre") +
-    mini("m-disk", "Libre en C:") +
-    mini("m-up", "Encendido hace"),
-  show(el) {
-    void paintStats(el).then(() => setTimeout(() => void paintStats(el), 500));
-    statsTimer = window.setInterval(() => void paintStats(el), 2000);
-  },
-  hide: () => clearInterval(statsTimer),
-};
-
-let dnsList: Dns[] = [];
-let dnsBusy = false;
-
-const mbps = (value: number | null) => (value === null ? "—" : value >= 100 ? value.toFixed(0) : value.toFixed(1));
-
-function paintSpeed(el: HTMLElement, speed: Speed) {
-  const q = (id: string) => el.querySelector<HTMLElement>(`#${id}`)!;
-  q("net-down").textContent = mbps(speed.down);
-  q("net-up").textContent = mbps(speed.up);
-  q("net-ping").textContent = speed.pingMs === null ? "—" : `${Math.round(speed.pingMs)} ms`;
-  const card = q("net-speed");
-  card.dataset.phase = speed.phase;
-  const shown = speed.phase === "up" ? speed.up : speed.down;
-  card.style.setProperty("--p", String(shown ? Math.min(1, Math.log10(1 + shown) / 3) : 0));
-  q("net-note").textContent =
-    speed.error ??
-    { ping: "Buscando el servidor…", down: "Midiendo la bajada…", up: "Midiendo la subida…", done: "Medido contra los servidores de Cloudflare." }[speed.phase];
-  (q("net-go") as HTMLButtonElement).disabled = speed.phase !== "done";
-  q("net-go").textContent = speed.phase === "done" ? "Medir otra vez" : "Midiendo…";
-}
-
-function paintDns(el: HTMLElement, note = "") {
-  const slowest = Math.max(1, ...dnsList.map((d) => d.ms ?? 0));
-  el.querySelector("#dns-rows")!.innerHTML = dnsList.length
-    ? dnsList
-        .map(
-          (d) =>
-            `<div class="row${d.current ? " on" : ""}"><span><b>${esc(d.name)}</b><small>${d.address}${d.current ? " · en uso" : ""}</small></span><i style="--p:${
-              d.ms === null ? 0 : d.ms / slowest
-            }"></i><small>${d.ms === null ? "sin respuesta" : `${Math.round(d.ms)} ms`}</small></div>`,
-        )
-        .join("")
-    : `<small class="empty">${dnsBusy ? "Preguntándole a cada servidor…" : "Sin medir todavía."}</small>`;
-  const best = dnsList.find((d) => d.provider !== null && d.ms !== null);
-  const current = dnsList.find((d) => d.current);
-  el.querySelector("#dns-note")!.textContent =
-    note ||
-    (dnsBusy
-      ? "Midiendo…"
-      : best && current && best !== current && current.ms !== null
-        ? `${best.name} te responde ${Math.round(current.ms - best.ms!)} ms antes.`
-        : best && best === current
-          ? "Ya usas el más rápido."
-          : "");
-  el.querySelector<HTMLButtonElement>("#dns-best")!.disabled = dnsBusy || !best || best === current;
-}
-
-async function measureDns(el: HTMLElement) {
-  if (dnsBusy) return;
-  dnsBusy = true;
-  paintDns(el);
-  dnsList = await call<Dns[]>("dns_measure", undefined, []);
-  dnsBusy = false;
-  paintDns(el);
-}
-
-const red: Page = {
-  id: "red",
-  label: "Red",
-  w: 760,
-  h: 356,
-  html: () =>
-    `<div class="card netspeed" id="net-speed" style="--p:0">
-       <span class="lbl">Velocidad</span>
-       <div class="dial"><svg viewBox="0 0 120 120"><circle class="track" cx="60" cy="60" r="50"/><circle class="arc" cx="60" cy="60" r="50"/></svg><b id="net-down">—</b><small>Mbps de bajada</small></div>
-       <div class="pair"><span>${ic("up")}<small>Subida</small><b id="net-up">—</b></span><span>${ic("wifi")}<small>Ping</small><b id="net-ping">—</b></span></div>
-       <button class="ghost" id="net-go">Medir</button>
-       <small id="net-note">Gasta datos: hasta unos 100 MB en conexiones rápidas.</small>
-     </div>
-     <div class="card dns">
-       <header><span class="lbl">Servidores DNS</span><small id="dns-note"></small></header>
-       <div id="dns-rows"></div>
-       <footer><button class="ghost" id="dns-best">Usar el más rápido</button><button class="ghost" id="dns-auto">Automático</button><button class="ghost" id="dns-again">Medir</button></footer>
-     </div>`,
-  mount(el, host) {
-    on<Speed>("net-speed", (speed) => paintSpeed(el, speed));
-    el.querySelector("#net-go")!.addEventListener("click", () => {
-      paintSpeed(el, { phase: "ping", pingMs: null, down: null, up: null, error: null });
-      void call("net_speed");
-    });
-    el.querySelector("#dns-again")!.addEventListener("click", () => void measureDns(el));
-    const change = async (command: string, args?: Record<string, unknown>) => {
-      try {
-        host.say(await call<string>(command, args, ""));
-        paintDns(el, "Esperando a Windows…");
-        setTimeout(() => void measureDns(el), 3500);
-      } catch (error) {
-        host.say(String(error));
-      }
-    };
-    el.querySelector("#dns-best")!.addEventListener("click", () => {
-      const best = dnsList.find((d) => d.provider !== null && d.ms !== null);
-      if (best) void change("dns_apply", { provider: best.provider });
-    });
-    el.querySelector("#dns-auto")!.addEventListener("click", () => void change("dns_reset"));
-  },
-  show(el) {
-    if (!dnsList.length) void measureDns(el);
-    else paintDns(el);
-  },
-};
-
-let clips: ClipListing = { now: 0, clips: [] };
-
-function ago(ms: number) {
-  const min = Math.floor(ms / 60000);
-  if (min < 1) return "ahora";
-  if (min < 60) return `hace ${min} min`;
-  return `hace ${Math.floor(min / 60)} h`;
-}
-
-function paintClips(el: HTMLElement, filter = "") {
-  const needle = filter.toLowerCase();
-  const rows = clips.clips
-    .map((c, i) => ({ c, i }))
-    .filter(({ c }) => c.text.toLowerCase().includes(needle))
-    .map(
-      ({ c, i }) =>
-        `<button class="clip" data-clip="${i}">${
-          c.image ? `<span class="ti shot" style="background-image:url(${c.image.thumb})"></span>` : `<span class="ti">${ic("text")}</span>`
-        }<span>${esc(c.text.slice(0, 80))}</span><small>${ago(clips.now - c.at)}</small></button>`,
-    );
-  el.querySelector("#clip-list")!.innerHTML = rows.join("") || `<small class="empty">${clips.clips.length ? "Nada coincide." : "Lo que copies aparecerá aquí."}</small>`;
-}
-
-const portapapeles: Page = {
-  id: "portapapeles",
-  label: "Portapapeles",
-  w: 680,
-  h: 380,
-  html: () =>
-    `<label class="search">${ic("search")}<input id="clip-search" placeholder="Buscar en lo que copiaste…" /></label>
-     <div class="cliplist" id="clip-list"></div>
-     <div class="card preview"><span class="lbl">Vista previa</span><p id="clip-preview">Toca un elemento para dejarlo listo para pegar.</p><img id="clip-image" alt="" hidden /><button class="ghost" id="clip-text" hidden>Copiar el texto de la imagen</button></div>
-     <div class="hint"><span>Texto e imágenes, solo en memoria: se borra al cerrar Cocuyo.</span><button class="ghost" id="clip-clear">Borrar todo</button></div>`,
-  mount(el, host) {
-    const search = el.querySelector<HTMLInputElement>("#clip-search")!;
-    search.addEventListener("pointerdown", () => host.focus(search));
-    search.addEventListener("input", () => paintClips(el, search.value));
-    el.querySelector("#clip-list")!.addEventListener("click", async (e) => {
-      const row = (e.target as HTMLElement).closest<HTMLElement>("[data-clip]");
-      if (!row) return;
-      const index = Number(row.dataset.clip);
-      await call("clip_use", { index });
-      for (const other of el.querySelectorAll(".clip")) other.classList.toggle("on", other === row);
-      const picked = clips.clips[index];
-      const picture = el.querySelector<HTMLImageElement>("#clip-image")!;
-      el.querySelector("#clip-preview")!.textContent = picked.text.slice(0, 600);
-      picture.hidden = !picked.image;
-      if (picked.image) picture.src = picked.image.thumb;
-      const reader = el.querySelector<HTMLElement>("#clip-text")!;
-      reader.hidden = !picked.image;
-      reader.dataset.index = String(index);
-      host.say("Listo para pegar con Ctrl + V.");
-    });
-    el.querySelector<HTMLElement>("#clip-text")!.addEventListener("click", async (e) => {
-      const index = Number((e.currentTarget as HTMLElement).dataset.index);
-      try {
-        host.say(await call<string>("ocr_clip", { index }));
-      } catch (error) {
-        host.say(String(error));
-      }
-    });
-    el.querySelector("#clip-clear")!.addEventListener("click", async () => {
-      await call("clip_clear");
-      clips = { now: 0, clips: [] };
-      el.querySelector<HTMLImageElement>("#clip-image")!.hidden = true;
-      el.querySelector<HTMLElement>("#clip-text")!.hidden = true;
-      paintClips(el);
-    });
-  },
-  async show(el) {
-    clips = await call<ClipListing>("clip_list", undefined, { now: 0, clips: [] });
-    paintClips(el, el.querySelector<HTMLInputElement>("#clip-search")!.value);
-  },
-};
-
-let apps: AppEntry[] = [];
-const icons = new Map<string, string | null>();
-let iconWatcher: IntersectionObserver | null = null;
-
-const HUES = [150, 210, 20, 265, 40, 190, 330];
-const tint = (name: string) => `hsl(${HUES[name.charCodeAt(0) % HUES.length]} 45% 38%)`;
-
-function paintApps(el: HTMLElement, filter = "") {
-  const needle = filter.trim().toLowerCase();
-  const shown = apps.filter((a) => a.name.toLowerCase().includes(needle));
-  const list = el.querySelector<HTMLElement>("#app-list")!;
-  list.innerHTML =
-    shown
-      .map((a) => {
-        const icon = icons.get(a.id);
-        const picture = icon ? `<img src="${icon}" alt="" />` : esc(a.name[0]?.toUpperCase() ?? "?");
-        return `<div class="app" data-app="${esc(a.id)}"><button class="open"><span class="ti" style="--c:${tint(a.name)}">${picture}</span><span>${esc(a.name)}</span><small>${a.custom ? "Añadida por ti" : ""}</small></button>${a.custom ? `<button class="x" data-remove aria-label="Quitar">${ic("close")}</button>` : ""}</div>`;
-      })
-      .join("") || `<small class="empty">Ninguna app se llama así. Si no aparece, añádela.</small>`;
-
-  iconWatcher?.disconnect();
-  iconWatcher = new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) {
-        const row = entry.target as HTMLElement;
-        const id = row.dataset.app!;
-        if (!entry.isIntersecting || icons.has(id)) continue;
-        icons.set(id, null);
-        void call<string | null>("app_icon", { id }, null).then((src) => {
-          icons.set(id, src);
-          if (src && row.isConnected) row.querySelector(".ti")!.innerHTML = `<img src="${src}" alt="" />`;
-        });
-      }
-    },
-    { root: list },
-  );
-  for (const row of list.querySelectorAll(".app")) iconWatcher.observe(row);
-}
-
-const appsPage: Page = {
-  id: "apps",
-  label: "Apps",
-  w: 660,
-  h: 470,
-  html: () =>
-    `<label class="search">${ic("search")}<input id="app-search" placeholder="Buscar una app…" /><kbd>Enter abre la primera</kbd></label>
-     <div class="applist" id="app-list"></div>
-     <div class="hint"><span>¿Falta un juego o un programa? Añádelo y también podrás abrirlo por voz.</span><button class="ghost" id="app-add">${ic("plus")} Añadir app</button></div>`,
-  mount(el, host) {
-    const search = el.querySelector<HTMLInputElement>("#app-search")!;
-    const open = async (id: string) => {
-      try {
-        await call("app_launch", { id });
-        host.close();
-      } catch (error) {
-        host.say(String(error));
-      }
-    };
-    search.addEventListener("pointerdown", () => host.focus(search));
-    search.addEventListener("input", () => paintApps(el, search.value));
-    search.addEventListener("keydown", (e) => {
-      const first = el.querySelector<HTMLElement>(".app");
-      if (e.key === "Enter" && first) void open(first.dataset.app!);
-    });
-    el.querySelector("#app-list")!.addEventListener("click", async (e) => {
-      const target = e.target as HTMLElement;
-      const row = target.closest<HTMLElement>("[data-app]");
-      if (!row) return;
-      if (target.closest("[data-remove]")) {
-        await call("app_remove", { id: row.dataset.app });
-        apps = apps.filter((a) => a.id !== row.dataset.app);
-        paintApps(el, search.value);
-      } else void open(row.dataset.app!);
-    });
-    el.querySelector("#app-add")!.addEventListener("click", async () => {
-      const added = await call<AppEntry | null>("app_add", undefined, null);
-      if (!added) return;
-      apps = [added, ...apps.filter((a) => a.id !== added.id)];
-      paintApps(el, search.value);
-      host.say(`«${added.name}» añadida. Ya puedes abrirla por voz.`);
-    });
-  },
-  async show(el) {
-    if (!apps.length) el.querySelector("#app-list")!.innerHTML = `<small class="empty">Buscando tus apps…</small>`;
-    apps = await call<AppEntry[]>("apps_list", undefined, []);
-    paintApps(el, el.querySelector<HTMLInputElement>("#app-search")!.value);
-  },
-  hide: () => iconWatcher?.disconnect(),
-};
-
-const ANIMATED = /\.(mp4|webm|mkv|mov|gif)$/i;
-let walls: string[] = [];
-let wallIndex = 0;
 /** El número junto al deslizador de la barra, y su relleno. */
 function extensionUrl(path: string) {
   return /^https?:\/\//.test(path) ? path : convertFileSrc(path);
@@ -817,183 +44,6 @@ function paintAmount(el: HTMLElement, value: number) {
   el.querySelector<HTMLElement>("#s-bar-amount")!.style.setProperty("--p", `${value}%`);
 }
 
-let wallScreen: string | null = null;
-
-async function paintScreens(el: HTMLElement) {
-  const screens = await call<{ id: string; number: number; main: boolean; live: string | null }[]>("screens_list", undefined, []);
-  if (wallScreen && !screens.some((screen) => screen.id === wallScreen)) wallScreen = null;
-  const box = el.querySelector<HTMLElement>("#wall-screens")!;
-  box.hidden = screens.length < 2;
-  el.querySelector<HTMLElement>("#wall-info")!.hidden = screens.length > 1;
-  box.innerHTML = [`<button class="chip${wallScreen === null ? " on" : ""}" data-screen="">Todos</button>`]
-    .concat(
-      screens.map(
-        (screen, i) =>
-          `<button class="chip${wallScreen === screen.id ? " on" : ""}" data-screen="${esc(screen.id)}" title="${screen.main ? "Monitor principal" : ""}">Monitor ${screen.number || i + 1}</button>`,
-      ),
-    )
-    .join("");
-  const shown = wallScreen ? screens.filter((screen) => screen.id === wallScreen) : screens;
-  el.querySelector<HTMLElement>("#wall-stop")!.hidden = !shown.some((screen) => screen.live);
-}
-const thumbs = new Map<string, string>();
-
-function paintWalls(el: HTMLElement) {
-  const stage = el.querySelector<HTMLElement>("#wall")!;
-  if (!walls.length) {
-    stage.innerHTML = `<small class="empty">No hay imágenes en esta carpeta. Elige otra con el botón de arriba.</small>`;
-    return;
-  }
-  if (stage.children.length !== walls.length || stage.querySelector(".empty")) {
-    stage.innerHTML = walls
-      .map((path, i) => `<button class="wcard ${ANIMATED.test(path) ? "live" : ""}" data-wall="${i}"></button>`)
-      .join("");
-  }
-  [...stage.children].forEach((node, i) => {
-    const card = node as HTMLElement;
-    const slot = i - wallIndex;
-    card.dataset.slot = String(Math.max(-3, Math.min(3, slot)));
-    if (Math.abs(slot) > 3) return;
-    const path = walls[i];
-    const cached = thumbs.get(path);
-    if (cached) card.style.backgroundImage = `url(${cached})`;
-    else if (!thumbs.has(path)) {
-      thumbs.set(path, "");
-      void call<string | null>("wallpaper_thumb", { path }, null).then((src) => {
-        if (!src) return;
-        thumbs.set(path, src);
-        card.style.backgroundImage = `url(${src})`;
-      });
-    }
-  });
-}
-
-const fondos: Page = {
-  id: "fondos",
-  label: "Fondos",
-  w: 860,
-  h: 250,
-  html: () =>
-    `<div class="chips"><span class="screens" id="wall-screens" hidden></span><button class="chip" id="wall-dir">${ic("folder")} Cambiar carpeta</button><button class="chip" id="wall-find">${ic("search")} Buscar fondos</button><button class="chip" id="wall-stop" hidden>Quitar fondo animado</button><small id="wall-info"></small></div>
-     <div class="wall" id="wall"></div>`,
-  mount(el, host) {
-    const stage = el.querySelector<HTMLElement>("#wall")!;
-    stage.addEventListener("click", async (e) => {
-      const card = (e.target as HTMLElement).closest<HTMLElement>("[data-wall]");
-      if (!card) return;
-      const index = Number(card.dataset.wall);
-      if (index !== wallIndex) {
-        wallIndex = index;
-        return paintWalls(el);
-      }
-      try {
-        const path = walls[index];
-        if (ANIMATED.test(path)) {
-          await call("live_wallpaper_set", { path, screen: wallScreen });
-          host.say("Fondo animado puesto. Se pausa solo cuando una ventana lo tapa.");
-        } else {
-          await call("live_wallpaper_set", { path: null, screen: wallScreen });
-          await call("wallpaper_set", { path, screen: wallScreen });
-          host.say("Fondo cambiado.");
-        }
-        await paintScreens(el);
-      } catch (error) {
-        host.say(String(error));
-      }
-    });
-    stage.addEventListener(
-      "wheel",
-      (e) => {
-        wallIndex = Math.max(0, Math.min(walls.length - 1, wallIndex + Math.sign(e.deltaY || e.deltaX)));
-        paintWalls(el);
-      },
-      { passive: true },
-    );
-    el.querySelector("#wall-screens")!.addEventListener("click", (e) => {
-      const chip = (e.target as HTMLElement).closest<HTMLElement>("[data-screen]");
-      if (!chip) return;
-      wallScreen = chip.dataset.screen || null;
-      void paintScreens(el);
-    });
-    el.querySelector("#wall-stop")!.addEventListener("click", async () => {
-      await call("live_wallpaper_set", { path: null, screen: wallScreen });
-      host.say("Fondo animado quitado.");
-      await fondos.show!(el, host);
-    });
-    el.querySelector("#wall-find")!.addEventListener("click", async () => {
-      try {
-        await call("wallpaper_browse");
-        host.say("Descarga un fondo en la página que se abrió: Cocuyo lo pone solo.");
-      } catch (error) {
-        host.say(String(error));
-      }
-    });
-    on("wallpaper-caught", () => {
-      wallIndex = 0;
-      void fondos.show!(el, host);
-    });
-    el.querySelector("#wall-dir")!.addEventListener("click", async () => {
-      if (await call<string | null>("wallpaper_pick_dir", undefined, null)) await fondos.show!(el, host);
-    });
-  },
-  async show(el) {
-    const found = await call<{ dir: string; files: string[] } | null>("wallpapers_list", undefined, null);
-    walls = found?.files ?? [];
-    wallIndex = Math.min(wallIndex, Math.max(0, walls.length - 1));
-    await paintScreens(el);
-    el.querySelector("#wall-info")!.textContent = found
-      ? `${found.dir} · ${walls.length} fondos · toca el del centro para ponerlo`
-      : "";
-    paintWalls(el);
-  },
-};
-
-const POWER: [string, string, string, boolean][] = [
-  ["lock", "lock", "Bloquear", false],
-  ["moon", "sleep", "Suspender", true],
-  ["restart", "restart", "Reiniciar", true],
-  ["power", "shutdown", "Apagar", true],
-];
-
-const energia: Page = {
-  id: "energia",
-  label: "Energía",
-  w: 660,
-  h: 172,
-  html: () =>
-    POWER.map(
-      ([icon, action, label]) => `<button class="power" data-power="${action}"><span class="ti">${ic(icon)}</span><span>${label}</span></button>`,
-    ).join(""),
-  mount(el, host) {
-    for (const button of el.querySelectorAll<HTMLElement>("[data-power]")) {
-      const [, action, label, confirm] = POWER.find((p) => p[1] === button.dataset.power)!;
-      const text = button.querySelector("span:last-child")!;
-      let armed = 0;
-      let armedAt = 0;
-      button.addEventListener("click", (e) => {
-        if (!e.isTrusted || e.detail === 0) return;
-        if (confirm && !armed) {
-          button.classList.add("armed");
-          text.textContent = "Toca otra vez";
-          armedAt = performance.now();
-          armed = window.setTimeout(() => {
-            armed = 0;
-            button.classList.remove("armed");
-            text.textContent = label;
-          }, 3000);
-          return;
-        }
-        if (confirm && performance.now() - armedAt < 600) return;
-        clearTimeout(armed);
-        armed = 0;
-        button.classList.remove("armed");
-        text.textContent = label;
-        host.close();
-        void call("power", { action });
-      });
-    }
-  },
-};
 
 type ChordKey = "dictationKeys" | "commandKeys" | "lassoKeys";
 type HotkeyKey = "captureRegion" | "captureWindow" | "captureScreen" | "captureRecord" | "captureReplay";
@@ -1058,7 +108,7 @@ const modelsOf = (field: string) => field.split(/[,;\n]/).map((name) => name.tri
 const keyRow = (key: KeysKey, title: string, sub: string) =>
   `<div class="srow slim" data-keys="${key}"><div><b>${title}</b><small>${sub}</small><small class="taken">Otra app ya usa este atajo</small></div><span class="chord"></span><button class="ghost">Cambiar</button></div>`;
 
-const AI_PRESETS: [string, Settings["aiFormat"], string, string, "local" | "gratis" | "pago"][] = [
+const AI_PRESETS: [string, Settings["aiFormat"], string, string, "local" | "gratis" | "pago" | "plan"][] = [
   ["Gemini", "openai", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-3.5-flash-lite, gemini-3.1-flash-lite", "gratis"],
   ["Groq", "openai", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", "gratis"],
   ["Ollama", "openai", "http://127.0.0.1:11434/v1", "llama3.2", "local"],
@@ -1067,12 +117,14 @@ const AI_PRESETS: [string, Settings["aiFormat"], string, string, "local" | "grat
   ["OpenAI", "openai", "https://api.openai.com/v1", "gpt-4o-mini", "pago"],
   ["DeepSeek", "openai", "https://api.deepseek.com/v1", "deepseek-chat", "pago"],
   ["Anthropic", "anthropic", "https://api.anthropic.com/v1", "claude-haiku-5-5", "pago"],
+  ["Tu Claude", "openai", "claude://suscripcion", "haiku", "plan"],
 ];
 
 const AI_KIND_NOTE = {
   local: "Corre en tu equipo, gratis y sin clave. Tiene que estar abierto y con un modelo descargado.",
   gratis: "Tiene plan gratis. Crea tu clave con «Conseguir clave», pégala en el campo Clave y pulsa Probar.",
   pago: "De pago: necesita la clave de tu cuenta con ese proveedor.",
+  plan: "Usa el Claude Code que ya tienes con tu suscripción, sin clave. Tarda unos segundos en arrancar y gasta del mismo límite de 5 horas con el que programas. Corre en una carpeta vacía y sin herramientas.",
 };
 
 function permissions(tipo: string, permisos: Permiso[] | null) {
@@ -1086,6 +138,7 @@ function permissions(tipo: string, permisos: Permiso[] | null) {
 
 function outgoing(s: Settings) {
   if (!s.aiOn) return "Nada: sin IA, tu voz y tus capturas se quedan aquí. Todo se entiende en tu PC.";
+  if (s.aiUrl.startsWith("claude:")) return "Lo que digas va como texto a Anthropic por tu Claude Code, con tu cuenta. Las capturas no salen: tu Claude no las recibe desde Cocuyo.";
   let host = "";
   try {
     host = new URL(s.aiUrl).hostname;
@@ -1094,8 +147,8 @@ function outgoing(s: Settings) {
   }
   if (/^(127\.0\.0\.1|localhost|\[::1\])$/.test(host)) return "Nada: tu modelo corre en este PC, así que tu voz y tus capturas no salen de aquí.";
   if (host.endsWith("googleapis.com"))
-    return "Lo que digas y las capturas que le pidas mirar van a Google. En el plan gratis de Gemini, Google puede usarlos para mejorar sus productos.";
-  return `Lo que digas y las capturas que le pidas mirar van a ${host}. Qué hace con ellos depende de sus condiciones.`;
+    return "Lo que digas, las capturas que le pidas mirar y, si preguntas por «esto», el título de la ventana de enfrente van a Google. En el plan gratis de Gemini, Google puede usarlos para mejorar sus productos.";
+  return `Lo que digas, las capturas que le pidas mirar y, si preguntas por «esto», el título de la ventana de enfrente van a ${host}. Qué hace con ellos depende de sus condiciones.`;
 }
 
 const SECTIONS: [string, string][] = [
@@ -1150,7 +203,11 @@ class SettingsPage implements Page {
     if (section === "extensiones") void this.paintExtensions();
     if (section === "agente") void this.paintMcp();
     if (section === "remoto") void this.paintRemote();
-    if (section === "voz") void this.paintMics();
+    if (section === "voz") {
+      void this.paintMics();
+      void this.paintApps();
+      void this.paintHeard();
+    }
     for (const node of this.el.querySelectorAll<HTMLElement>("[data-sec]")) node.classList.toggle("on", node.dataset.sec === section);
     if (section === "capturas") void this.paintRec();
     const measure = () => {
@@ -1179,7 +236,7 @@ class SettingsPage implements Page {
   html() {
     const section = (id: string, cards: string, wide = false) =>
       `<section class="ssec${wide ? " one" : ""}" data-sec="${id}">${cards}</section>`;
-    return `<nav class="snav" id="s-nav">${SECTIONS.map(([id, label]) => `<button data-sec="${id}">${label}</button>`).join("")}</nav>
+    return `<nav class="snav" id="s-nav"><input id="s-find" class="s-find" placeholder="Buscar" spellcheck="false" autocomplete="off" />${SECTIONS.map(([id, label]) => `<button data-sec="${id}">${label}</button>`).join("")}</nav>
       <div class="ssecs">${
         section(
           "tu",
@@ -1212,6 +269,9 @@ class SettingsPage implements Page {
                <div><b>Dónde vive la isla</b><small id="s-dock-help"></small></div>
                <div class="segmented" id="s-dock"><span class="thumb"></span><button data-value="auto">Automática</button><button data-value="top">Arriba</button><button data-value="right">Derecha</button></div>
              </div>
+             <div class="srow stack"><div><b>Su color</b><small>El de los botones prendidos, el saludo y los detalles de la isla.</small></div><div class="srow chips flat swatches" id="s-accent"><button class="swatch" data-accent="" style="--c:#f2b84b" aria-label="Ámbar" title="Ámbar"></button><button class="swatch" data-accent="#34d399" style="--c:#34d399" aria-label="Verde" title="Verde"></button><button class="swatch" data-accent="#5cb8ff" style="--c:#5cb8ff" aria-label="Azul" title="Azul"></button><button class="swatch" data-accent="#a78bfa" style="--c:#a78bfa" aria-label="Violeta" title="Violeta"></button><button class="swatch" data-accent="#f472b6" style="--c:#f472b6" aria-label="Rosa" title="Rosa"></button><button class="swatch" data-accent="#f4505e" style="--c:#f4505e" aria-label="Rojo" title="Rojo"></button></div></div>
+             <div class="srow slim"><div><b>Tus sonidos</b><small>Pon un .wav con el nombre de un aviso en esta carpeta y Cocuyo suena con el tuyo.</small></div><button class="ghost" id="s-sounds">Abrir carpeta</button></div>
+             <div class="srow slim"><div><b>Diagnóstico</b><small>Copia la versión, tu Windows y los últimos errores, sin tus claves, para pegarlo en un issue.</small></div><button class="ghost" id="s-diag">Copiar</button></div>
            </div>
            <div class="card">
              <label class="srow"><div><b>Esconderla a pantalla completa</b><small>Desaparece mientras juegas o ves un video.</small></div><input type="checkbox" class="switch" id="s-hide"></label>
@@ -1245,7 +305,8 @@ class SettingsPage implements Page {
         ) +
         section(
           "voz",
-          `<div class="card">
+          `<div class="scol">
+           <div class="card">
              <div class="srow stack">
                <div><b>Idioma</b><small>El de la interfaz, el que guía a la voz para que no transcriba en otro, y en el que responde.</small></div>
                <div class="segmented" id="s-lang"><span class="thumb"></span><button data-value="es">Español</button><button data-value="en">English</button><button data-value="pt">Português</button></div>
@@ -1260,11 +321,31 @@ class SettingsPage implements Page {
              </div>
            </div>
            <div class="card">
+             <label class="srow"><div><b>Manos libres</b><small>Toca dos veces las teclas de dictar y habla sin sostenerlas. Tócalas otra vez para pegar; Esc cancela.</small></div><input type="checkbox" class="switch" id="s-hands"></label>
+             <div class="srow stack">
+               <div><b>Cómo queda lo que dictas</b><small id="s-style-help">Natural quita titubeos y pone la puntuación; Pulido además lo deja bien redactado. Los dos necesitan un modelo de IA.</small></div>
+               <div class="segmented" id="s-style"><span class="thumb"></span><button data-value="tal">Tal cual</button><button data-value="natural">Natural</button><button data-value="pulido">Pulido</button></div>
+             </div>
+             <div class="srow stack"><div><b>En cada app</b><small id="s-apps-help">Las apps donde has dictado. Toca una para cambiarle el estilo.</small></div><div class="srow chips flat" id="s-apps"></div></div>
+           </div>
+           <div class="card">
+             <div class="srow stack"><div><b>Lo último que oí</b><small>Las últimas 20 órdenes y lo que respondió. Solo en memoria: se borra al cerrar Cocuyo.</small></div><div class="heard-list" id="s-heard"></div></div>
+           </div>
+           </div>
+           <div class="scol">
+           <div class="card">
              <label class="srow"><div><b>Conversación en vivo</b><small>Con Gemini, Cocuyo te va escuchando mientras hablas y contesta con voz al instante, como en una llamada. Usa las mismas herramientas: música, apps, mensajes, el mouse. Gratis con tu clave.</small></div><input type="checkbox" class="switch" id="s-live"></label>
              <div class="srow stack"><div><b>Su voz</b><small>Las voces en vivo de Gemini.</small></div><div class="srow chips flat" id="s-live-voice"></div></div>
              <div class="srow"><div><b>Voz local</b><small id="s-voice"></small></div><button class="ghost" id="s-voice-get">Descargar</button></div>
              <div class="bar" id="s-voice-bar"><i></i></div>
              <div class="srow stack"><div><b>Micrófono</b><small id="s-mic-help">El que usa Cocuyo para oírte. Si no te escucha, prueba con otro.</small></div><div class="srow chips flat" id="s-mic"></div></div>
+           </div>
+           <div class="card">
+             <div class="srow stack"><div><b>Palabras que siempre escribe bien</b><small>Nombres y palabras raras: quedan con estas letras exactas. Toca una para editarla.</small></div><div class="srow chips flat" id="s-words"></div></div>
+             <div class="srow slim"><input id="s-word" placeholder="Escribe una y pulsa Enter" spellcheck="false" autocomplete="off" /></div>
+             <div class="srow stack"><div><b>Cuando digas…</b><small>…escribe otra cosa: dices «mi correo» y pega tu correo; dices «cloud code» y queda Claude Code. Toca uno para editarlo.</small></div><div class="srow chips flat" id="s-snips"></div></div>
+             <div class="srow slim pair"><input id="s-snip-said" placeholder="Lo que dices" spellcheck="false" autocomplete="off" /><input id="s-snip-text" placeholder="Lo que escribe" spellcheck="false" autocomplete="off" /><button class="ghost" id="s-snip-add">Añadir</button></div>
+           </div>
            </div>`,
         ) +
         section(
@@ -1459,7 +540,7 @@ class SettingsPage implements Page {
     for (const button of el.querySelectorAll<HTMLElement>("#s-lang button")) {
       button.addEventListener("click", () => this.save({ language: button.dataset.value as Settings["language"] }));
     }
-    const toggle = (sel: string, key: "hideOnFullscreen" | "askWhere" | "copyToClipboard" | "autostart" | "cueFullscreen" | "speakFullscreen" | "gameOverlay" | "aiOn" | "aiDictation" | "aiHear" | "padOn" | "checkUpdates" | "countMe" | "barCenter" | "barSolidMax" | "extensionsOn" | "aiAgent" | "agentHands" | "agentConfirm" | "aiLive" | "remoteOn") => {
+    const toggle = (sel: string, key: "hideOnFullscreen" | "askWhere" | "copyToClipboard" | "autostart" | "cueFullscreen" | "speakFullscreen" | "gameOverlay" | "aiOn" | "aiDictation" | "aiHear" | "padOn" | "checkUpdates" | "countMe" | "barCenter" | "barSolidMax" | "extensionsOn" | "aiAgent" | "agentHands" | "agentConfirm" | "aiLive" | "remoteOn" | "handsFree") => {
       const input = q<HTMLInputElement>(sel);
       input.addEventListener("change", () => {
         const change: Partial<Settings> = {};
@@ -1587,6 +668,83 @@ class SettingsPage implements Page {
     for (const button of el.querySelectorAll<HTMLElement>("#s-into button")) {
       button.addEventListener("click", () => this.save({ dictationInto: button.dataset.value ?? "" }));
     }
+    toggle("#s-hands", "handsFree");
+    const finder = q<HTMLInputElement>("#s-find");
+    finder.addEventListener("pointerdown", () => host.focus(finder));
+    finder.addEventListener("input", () => this.find(finder.value, false));
+    finder.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") this.find(finder.value, true);
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        finder.value = "";
+        this.find("", false);
+      }
+    });
+    q("#s-accent").addEventListener("click", (e) => {
+      const target = (e.target as HTMLElement).closest<HTMLElement>("[data-accent]");
+      if (target) void this.save({ accent: target.dataset.accent ?? "" });
+    });
+    q("#s-sounds").addEventListener("click", () => void call("open_sounds_dir").catch((error) => this.note(String(error))));
+    q("#s-diag").addEventListener("click", () => void call<string>("diagnostico").then(() => this.note("Copiado. Pégalo en un issue de GitHub.")));
+    for (const button of el.querySelectorAll<HTMLElement>("#s-style button")) {
+      button.addEventListener("click", () => {
+        const value = button.dataset.value ?? "natural";
+        void this.save(value === "tal" ? { aiDictation: false } : { aiDictation: true, dictationStyle: value });
+      });
+    }
+    q("#s-apps").addEventListener("click", async (e) => {
+      const target = (e.target as HTMLElement).closest<HTMLElement>("[data-app]");
+      if (!target || !this.settings) return;
+      const app = target.dataset.app ?? "";
+      const now = target.dataset.style ?? "";
+      const next = STYLES[(STYLES.indexOf(now) + 1) % STYLES.length];
+      const others = this.settings.dictationStyles.filter((s) => s.app !== app);
+      const styles = next ? [...others, { app, name: target.dataset.name ?? app, style: next }] : others;
+      await this.save({ dictationStyles: styles });
+      void this.paintApps();
+    });
+    const word = q<HTMLInputElement>("#s-word");
+    word.addEventListener("pointerdown", () => host.focus(word));
+    word.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" || !this.settings) return;
+      const value = word.value.trim();
+      if (!value) return;
+      word.value = "";
+      const words = this.settings.dictationWords.filter((w) => w.toLowerCase() !== value.toLowerCase());
+      void this.save({ dictationWords: [...words, value] });
+    });
+    q("#s-words").addEventListener("click", (e) => {
+      const target = (e.target as HTMLElement).closest<HTMLElement>("[data-word]");
+      if (!target || !this.settings) return;
+      word.value = target.dataset.word ?? "";
+      host.focus(word);
+      void this.save({ dictationWords: this.settings.dictationWords.filter((w) => w !== target.dataset.word) });
+    });
+    const said = q<HTMLInputElement>("#s-snip-said");
+    const writes = q<HTMLInputElement>("#s-snip-text");
+    for (const input of [said, writes]) input.addEventListener("pointerdown", () => host.focus(input));
+    const addSnip = () => {
+      if (!this.settings) return;
+      const [s, t] = [said.value.trim(), writes.value.trim()];
+      if (!s || !t) return this.note(s ? "Escribe lo que va a quedar." : "Escribe lo que vas a decir.");
+      said.value = writes.value = "";
+      const others = this.settings.dictationSnippets.filter((x) => x.said.toLowerCase() !== s.toLowerCase());
+      void this.save({ dictationSnippets: [...others, { said: s, text: t }] });
+      host.focus(said);
+    };
+    q("#s-snip-add").addEventListener("click", addSnip);
+    writes.addEventListener("keydown", (e) => e.key === "Enter" && addSnip());
+    said.addEventListener("keydown", (e) => e.key === "Enter" && host.focus(writes));
+    q("#s-snips").addEventListener("click", (e) => {
+      const target = (e.target as HTMLElement).closest<HTMLElement>("[data-snip]");
+      if (!target || !this.settings) return;
+      const snip = this.settings.dictationSnippets[Number(target.dataset.snip)];
+      if (!snip) return;
+      said.value = snip.said;
+      writes.value = snip.text;
+      host.focus(writes);
+      void this.save({ dictationSnippets: this.settings.dictationSnippets.filter((x) => x !== snip) });
+    });
     q("#s-update-go").addEventListener("click", async () => {
       const line = q("#s-update");
       const button = q<HTMLButtonElement>("#s-update-go");
@@ -2109,7 +1267,33 @@ class SettingsPage implements Page {
     });
   }
 
-  private async save(change: Partial<Settings>) {
+  private saving: Promise<void> = Promise.resolve();
+
+  private save(change: Partial<Settings>) {
+    this.saving = this.saving.then(() => this.saveNow(change));
+    return this.saving;
+  }
+
+  private find(query: string, go: boolean) {
+    const fold = (text: string) => text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const words = fold(query).split(/\s+/).filter(Boolean);
+    const sections = [...this.el.querySelectorAll<HTMLElement>(".ssec[data-sec]")];
+    let first: HTMLElement | null = null;
+    for (const sec of sections) {
+      const rows = [...sec.querySelectorAll<HTMLElement>(".srow")].filter((row) => words.length && words.every((w) => fold(row.textContent ?? "").includes(w)));
+      this.el.querySelector(`#s-nav [data-sec="${sec.dataset.sec}"]`)?.classList.toggle("miss", !!words.length && !rows.length);
+      if (!first && rows.length) first = rows[0];
+    }
+    if (!go || !first) return;
+    const sec = first.closest<HTMLElement>(".ssec")!;
+    this.open(sec.dataset.sec!);
+    first.scrollIntoView({ block: "center" });
+    first.classList.remove("found");
+    void first.offsetWidth;
+    first.classList.add("found");
+  }
+
+  private async saveNow(change: Partial<Settings>) {
     if (!this.settings) return;
     const next = { ...this.settings, ...change };
     try {
@@ -2264,7 +1448,7 @@ class SettingsPage implements Page {
   private guilds: { id: string; nombre: string }[] = [];
 
   private async loadGuilds() {
-    this.guilds = await call<{ id: string; nombre: string }[]>("discord_servidores", undefined, []);
+    this.guilds = await call<{ id: string; nombre: string }[]>("discord_servidores", undefined, []).catch(() => []);
     this.paintGuilds();
   }
 
@@ -2282,6 +1466,25 @@ class SettingsPage implements Page {
       : picked
         ? `Si no dices el servidor y no estás en una llamada, busco los canales en «${picked.nombre}».`
         : "Ninguno: busco en el de la llamada en la que estés y, si no, en el último donde estuviste.";
+  }
+
+  private async paintHeard() {
+    const lines = await call<{ said: string; reply: string; secs: number }[]>("voz_historial", undefined, []);
+    const ago = (secs: number) => (secs < 60 ? tr("ahora") : secs < 3600 ? `${Math.floor(secs / 60)} min` : `${Math.floor(secs / 3600)} h`);
+    this.el.querySelector("#s-heard")!.innerHTML = lines.length
+      ? lines.map((l) => `<div class="heard"><span class="said">«${esc(l.said)}»</span><span class="reply">${esc(l.reply)}</span><i>${esc(ago(l.secs))}</i></div>`).join("")
+      : `<small class="empty-line">${tr("Nada todavía. Dale una orden y aparece aquí.")}</small>`;
+  }
+
+  private async paintApps() {
+    const apps = await call<{ app: string; name: string; style: string }[]>("dictation_apps", undefined, []);
+    const label = (style: string) => tr(STYLE_NAMES[style] ?? STYLE_NAMES[""]);
+    this.el.querySelector("#s-apps")!.innerHTML = apps
+      .map((a) => `<button class="chip${a.style ? " on" : ""}" data-app="${esc(a.app)}" data-name="${esc(a.name)}" data-style="${esc(a.style)}"><span>${esc(a.name)}</span> · <span>${esc(label(a.style))}</span></button>`)
+      .join("");
+    this.el.querySelector("#s-apps-help")!.textContent = apps.length
+      ? "Las apps donde has dictado. Toca una para cambiarle el estilo."
+      : "Dicta en alguna app y aparece aquí para darle su propio estilo.";
   }
 
   private async paintMics() {
@@ -2459,7 +1662,7 @@ class SettingsPage implements Page {
   private async paintAi() {
     const saved = await call<boolean>("ai_key_saved", undefined, false);
     this.el.querySelector<HTMLInputElement>("#s-ai-key")!.placeholder = saved ? "Clave guardada" : "Clave (opcional)";
-    const local = /127\.0\.0\.1|localhost/.test(this.settings?.aiUrl ?? "");
+    const local = /127\.0\.0\.1|localhost|^claude:/.test(this.settings?.aiUrl ?? "");
     this.el.querySelector<HTMLElement>("#s-ai-getkey")!.hidden = saved || local;
     if (!this.tested) {
       const [used, budget] = await call<[number, number]>("ai_budget", undefined, [0, 0]);
@@ -2608,6 +1811,34 @@ class SettingsPage implements Page {
     void this.paintMemory();
     q<HTMLInputElement>("#s-ai").checked = s.aiOn;
     q<HTMLInputElement>("#s-ai-polish").checked = s.aiDictation;
+    q<HTMLInputElement>("#s-hands").checked = s.handsFree;
+    for (const swatch of this.el.querySelectorAll<HTMLElement>("#s-accent [data-accent]")) swatch.classList.toggle("on", swatch.dataset.accent === s.accent);
+    const root = document.documentElement.style;
+    const picked = root.getPropertyValue("--accent");
+    root.removeProperty("--accent");
+    const base = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+    if (picked) root.setProperty("--accent", picked);
+    const first = q<HTMLElement>('#s-accent [data-accent=""]');
+    first.style.setProperty("--c", base);
+    first.title = tr(base === "#f2b84b" ? "Ámbar" : "Original");
+    first.setAttribute("aria-label", first.title);
+    const style = q("#s-style");
+    const styleNow = s.aiDictation ? (s.dictationStyle === "pulido" ? "pulido" : "natural") : "tal";
+    [...style.querySelectorAll<HTMLElement>("button")].forEach((button, i) => {
+      const active = button.dataset.value === styleNow;
+      button.classList.toggle("on", active);
+      if (active) style.style.setProperty("--i", String(i));
+    });
+    style.classList.toggle("off", !s.aiOn);
+    q("#s-style-help").textContent = s.aiOn
+      ? "Natural quita titubeos y pone la puntuación; Pulido además lo deja bien redactado. Los dos necesitan un modelo de IA."
+      : "Sin un modelo de IA queda tal cual. Conecta uno en Ajustes → IA para Natural y Pulido.";
+    q("#s-words").innerHTML = s.dictationWords.length
+      ? s.dictationWords.map((w) => `<button class="chip" data-word="${esc(w)}">${esc(w)}</button>`).join("")
+      : `<small class="empty-line">${tr("Ninguna todavía.")}</small>`;
+    q("#s-snips").innerHTML = s.dictationSnippets.length
+      ? s.dictationSnippets.map((x, i) => `<button class="chip snip" data-snip="${i}"><span>${esc(x.said)}</span><i>→</i><span>${esc(x.text)}</span></button>`).join("")
+      : `<small class="empty-line">${tr("Ninguno todavía.")}</small>`;
     q<HTMLInputElement>("#s-ai-hear").checked = s.aiHear;
     if (document.activeElement !== q("#s-ai-persona")) q<HTMLInputElement>("#s-ai-persona").value = s.aiPersona;
     for (const [sel, value] of [["#s-ai-url", s.aiUrl], ["#s-ai-model", s.aiModel]] as const) {
@@ -2663,177 +1894,7 @@ class SettingsPage implements Page {
 }
 
 export const settingsPage = new SettingsPage();
-
-interface DiscordPerson {
-  id: string;
-  nombre: string;
-  silenciado: boolean;
-  ensordecido: boolean;
-  volumen: number;
-  tu: boolean;
-  callado: boolean;
-}
-
-interface DiscordPanel {
-  mute: boolean;
-  deaf: boolean;
-  entrada: number;
-  salida: number;
-  ruido: boolean;
-  eco: boolean;
-  pulsar: boolean;
-  canal: string | null;
-  servidor: string;
-  gente: DiscordPerson[];
-}
-
-let discordTimer = 0;
-let discordBusy = false;
-let discordDragging = false;
-
-const DISCORD_TILES: [string, string, string][] = [
-  ["d-mute", "mic", "Micrófono"],
-  ["d-deaf", "headset", "Ensordecer"],
-  ["d-leave", "leave", "Salir del canal"],
-  ["d-ruido", "wave", "Supresión de ruido"],
-  ["d-eco", "echo", "Cancelar eco"],
-  ["d-pulsar", "hand", "Pulsar para hablar"],
-];
-
-function paintDiscord(el: HTMLElement, panel: DiscordPanel | null, problem = "") {
-  const q = (id: string) => el.querySelector<HTMLElement>(`#${id}`)!;
-  el.classList.toggle("off", !panel);
-  const state = (id: string, on: boolean, yes: string, no: string) => {
-    q(id).classList.toggle("on", on);
-    q(id).querySelector("small")!.textContent = tr(on ? yes : no);
-  };
-  if (!panel) {
-    for (const [id] of DISCORD_TILES) q(id).querySelector("small")!.textContent = "";
-    q("d-chan").textContent = tr(problem || "Discord no está abierto.");
-    q("d-guild").textContent = tr("Ábrelo y aquí verás tu canal.");
-    q("d-people").innerHTML = "";
-    return;
-  }
-  state("d-mute", panel.mute, "Silenciado", "Activo");
-  state("d-deaf", panel.deaf, "Activado", "Apagado");
-  state("d-ruido", panel.ruido, "Activada", "Apagada");
-  state("d-eco", panel.eco, "Activada", "Apagada");
-  state("d-pulsar", panel.pulsar, "Activado", "Detecta tu voz");
-  q("d-leave").classList.toggle("dim", !panel.canal);
-  q("d-leave").querySelector("small")!.textContent = panel.canal ? panel.canal : tr("No estás en un canal");
-  if (!discordDragging) {
-    setSlider(q("d-in"), panel.entrada / 100, panel.entrada);
-    setSlider(q("d-out"), Math.min(1, panel.salida / 200), panel.salida);
-  }
-  q("d-chan").textContent = panel.canal ?? tr("No estás en un canal de voz");
-  q("d-guild").textContent = panel.canal ? panel.servidor : tr("Dile «métete al canal General».");
-  q("d-people").innerHTML = panel.gente
-    .map((p) => {
-      const status = p.ensordecido ? "Ensordecido" : p.silenciado ? "Silenciado" : p.callado ? "Silenciado para ti" : "";
-      const name = p.tu ? `${esc(p.nombre)} <i>${tr("(tú)")}</i>` : esc(p.nombre);
-      const level = p.tu ? "" : `<em>${Math.round(p.volumen)} %</em>`;
-      return `<button class="dp${p.callado ? " quiet" : ""}${p.tu ? " me" : ""}" data-person="${esc(p.id)}" data-level="${p.volumen}"><b>${name}</b><small>${tr(status)}</small>${level}</button>`;
-    })
-    .join("");
-}
-
-function setSlider(slider: HTMLElement, share: number, value: number) {
-  slider.style.setProperty("--v", String(Math.min(1, Math.max(0, share))));
-  slider.querySelector("em")!.textContent = String(Math.round(value));
-}
-
-async function refreshDiscord(el: HTMLElement) {
-  if (discordBusy) return;
-  discordBusy = true;
-  try {
-    paintDiscord(el, await call<DiscordPanel | null>("discord_panel"));
-  } catch (error) {
-    paintDiscord(el, null, String(error));
-  }
-  discordBusy = false;
-}
-
-async function discordDo(el: HTMLElement, host: Host, accion: string, valor?: number, quien?: string) {
-  try {
-    paintDiscord(el, await call<DiscordPanel>("discord_hacer", { accion, valor: valor ?? null, quien: quien ?? null }));
-  } catch (error) {
-    host.say(String(error));
-  }
-}
-
-export const discordPage: Page = {
-  id: "discord",
-  label: "Discord",
-  w: 700,
-  h: 260,
-  html: () =>
-    DISCORD_TILES.map(([id, icon, title]) => `<button class="tile" id="${id}"><span class="ti">${ic(icon)}</span><span><b>${title}</b><small></small></span></button>`).join("") +
-    `<div class="vslider" id="d-in" title="Tu micrófono en Discord"><span class="fill"></span><em></em>${ic("mic")}</div>
-     <div class="vslider" id="d-out" title="Volumen de Discord"><span class="fill"></span><em></em>${ic("volume")}</div>
-     <div class="card dcard">
-       <span class="lbl">Discord</span>
-       <b id="d-chan"></b>
-       <small id="d-guild"></small>
-       <div class="dpeople" id="d-people"></div>
-     </div>`,
-  mount(el, host) {
-    const tiles: [string, string][] = [["d-mute", "mute"], ["d-deaf", "deaf"], ["d-leave", "salir"], ["d-ruido", "ruido"], ["d-eco", "eco"], ["d-pulsar", "pulsar"]];
-    for (const [id, accion] of tiles) el.querySelector(`#${id}`)!.addEventListener("click", () => void discordDo(el, host, accion));
-    for (const [id, accion, top] of [["d-in", "entrada", 100], ["d-out", "salida", 200]] as [string, string, number][]) {
-      const slider = el.querySelector<HTMLElement>(`#${id}`)!;
-      let last = 0;
-      const level = (e: PointerEvent) => {
-        const r = slider.getBoundingClientRect();
-        return Math.min(1, Math.max(0, 1 - (e.clientY - r.top) / r.height));
-      };
-      const drag = (e: PointerEvent, final: boolean) => {
-        const share = level(e);
-        setSlider(slider, share, share * top);
-        const now = performance.now();
-        if (final || now - last > 120) {
-          last = now;
-          void call("discord_hacer", { accion, valor: Math.round(share * top), quien: null }).catch(() => {});
-        }
-      };
-      slider.addEventListener("pointerdown", (e) => {
-        slider.setPointerCapture(e.pointerId);
-        discordDragging = true;
-        drag(e, false);
-      });
-      slider.addEventListener("pointermove", (e) => {
-        if (slider.hasPointerCapture(e.pointerId)) drag(e, false);
-      });
-      slider.addEventListener("pointerup", (e) => {
-        drag(e, true);
-        discordDragging = false;
-      });
-    }
-    const people = el.querySelector<HTMLElement>("#d-people")!;
-    people.addEventListener("click", (e) => {
-      const row = (e.target as HTMLElement).closest<HTMLElement>("[data-person]");
-      if (!row || row.classList.contains("me")) return;
-      void discordDo(el, host, "persona", undefined, row.dataset.person);
-    });
-    people.addEventListener(
-      "wheel",
-      (e) => {
-        const row = (e.target as HTMLElement).closest<HTMLElement>("[data-person]");
-        if (!row || row.classList.contains("me")) return;
-        e.preventDefault();
-        const next = Math.min(200, Math.max(0, Number(row.dataset.level ?? 100) + (e.deltaY < 0 ? 10 : -10)));
-        row.dataset.level = String(next);
-        const em = row.querySelector("em");
-        if (em) em.textContent = `${next} %`;
-        void call("discord_hacer", { accion: "persona", valor: next, quien: row.dataset.person }).catch(() => {});
-      },
-      { passive: false },
-    );
-  },
-  show(el) {
-    void refreshDiscord(el);
-    discordTimer = window.setInterval(() => void refreshDiscord(el), 1500);
-  },
-  hide: () => clearInterval(discordTimer),
-};
+const STYLES = ["", "tal", "natural", "pulido"];
+const STYLE_NAMES: Record<string, string> = { "": "como las demás", tal: "tal cual", natural: "natural", pulido: "pulido" };
 
 export const PAGES: Page[] = [controles, hoy, equipo, red, portapapeles, appsPage, fondos, energia, settingsPage];

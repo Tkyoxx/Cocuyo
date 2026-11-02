@@ -5,8 +5,22 @@ import type { Size } from "./island";
 import { PAGES, settingsPage, type Host, type Page } from "./pages";
 import { Spring } from "./spring";
 
+const PIN = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6l-1 6 3 3H7l3-3-1-6zM12 13v7"/></svg>`;
+const PEN = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4"/></svg>`;
+
 export class Menu {
   open = false;
+  pinned = false;
+  private ai = false;
+  private extra = document.createElement("div");
+  private pin = document.createElement("button");
+  private meter = document.createElement("button");
+  private pen = document.createElement("button");
+  private askBar = document.createElement("form");
+  private askInput = document.createElement("input");
+  private name = "";
+  onMeter = () => {};
+  onAsk: (text: string) => Promise<void> = async () => {};
   typing = false;
   private typingSince = 0;
   private typingIn: HTMLInputElement | null = null;
@@ -49,6 +63,50 @@ export class Menu {
 
   constructor() {
     for (const page of PAGES) this.addButton(page);
+    this.extra.className = "menu-extra";
+    this.meter.className = "menu-meter";
+    this.meter.hidden = true;
+    this.meter.addEventListener("click", () => this.onMeter());
+    this.pin.className = "menu-pin";
+    this.pin.innerHTML = PIN;
+    this.pin.setAttribute("aria-label", "Dejar el menú fijo");
+    this.pin.title = "Dejar el menú fijo";
+    this.pin.addEventListener("click", () => this.setPinned(!this.pinned));
+    this.pen.className = "menu-pin";
+    this.pen.innerHTML = PEN;
+    this.pen.setAttribute("aria-label", "Escríbele a Cocuyo");
+    this.pen.title = "Escríbele a Cocuyo";
+    this.pen.addEventListener("click", () => this.toggleAsk());
+    this.extra.append(this.meter, this.pen, this.pin);
+    this.root.append(this.extra);
+    this.askBar.className = "ask-bar";
+    this.askBar.hidden = true;
+    this.askInput.id = "ask-input";
+    this.askInput.autocomplete = "off";
+    this.askInput.spellcheck = false;
+    this.askInput.maxLength = 1000;
+    this.askInput.addEventListener("pointerdown", () => this.host.focus(this.askInput));
+    this.askInput.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        this.toggleAsk(false);
+      }
+    });
+    this.askBar.append(this.askInput);
+    this.askBar.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const text = this.askInput.value.trim();
+      if (!text) return;
+      this.askInput.value = "";
+      this.askInput.disabled = true;
+      try {
+        await this.onAsk(text);
+      } finally {
+        this.askInput.disabled = false;
+        this.host.focus(this.askInput);
+      }
+    });
+    this.root.append(this.askBar);
     new ResizeObserver(() => {
       if (this.open) this.layout(true);
     }).observe(this.tabsEl);
@@ -93,11 +151,56 @@ export class Menu {
     const wasOpen = this.open;
     this.open = true;
     this.select(page, !wasOpen);
+    if (!wasOpen) void this.paintMeter();
+  }
+
+  setName(name: string) {
+    this.name = name.trim().split(/\s+/)[0] ?? "";
+    this.askInput.placeholder = this.name ? `¿Qué hacemos, ${this.name}?` : "Escríbele una orden o una pregunta";
+  }
+
+  private toggleAsk(on = this.askBar.hidden === true) {
+    this.askBar.hidden = !on;
+    this.pen.classList.toggle("on", on);
+    this.root.classList.toggle("asking", on);
+    if (on) this.host.focus(this.askInput);
+  }
+
+  setAi(on: boolean) {
+    this.ai = on;
+    if (!on) this.meter.hidden = true;
+    else if (this.open) void this.paintMeter();
+  }
+
+  private setPinned(on: boolean) {
+    this.pinned = on;
+    this.pin.classList.toggle("on", on);
+    this.pin.title = on ? "Soltar el menú" : "Dejar el menú fijo";
+    this.pin.setAttribute("aria-label", this.pin.title);
+  }
+
+  private async paintMeter() {
+    if (!this.ai) return;
+    const [used, budget] = await call<[number, number]>("ai_budget", undefined, [0, 0]);
+    if (!budget) {
+      this.meter.hidden = true;
+      return;
+    }
+    const share = Math.min(1, used / budget);
+    this.meter.hidden = false;
+    this.meter.dataset.level = share >= 0.8 ? "alto" : share >= 0.5 ? "medio" : "bajo";
+    if (this.open) this.layout(true);
+    this.meter.textContent = `IA ${used ? Math.max(1, Math.round(share * 100)) : 0} %`;
+    this.meter.title = `Hoy: ${used} de ${budget} consultas.`;
   }
 
   hide() {
     if (!this.open) return;
     this.open = false;
+    this.setPinned(false);
+    this.askBar.hidden = true;
+    this.pen.classList.remove("on");
+    this.root.classList.remove("asking");
     this.current.hide?.();
     window.clearTimeout(this.blurCheck);
     if (this.typing) {
@@ -119,7 +222,7 @@ export class Menu {
 
   private layout(instant: boolean) {
     const page = this.current;
-    const wide = Math.max(page.w, this.tabsEl.scrollWidth + 64);
+    const wide = Math.max(page.w, this.tabsEl.scrollWidth + 64 + (this.extra.offsetWidth + 10) * 2);
     const size = { w: Math.min(wide, innerWidth - 80), h: page.h, r: 30 };
     this.root.style.width = `${size.w}px`;
     this.root.style.height = `${size.h}px`;

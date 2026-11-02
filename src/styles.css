@@ -157,12 +157,59 @@ button:focus-visible {
   height: 16px;
   border-radius: 1.5px;
   background: #fff;
-  transform: scaleY(calc(0.22 + var(--lv, 0) * var(--k, 1) * 0.78));
+  transform: scaleY(calc(0.22 + var(--b, var(--lv, 0)) * 0.78));
   transition: transform 0.09s linear;
 }
-.voice i:nth-child(1) { --k: 0.55; }
-.voice i:nth-child(3) { --k: 0.8; }
-.voice i:nth-child(4) { --k: 0.6; }
+.voice i:nth-child(1) { --b: var(--b0, var(--lv, 0)); }
+.voice i:nth-child(2) { --b: var(--b1, var(--lv, 0)); }
+.voice i:nth-child(3) { --b: var(--b2, var(--lv, 0)); }
+.voice i:nth-child(4) { --b: var(--b3, var(--lv, 0)); }
+.voice i:nth-child(5) { --b: var(--b4, var(--lv, 0)); }
+.voice i:nth-child(6) { --b: var(--b5, var(--lv, 0)); }
+.voice i:nth-child(7) { --b: var(--b6, var(--lv, 0)); }
+.voice i:nth-child(8) { --b: var(--b7, var(--lv, 0)); }
+.voice i:nth-child(9) { --b: var(--b8, var(--lv, 0)); }
+
+.st {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--st, transparent);
+  box-shadow: 0 0 8px var(--st, transparent);
+  opacity: 0;
+  transform: scaleX(0.4);
+  transition:
+    opacity 0.35s var(--ui),
+    transform 0.5s var(--out),
+    background 0.35s var(--ui),
+    box-shadow 0.35s var(--ui);
+  pointer-events: none;
+}
+#island[data-st] .st {
+  opacity: 1;
+  transform: none;
+}
+#island[data-st="oye"] { --st: #3b9eff; }
+#island[data-st="piensa"] { --st: #a78bfa; }
+#island[data-st="espera"] { --st: #f5a524; }
+#island[data-st="mal"] { --st: #f4505e; }
+#island[data-st="bien"] { --st: #34d399; }
+#island[data-st="nueva"] { --st: #3b82f6; }
+#island[data-dock="right"] .st {
+  left: 0;
+  right: auto;
+  top: 16px;
+  bottom: 16px;
+  width: 2px;
+  height: auto;
+  transform: scaleY(0.4);
+}
+#island[data-dock="right"][data-st] .st {
+  transform: none;
+}
 .voice b {
   width: 4.8px;
   height: 4.8px;
@@ -628,6 +675,8 @@ button.solid:active {
     transform 0.6s var(--pop);
 }
 .said {
+  position: relative;
+  overflow: hidden;
   max-width: 64ch;
   margin: 0;
   padding: 9px 18px;
@@ -1054,6 +1103,61 @@ button.solid:active {
   background: var(--tint);
   transition: width 0.4s var(--out);
 }
+.sc-md {
+  max-height: 260px;
+  overflow-y: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.sc-md p,
+.sc-md ul,
+.sc-md ol,
+.sc-md pre {
+  margin: 0 0 6px;
+}
+.sc-md ul,
+.sc-md ol {
+  padding-left: 18px;
+}
+.sc-md .h {
+  display: block;
+  margin: 4px 0;
+}
+.sc-md code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 0.08);
+  font-family: Consolas, ui-monospace, monospace;
+  font-size: 0.92em;
+}
+.sc-md pre {
+  overflow-x: auto;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.06);
+}
+.sc-md pre code {
+  padding: 0;
+  background: none;
+}
+.sc-md a {
+  color: var(--blue);
+}
+.sc-progress.unknown small {
+  background: linear-gradient(90deg, rgb(255 255 255 / 0.45) 35%, #fff 50%, rgb(255 255 255 / 0.45) 65%) 0 0 / 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 1.8s linear infinite;
+}
+@keyframes shimmer {
+  from {
+    background-position: 110% 0;
+  }
+  to {
+    background-position: -110% 0;
+  }
+}
 .sc-progress.unknown .sc-bar i {
   width: 34%;
   animation: sc-slide 1.2s var(--ui) infinite;
@@ -1070,4 +1174,165 @@ button.solid:active {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.18s var(--ui);
+}
+
+.said.timed::after {
+  content: "";
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 3px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.2;
+  transform-origin: 0 50%;
+  animation: life var(--life, 3400ms) linear forwards;
+}
+@keyframes life {
+  to {
+    transform: scaleX(0);
+  }
+}
+
+#island.hola .st {
+  --st: var(--accent);
+  animation: hola 1.5s var(--out) forwards;
+}
+@keyframes hola {
+  0% {
+    opacity: 1;
+    transform: scaleX(0);
+  }
+  55% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: none;
+  }
+}
+
+#anota {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 10px;
+  padding: 14px 16px 16px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s var(--ui);
+}
+#island[data-face="anota"] #anota {
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 0.3s var(--ui) 0.12s;
+}
+#island[data-face="anota"] {
+  filter: none;
+}
+.an-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.an-colors {
+  display: flex;
+  gap: 6px;
+  margin-left: 6px;
+}
+.an-gap {
+  flex: 1;
+}
+#anota canvas {
+  justify-self: center;
+  border-radius: 10px;
+  cursor: crosshair;
+  touch-action: none;
+}
+.an-x {
+  width: 30px;
+  padding: 0;
+  font-size: 18px;
+}
+#island.suelta .shell {
+  outline: 1.5px dashed rgb(255 255 255 / 0.55);
+  outline-offset: -5px;
+  animation: suelta 0.9s linear infinite;
+}
+@keyframes suelta {
+  50% {
+    outline-color: rgb(255 255 255 / 0.25);
+  }
+}
+#island.traga .shell {
+  animation: traga 0.5s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+@keyframes traga {
+  35% {
+    transform: scale(1.08, 0.86);
+  }
+  65% {
+    transform: scale(0.97, 1.05);
+  }
+}
+
+.vitals {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  padding: 3px 9px;
+  border-radius: 9px;
+  background: rgb(16 16 20 / 0.92);
+  color: rgb(255 255 255 / 0.85);
+  font-size: 11px;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-50%, -4px);
+  transition:
+    opacity 0.2s var(--ui),
+    transform 0.3s var(--out);
+  pointer-events: none;
+}
+#island[data-face="peek"] .vitals.on {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+.vitals.hot {
+  color: #ffb4b9;
+}
+#island[data-dock="right"] .vitals {
+  display: none;
+}
+
+.dots {
+  display: inline-flex;
+  gap: 4px;
+  padding: 0 2px;
+  vertical-align: middle;
+}
+.dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.35;
+  animation: dots 0.9s ease-in-out infinite;
+}
+.dots i:nth-child(2) { animation-delay: 0.15s; }
+.dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes dots {
+  40% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+
+.escondida *,
+.escondida *::before,
+.escondida *::after {
+  animation-play-state: paused !important;
 }

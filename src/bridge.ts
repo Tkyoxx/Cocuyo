@@ -114,7 +114,7 @@ function subscribe<T>(event: string, handler: (payload: T) => void) {
 
 export interface ChordEvent {
   chord: Chord;
-  phase: "start" | "end";
+  phase: "start" | "end" | "locked";
   cancelled: boolean;
   cursor: [number, number] | null;
   asking?: boolean;
@@ -152,6 +152,12 @@ export interface Settings {
   padCombo: number;
   padButtons: number;
   dictationInto: string;
+  handsFree: boolean;
+  accent: string;
+  dictationStyle: string;
+  dictationWords: string[];
+  dictationSnippets: { said: string; text: string }[];
+  dictationStyles: { app: string; name: string; style: string }[];
   extensionsOn: boolean;
   aiAgent: boolean;
   agentHands: boolean;
@@ -282,6 +288,12 @@ const DEFAULTS: Settings = {
   padCombo: 0,
   padButtons: 0,
   dictationInto: "",
+  handsFree: true,
+  accent: "",
+  dictationStyle: "natural",
+  dictationWords: [],
+  dictationSnippets: [],
+  dictationStyles: [],
   extensionsOn: true,
   aiAgent: true,
   agentHands: true,

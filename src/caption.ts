@@ -28,8 +28,29 @@ export class Caption {
     });
     this.words.append(...spans);
     this.shown = { who, text };
+    this.countdown(ms);
     this.onShape();
     this.timer = window.setTimeout(() => this.hide(), ms);
+  }
+
+  typing() {
+    clearTimeout(this.timer);
+    this.shown = { who: "app", text: "" };
+    this.el.dataset.who = "app";
+    this.who.textContent = "Cocuyo";
+    const dots = document.createElement("span");
+    dots.className = "dots";
+    dots.innerHTML = "<i></i><i></i><i></i>";
+    this.words.replaceChildren(dots);
+    this.said.classList.remove("timed");
+    this.visible = true;
+    this.el.classList.add("on");
+    this.onShape();
+    this.timer = window.setTimeout(() => this.hide(), 25000);
+  }
+
+  get isTyping() {
+    return this.visible && !!this.words.querySelector(".dots");
   }
 
   say(who: "you" | "app", text: string, ms = 3400) {
@@ -50,8 +71,16 @@ export class Caption {
 
     this.visible = true;
     this.el.classList.add("on");
+    this.countdown(ms);
     this.onShape();
     this.timer = window.setTimeout(() => this.hide(), ms);
+  }
+
+  private countdown(ms: number) {
+    this.said.classList.remove("timed");
+    this.said.style.setProperty("--life", `${ms}ms`);
+    void this.said.offsetWidth;
+    this.said.classList.add("timed");
   }
 
   hide() {
