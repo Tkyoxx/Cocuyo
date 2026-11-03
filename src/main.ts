@@ -34,7 +34,8 @@ import { emit, loadExtensions } from "./extensiones";
 import { discordPage, settingsPage } from "./pages";
 import { Anotador } from "./anotar";
 import { NOVEDADES } from "./novedades";
-import { Burbuja } from "./burbuja";
+import { Aviso, type Update } from "./version";
+import { Burbuja, type Linea } from "./burbuja";
 import { Preguntas, SE_PREGUNTA, type Archivo } from "./preguntar";
 import { Cards, type Card, type CardButton, type Progress } from "./tarjeta";
 import type { RecState } from "./pages";
@@ -60,8 +61,9 @@ const cards = new Cards();
 const burbuja = new Burbuja();
 burbuja.onFocus = (on) => void call("set_focusable", { on });
 window.addEventListener("cocuyo-burbuja", (e) => {
-  const what = (e as CustomEvent<{ probar?: boolean; oir?: string }>).detail;
+  const what = (e as CustomEvent<{ probar?: boolean; oir?: string; hilo?: Linea[] }>).detail;
   if (what.probar) burbuja.probar();
+  if (what.hilo?.length) burbuja.probarHilo(what.hilo);
   if (what.oir) burbuja.oir(what.oir);
 });
 const floating = new Set<HTMLElement>();
@@ -541,31 +543,21 @@ void loadExtensions({
   }
 });
 
-on<string>("update-offer", (version) => {
-  cards.show({
-    script: "Cocuyo",
-    titulo: `${tr("Cocuyo")} ${version} ${tr("está lista")}`,
-    texto: tr("¿La pongo ahora? Tarda unos segundos y Cocuyo vuelve solo. Si no dices nada, se pone en un minuto."),
-    icono: "✨",
-    segundos: 70,
-    botones: [
-      { texto: "Actualizar ahora", accion: () => void call("update_choice", { now: true }) },
-      { texto: "Más tarde", accion: () => void call("update_choice", { now: false }) },
-    ],
-  });
-});
-
+const aviso = new Aviso(cards);
+on<Update>("update-offer", (found) => aviso.offer(found));
 on<{ version: string }>("update", (found) => {
   island.setState("nueva");
-  caption.say("app", `Actualizando Cocuyo a la ${found.version}. Ya vuelvo.`, 4000);
+  if (!aviso.installing()) caption.say("app", `Actualizando Cocuyo a la ${found.version}. Ya vuelvo.`, 4000);
 });
 void call<string | null>("update_done", undefined, null).then((version) => {
   if (!version) return;
-  setTimeout(() => {
-    caption.say("app", `Cocuyo se actualizó a la ${version}.`, 5000);
-    const news = NOVEDADES[version];
-    if (news) cards.show({ script: "Cocuyo", titulo: `Novedades de la ${version}`, texto: news.map(([title, detail]) => `- **${tr(title)}**: ${tr(detail)}`).join("\n"), md: true, icono: "✨", segundos: 60 });
-  }, 2500);
+  setTimeout(() => aviso.welcome(version, NOVEDADES[version] ?? []), 2200);
+});
+window.addEventListener("cocuyo-aviso", (e) => {
+  const what = (e as CustomEvent<{ oferta?: Update; hola?: string; instalando?: boolean }>).detail;
+  if (what.oferta) aviso.offer(what.oferta);
+  if (what.hola) aviso.welcome(what.hola, NOVEDADES[what.hola] ?? []);
+  if (what.instalando) aviso.installing();
 });
 
 onDemo((step) => {
@@ -600,7 +592,8 @@ for (const type of ["keydown", "keyup", "keypress"] as const) {
 window.addEventListener(
   "click",
   (e) => {
-    if (e.isTrusted && e.detail === 0) {
+    const submitting = e.target instanceof HTMLButtonElement && e.target.type === "submit" && !!e.target.form?.contains(document.activeElement) && writable(document.activeElement);
+    if (e.isTrusted && e.detail === 0 && !submitting) {
       e.preventDefault();
       e.stopPropagation();
     }

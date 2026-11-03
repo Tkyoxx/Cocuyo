@@ -451,15 +451,34 @@ struct Ear {
     clean: Option<crate::ruido::Cleaner>,
 }
 
-struct Ears {
-    _streams: Vec<cpal::Stream>,
-    arriving: Receiver<(usize, Vec<f32>)>,
-    ears: Vec<Ear>,
-    written: u64,
+struct MicTap {
+    stream: cpal::Stream,
+    who: usize,
+    id: String,
+    lost: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    retry: Instant,
 }
 
-fn listen_to(device: &cpal::Device, who: usize, feed: Sender<(usize, Vec<f32>)>) -> Option<(cpal::Stream, u32)> {
-    let config = device.default_input_config().or_else(|_| device.default_output_config()).ok()?;
+struct Ears {
+    _pc: Option<crate::oido::Oido>,
+    mic: Option<MicTap>,
+    feed: Sender<(usize, u32, Vec<f32>)>,
+    arriving: Receiver<(usize, u32, Vec<f32>)>,
+    ears: Vec<Ear>,
+    written: u64,
+    peaks: Vec<f32>,
+    labels: Vec<(&'static str, String)>,
+}
+
+fn find_mic(host: &cpal::Host, id: &str) -> Option<cpal::Device> {
+    if id.is_empty() {
+        return crate::mic::device(host);
+    }
+    host.input_devices().ok().into_iter().flatten().find(|d| d.id().is_ok_and(|found| found.to_string() == *id)).or_else(|| crate::mic::device(host))
+}
+
+fn listen_to(device: &cpal::Device, who: usize, feed: Sender<(usize, u32, Vec<f32>)>, lost: std::sync::Arc<std::sync::atomic::AtomicBool>) -> Option<(cpal::Stream, u32)> {
+    let config = device.default_input_config().ok()?;
     let rate = config.sample_rate();
     let channels = config.channels().max(1) as usize;
     let format = config.sample_format();
@@ -474,13 +493,14 @@ fn listen_to(device: &cpal::Device, who: usize, feed: Sender<(usize, Vec<f32>)>)
         }
         out
     };
+    let fell = lost.clone();
     let stream = match format {
         cpal::SampleFormat::F32 => device.build_input_stream(config, move |data: &[f32], _: &_| {
-            let _ = feed.send((who, stereo(&mut data.iter().copied())));
-        }, |_| {}, None),
+            let _ = feed.send((who, rate, stereo(&mut data.iter().copied())));
+        }, move |_| fell.store(true, std::sync::atomic::Ordering::Relaxed), None),
         cpal::SampleFormat::I16 => device.build_input_stream(config, move |data: &[i16], _: &_| {
-            let _ = feed.send((who, stereo(&mut data.iter().map(|s| *s as f32 / 32768.0))));
-        }, |_| {}, None),
+            let _ = feed.send((who, rate, stereo(&mut data.iter().map(|s| *s as f32 / 32768.0))));
+        }, move |_| fell.store(true, std::sync::atomic::Ordering::Relaxed), None),
         _ => return None,
     }
     .ok()?;
@@ -492,31 +512,63 @@ impl Ears {
     fn open(system: Option<f32>, mic: Option<(String, f32)>, noise: u8, names: &mut Vec<String>) -> Option<Ears> {
         let host = cpal::default_host();
         let (feed, arriving) = channel();
-        let mut streams = Vec::new();
         let mut ears = Vec::new();
-        let chosen_mic = mic.as_ref().and_then(|(id, _)| {
-            if id.is_empty() {
-                return crate::mic::device(&host);
-            }
-            host.input_devices().ok().into_iter().flatten().find(|d| d.id().is_ok_and(|found| found.to_string() == *id)).or_else(|| crate::mic::device(&host))
-        });
-        let wanted = [(system, host.default_output_device(), "PC"), (mic.map(|(_, gain)| gain), chosen_mic, "micrófono")];
-        for (gain, device, what) in wanted {
-            let (Some(gain), Some(device)) = (gain, device) else { continue };
-            if let Some((stream, rate)) = listen_to(&device, ears.len(), feed.clone()) {
-                let name = device.description().map(|about| about.name().to_string()).unwrap_or_default();
-                let clean = if what == "micrófono" { crate::ruido::Cleaner::new(noise) } else { None };
-                names.push(format!("{what}: {name}{}", if clean.is_some() { " (sin ruido)" } else { "" }));
-                streams.push(stream);
-                ears.push(Ear { queue: VecDeque::new(), left: crate::talk::Resampler::new(rate as f64, RATE as f64), right: crate::talk::Resampler::new(rate as f64, RATE as f64), rate, gain, clean });
+        let mut labels = Vec::new();
+        let mut tap = None;
+        if let Some((id, gain)) = mic {
+            let lost = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            if let Some(device) = find_mic(&host, &id) {
+                if let Some((stream, rate)) = listen_to(&device, ears.len(), feed.clone(), lost.clone()) {
+                    let name = device.description().map(|about| about.name().to_string()).unwrap_or_default();
+                    let clean = crate::ruido::Cleaner::new(noise);
+                    names.push(format!("micrófono: {name}{}", if clean.is_some() { " (sin ruido)" } else { "" }));
+                    labels.push(("micrófono", name));
+                    tap = Some(MicTap { stream, who: ears.len(), id, lost, retry: Instant::now() });
+                    ears.push(Ear { queue: VecDeque::new(), left: crate::talk::Resampler::new(rate as f64, RATE as f64), right: crate::talk::Resampler::new(rate as f64, RATE as f64), rate, gain, clean });
+                }
             }
         }
-        (!ears.is_empty()).then(|| Ears { _streams: streams, arriving, ears, written: 0 })
+        let mut pc = None;
+        if let Some(gain) = system {
+            if let Some(oido) = crate::oido::listen(ears.len(), feed.clone()) {
+                let name = host.default_output_device().and_then(|device| device.description().ok()).map(|about| about.name().to_string()).unwrap_or_default();
+                names.insert(0, format!("PC: {name}"));
+                labels.push(("PC", name));
+                pc = Some(oido);
+                ears.push(Ear { queue: VecDeque::new(), left: crate::talk::Resampler::new(RATE as f64, RATE as f64), right: crate::talk::Resampler::new(RATE as f64, RATE as f64), rate: RATE, gain, clean: None });
+            } else {
+                names.insert(0, "PC: Windows no dejó escuchar el parlante".into());
+            }
+        }
+        let peaks = vec![0.0; ears.len()];
+        (!ears.is_empty()).then(|| Ears { _pc: pc, mic: tap, feed, arriving, ears, written: 0, peaks, labels })
+    }
+
+    fn mend_mic(&mut self) {
+        let Some(tap) = self.mic.as_mut() else { return };
+        if !tap.lost.load(std::sync::atomic::Ordering::Relaxed) || tap.retry.elapsed() < Duration::from_secs(1) {
+            return;
+        }
+        tap.retry = Instant::now();
+        let host = cpal::default_host();
+        let lost = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let Some((stream, _)) = find_mic(&host, &tap.id).and_then(|device| listen_to(&device, tap.who, self.feed.clone(), lost.clone())) else { return };
+        tap.stream = stream;
+        tap.lost = lost;
     }
 
     fn take(&mut self, elapsed: Duration, lag: u64) -> Option<Vec<i16>> {
-        while let Ok((who, samples)) = self.arriving.try_recv() {
+        self.mend_mic();
+        while let Ok((who, rate, samples)) = self.arriving.try_recv() {
             let ear = &mut self.ears[who];
+            if rate != ear.rate {
+                ear.rate = rate;
+                ear.left = crate::talk::Resampler::new(rate as f64, RATE as f64);
+                ear.right = crate::talk::Resampler::new(rate as f64, RATE as f64);
+            }
+            if let Some(peak) = self.peaks.get_mut(who) {
+                *peak = samples.iter().fold(*peak, |p, s| p.max(s.abs()));
+            }
             if let Some(clean) = ear.clean.as_mut() {
                 let mono: Vec<f32> = samples.iter().step_by(2).copied().collect();
                 let mono = if ear.rate == RATE { mono } else { ear.left.feed(&mono) };
@@ -2020,6 +2072,35 @@ pub async fn grabar_ultimo(app: AppHandle) -> Result<String, String> {
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[derive(Serialize)]
+pub struct Escucha {
+    fuente: String,
+    nombre: String,
+    pico: f32,
+}
+
+#[tauri::command]
+pub async fn grabar_probar_audio(app: AppHandle) -> Vec<Escucha> {
+    let wanted = Wanted::from(&crate::settings::load(&app));
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut names = Vec::new();
+        let Some(mut ears) = Ears::open(wanted.system, wanted.mic.clone(), wanted.noise, &mut names) else { return Vec::new() };
+        let begin = Instant::now();
+        while begin.elapsed() < Duration::from_secs(3) {
+            std::thread::sleep(Duration::from_millis(60));
+            let _ = ears.take(begin.elapsed(), LAG);
+        }
+        let mut heard: Vec<Escucha> = ears.labels.iter().zip(&ears.peaks).map(|((fuente, nombre), pico)| Escucha { fuente: fuente.to_string(), nombre: nombre.clone(), pico: *pico }).collect();
+        if wanted.system.is_some() && !heard.iter().any(|e| e.fuente == "PC") {
+            heard.insert(0, Escucha { fuente: "PC".into(), nombre: String::new(), pico: -1.0 });
+        }
+        heard.sort_by_key(|e| e.fuente != "PC");
+        heard
+    })
+    .await
+    .unwrap_or_default()
 }
 
 #[tauri::command]

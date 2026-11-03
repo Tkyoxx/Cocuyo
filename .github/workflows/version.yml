@@ -130,10 +130,14 @@ jobs:
               if ($firma.Status -ne 'Valid') { throw "$archivo no quedó firmado: $($firma.StatusMessage)" }
             }
           }
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          $cambios = Get-Content CHANGELOG.md -Raw -Encoding utf8
+          $seccion = [regex]::Match($cambios, '(?ms)^## ' + [regex]::Escape($version) + '\s*$(.*?)(?=^## |\z)').Groups[1].Value.Trim()
+          Set-Content notas.md $seccion -Encoding utf8
           for ($intento = 1; $intento -le 4; $intento++) {
             gh release upload $env:GITHUB_REF_NAME Cocuyo.exe $env:INSTALADOR --clobber
-            if ($LASTEXITCODE -eq 0) { exit 0 }
-            gh release create $env:GITHUB_REF_NAME Cocuyo.exe $env:INSTALADOR --title "Cocuyo $($env:GITHUB_REF_NAME.TrimStart('v'))" --generate-notes
+            if ($LASTEXITCODE -eq 0) { gh release edit $env:GITHUB_REF_NAME --notes-file notas.md; exit 0 }
+            gh release create $env:GITHUB_REF_NAME Cocuyo.exe $env:INSTALADOR --title "Cocuyo $version" --notes-file notas.md
             if ($LASTEXITCODE -eq 0) { exit 0 }
             Start-Sleep -Seconds (20 * $intento)
           }

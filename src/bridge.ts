@@ -163,6 +163,8 @@ export interface Settings {
   whatsappStay: number;
   whatsappGaming: boolean;
   whatsappMotion: string;
+  whatsappQuick: string;
+  whatsappReplies: string[];
   accent: string;
   dictationStyle: string;
   dictationWords: string[];
@@ -309,6 +311,8 @@ const DEFAULTS: Settings = {
   whatsappStay: 0,
   whatsappGaming: false,
   whatsappMotion: "completa",
+  whatsappQuick: "boton",
+  whatsappReplies: ["👍", "Ya voy", "Ahora no puedo", "Te llamo luego"],
   accent: "",
   dictationStyle: "natural",
   dictationWords: [],

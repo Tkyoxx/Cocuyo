@@ -36,6 +36,7 @@ mod net;
 mod notes;
 mod nvenc;
 mod ocr;
+mod oido;
 mod overlay;
 mod pad;
 mod palabras;
@@ -286,6 +287,7 @@ pub fn run() {
             whatsapp::whatsapp_desconectar,
             whatsapp::whatsapp_responder,
             whatsapp::whatsapp_hilo,
+            whatsapp::whatsapp_abrir,
             bandeja::bandeja_preguntar,
             bandeja::bandeja_cerrar,
             bandeja::anotar_abrir,
@@ -411,6 +413,7 @@ pub fn run() {
             grabadora::grabar_empezar,
             grabadora::grabar_parar,
             grabadora::grabar_estado,
+            grabadora::grabar_probar_audio,
             grabadora::grabar_equipo,
             grabadora::grabar_ultimo,
             discord::discord_estado,

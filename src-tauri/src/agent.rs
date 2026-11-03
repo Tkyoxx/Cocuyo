@@ -190,6 +190,7 @@ enum Doer {
     Hands,
     Phone,
     Research,
+    WhatsappRead,
     Extension(String),
     Mcp(String, String),
 }
@@ -254,6 +255,15 @@ fn toolbox(app: &AppHandle) -> (Vec<Value>, HashMap<String, Doer>) {
         object(json!({ "dato": { "type": "string" } }), &["dato"]),
     ));
     doers.insert("cocuyo_recordar".to_string(), Doer::Remember);
+    if crate::whatsapp::connected() {
+        tools.push(function(
+            "cocuyo_whatsapp_leer",
+            "Lee los WhatsApp que le llegaron a la persona: quién le escribió y qué dijo (los nuevos; si no hay, el último). Úsala cuando pregunte \
+             si alguien le escribió, si tiene mensajes o qué le dijeron. Nunca abras WhatsApp ni el navegador para eso.",
+            object(json!({}), &[]),
+        ));
+        doers.insert("cocuyo_whatsapp_leer".to_string(), Doer::WhatsappRead);
+    }
     if crate::remoto::ready(app) {
         tools.push(function(
             "cocuyo_celular",
@@ -425,6 +435,7 @@ fn act(app: &AppHandle, doer: &Doer, args: &Value) -> Result<Done, String> {
         Doer::Clipboard => Ok(crate::inject::clipboard_text().unwrap_or_default().chars().take(8000).collect::<String>().into()),
         Doer::Screen => crate::capture::screen_text().map(Done::from),
         Doer::Remember => crate::ai::memorize(app, &text(args, "dato")).map(|()| String::from("Guardado.").into()),
+        Doer::WhatsappRead => crate::whatsapp::read_out(app).map(Done::from),
         Doer::Window => crate::pc::open(app, &text(args, "app")).map(Done::from),
         Doer::Minutes => if text(args, "accion") == "terminar" { crate::minutes::finish(app) } else { crate::minutes::start(app) }.map(Done::from),
         Doer::Message => send_message(app, &text(args, "app"), &text(args, "para"), &text(args, "texto")).map(Done::from),

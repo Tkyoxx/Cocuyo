@@ -216,6 +216,21 @@ export class Cards {
     this.onShape();
   }
 
+  mount(el: HTMLElement) {
+    while (this.root.children.length >= MAX) this.drop(this.root.lastElementChild as HTMLElement, true);
+    this.root.prepend(el);
+    requestAnimationFrame(() => el.classList.add("on"));
+    this.onShape();
+  }
+
+  unmount(el: HTMLElement) {
+    this.drop(el);
+  }
+
+  reshape() {
+    this.onShape();
+  }
+
   dropId(id: number) {
     const el = ([...this.root.children] as HTMLElement[]).find((card) => Number(card.dataset.id) === id);
     if (el) this.drop(el);
@@ -233,10 +248,14 @@ export class Cards {
 
   shapes(): Shape[] {
     if (this.root.classList.contains("behind")) return [];
-    return ([...this.root.children] as HTMLElement[]).map((el) => {
-      const r = el.getBoundingClientRect();
-      return { x: r.left - MARGIN, y: r.top - MARGIN, w: r.width + MARGIN * 2, h: r.height + MARGIN * 2, r: 22 + MARGIN };
-    });
+    const base = this.root.getBoundingClientRect();
+    return ([...this.root.children] as HTMLElement[]).map((el) => ({
+      x: base.left + el.offsetLeft - MARGIN,
+      y: base.top + el.offsetTop - MARGIN,
+      w: el.offsetWidth + MARGIN * 2,
+      h: el.offsetHeight + MARGIN * 2,
+      r: 22 + MARGIN,
+    }));
   }
 
   private waitingNow() {

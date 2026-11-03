@@ -404,6 +404,8 @@ class SettingsPage implements Page {
              <div class="srow chips flat" id="s-rec-mics"></div>
              <div class="srow stack" id="s-rec-mic-row"><div><b>Volumen del micrófono</b><small id="s-rec-mic-text"></small></div><input type="range" class="range" id="s-rec-mic-vol" min="0" max="200" step="5" /></div>
              <div class="srow stack" id="s-rec-noise-row"><div><b>Quitar el ruido</b><small>Suave y Fuerte limpian el ventilador, el zumbido y el soplido. RNNoise, el más completo, es una red neuronal que además quita el teclado y el ruido de la calle. Todo corre dentro de Cocuyo, sin internet.</small></div>${segmented("s-rec-noise", [["", "Apagado"], ["suave", "Suave"], ["fuerte", "Fuerte"], ["rnnoise", "RNNoise"]])}</div>
+             <div class="srow slim"><div><b>Probar el audio</b><small>Pon algo a sonar y dale: escucha 3 segundos y te dice qué llega al video.</small></div><button class="ghost pick" id="s-rec-test">Probar</button></div>
+             <div class="rec-meters" id="s-rec-meters" hidden></div>
              <div class="srow stack"><div><b>Calidad del sonido</b><small>AAC estéreo a 48 kHz.</small></div>${segmented("s-rec-audio", [[128, "128 kb/s"], [160, "160 kb/s"], [192, "192 kb/s"]])}</div>
            </div>
            <div class="card">
@@ -485,6 +487,7 @@ class SettingsPage implements Page {
              <div class="srow stack"><div><b>Sonido</b><small>Hecho para Cocuyo: una kalimba suave que no cansa, con su familia para abrir, enviar y cerrar.</small></div><div class="srow chips flat" id="s-wa-sound"><button class="chip" data-v="kalimba">Kalimba</button><button class="chip" data-v="">Sin sonido</button></div></div>
              <div class="srow stack"><div><b>Volumen</b><small id="s-wa-vol-n"></small></div><input type="range" class="range" id="s-wa-vol" min="5" max="100" step="5" /></div>
              <label class="srow"><div><b>Sonidos al abrir, enviar y cerrar</b><small>Más bajitos que el aviso.</small></div><input type="checkbox" class="switch" id="s-wa-ui"></label>
+             <div class="srow stack"><div><b>Animaciones</b><small>Suaves: sin el vuelo, el destello ni las chispas; solo aparece.</small></div><div class="srow chips flat" id="s-wa-motion"><button class="chip" data-v="completa">Completas</button><button class="chip" data-v="suave">Suaves</button></div></div>
              <div class="srow slim"><div><b>Ver cómo se ve</b><small>Una burbuja de prueba: puedes responderle y nada sale de tu PC.</small></div><button class="ghost pick" id="s-wa-demo">Probar</button></div>
            </div>
            </div>
@@ -493,9 +496,13 @@ class SettingsPage implements Page {
              <label class="srow"><div><b>Avisarme de mensajes nuevos</b><small>Llega una burbuja que flota; tócala para leer y responder ahí mismo.</small></div><input type="checkbox" class="switch" id="s-wa-notices"></label>
              <label class="srow"><div><b>Mostrar el mensaje junto a la burbuja</b><small>Si lo apagas, solo ves la burbuja con la cara de quien te escribió.</small></div><input type="checkbox" class="switch" id="s-wa-text"></label>
              <div class="srow stack"><div><b>Se va sola</b><small>Si no la abres. Arrástrala para moverla de lado, o lánzala fuera de la pantalla para descartarla.</small></div><div class="srow chips flat" id="s-wa-stay"><button class="chip" data-v="0">Nunca</button><button class="chip" data-v="30">30 s</button><button class="chip" data-v="120">2 min</button></div></div>
-             <div class="srow stack"><div><b>Animaciones</b><small>Suaves: sin el vuelo, el destello ni las chispas; solo aparece.</small></div><div class="srow chips flat" id="s-wa-motion"><button class="chip" data-v="completa">Completas</button><button class="chip" data-v="suave">Suaves</button></div></div>
              <label class="srow"><div><b>También jugando</b><small>Si no, a pantalla completa se queda callada; después le preguntas «¿qué me escribieron?».</small></div><input type="checkbox" class="switch" id="s-wa-gaming"></label>
              <label class="srow"><div><b>También de grupos</b><small>Si no, solo chats con una persona. Se aplica al volver a conectar.</small></div><input type="checkbox" class="switch" id="s-wa-groups"></label>
+           </div>
+           <div class="card">
+             <div class="srow stack"><div><b>Respuestas rápidas</b><small>Tocarlas solo las escribe: tú envías con Enter.</small></div><div class="srow chips flat" id="s-wa-quick"><button class="chip" data-v="boton">Con el rayo</button><button class="chip" data-v="siempre">Siempre a la vista</button><button class="chip" data-v="nunca">Nunca</button></div></div>
+             <div class="srow stack"><div><b>Las tuyas</b><small>Toca una para editarla. Hasta 8.</small></div><div class="srow chips flat" id="s-wa-replies"></div></div>
+             <div class="srow slim"><input id="s-wa-reply" placeholder="Escribe una y pulsa Enter" spellcheck="true" autocomplete="off" maxlength="60" /></div>
            </div>
            </div>`,
         ) +
@@ -727,6 +734,27 @@ class SettingsPage implements Page {
       burbuja({ oir: this.settings?.whatsappSound || "kalimba" });
     });
     q("#s-wa-go").addEventListener("click", () => void this.whatsappButton());
+    q("#s-wa-quick").addEventListener("click", (e) => {
+      const chip = (e.target as HTMLElement).closest<HTMLElement>("[data-v]");
+      if (chip) void this.save({ whatsappQuick: chip.dataset.v ?? "boton" });
+    });
+    const reply = q<HTMLInputElement>("#s-wa-reply");
+    reply.addEventListener("pointerdown", () => host.focus(reply));
+    reply.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" || !this.settings) return;
+      const value = reply.value.trim();
+      if (!value) return;
+      reply.value = "";
+      const others = this.settings.whatsappReplies.filter((r) => r !== value);
+      void this.save({ whatsappReplies: [...others, value].slice(-8) });
+    });
+    q("#s-wa-replies").addEventListener("click", (e) => {
+      const target = (e.target as HTMLElement).closest<HTMLElement>("[data-reply]");
+      if (!target || !this.settings) return;
+      reply.value = target.dataset.reply ?? "";
+      host.focus(reply);
+      void this.save({ whatsappReplies: this.settings.whatsappReplies.filter((r) => r !== target.dataset.reply) });
+    });
     const finder = q<HTMLInputElement>("#s-find");
     finder.addEventListener("pointerdown", () => host.focus(finder));
     finder.addEventListener("input", () => this.find(finder.value, false));
@@ -878,6 +906,34 @@ class SettingsPage implements Page {
       else if (box.id === "s-rec-audio") void this.save({ recAudioKbps: Number(value) });
       else if (box.id === "s-rec-noise") void this.save({ recNoise: value });
       else if (box.id === "s-rec-replay-secs") void this.save({ recReplaySecs: Number(value) });
+    });
+    q("#s-rec-test").addEventListener("click", async (e) => {
+      const button = e.currentTarget as HTMLButtonElement;
+      const meters = q("#s-rec-meters");
+      button.disabled = true;
+      button.textContent = tr("Escuchando…");
+      meters.hidden = false;
+      meters.innerHTML = `<small class="empty-line">${tr("Escuchando 3 segundos: pon algo a sonar y di algo.")}</small>`;
+      const heard = await call<{ fuente: string; nombre: string; pico: number }[]>("grabar_probar_audio", undefined, []);
+      button.disabled = false;
+      button.textContent = tr("Probar otra vez");
+      if (!heard.length) {
+        meters.innerHTML = `<small class="empty-line">${tr("El audio del PC y el micrófono están apagados.")}</small>`;
+        return;
+      }
+      meters.innerHTML = heard
+        .map(({ fuente, nombre, pico }) => {
+          const pc = fuente === "PC";
+          const level = pico <= 0 ? 0 : Math.max(0.04, Math.min(1, (20 * Math.log10(pico) + 60) / 60));
+          const verdict =
+            pico < 0
+              ? tr("Windows no dejó escucharlo")
+              : pico < 0.003
+                ? tr(pc ? "No llegó nada: ¿estaba sonando algo?" : "No llegó nada: ¿está silenciado?")
+                : tr("Se oye");
+          return `<div class="rec-meter${pico >= 0.003 ? " ok" : ""}"><div><b>${tr(pc ? "Audio del PC" : "Micrófono")}</b><small>${esc(nombre || "—")}</small></div><i><s style="transform:scaleX(${level.toFixed(3)})"></s></i><em>${esc(verdict)}</em></div>`;
+        })
+        .join("");
     });
     recSection.addEventListener("input", (e) => {
       const input = e.target as HTMLInputElement;
@@ -1944,7 +2000,11 @@ class SettingsPage implements Page {
     q<HTMLInputElement>("#s-wa-gaming").checked = s.whatsappGaming;
     q<HTMLInputElement>("#s-wa-vol").value = String(s.whatsappVolume);
     q("#s-wa-vol-n").textContent = `${s.whatsappVolume} %`;
-    for (const [box, value] of [["#s-wa-stay", String(s.whatsappStay)], ["#s-wa-motion", s.whatsappMotion], ["#s-wa-sound", s.whatsappSound]] as const) {
+    q("#s-wa-replies").innerHTML = s.whatsappReplies.length
+      ? s.whatsappReplies.map((r) => `<button class="chip" data-reply="${esc(r)}">${esc(r)}</button>`).join("")
+      : `<small class="empty-line">${tr("Ninguna todavía.")}</small>`;
+    q("#s-wa-replies").classList.toggle("off", s.whatsappQuick === "nunca");
+    for (const [box, value] of [["#s-wa-stay", String(s.whatsappStay)], ["#s-wa-motion", s.whatsappMotion], ["#s-wa-sound", s.whatsappSound], ["#s-wa-quick", s.whatsappQuick]] as const) {
       for (const chip of this.el.querySelectorAll<HTMLElement>(`${box} [data-v]`)) chip.classList.toggle("on", chip.dataset.v === value);
     }
     for (const swatch of this.el.querySelectorAll<HTMLElement>("#s-accent [data-accent]")) swatch.classList.toggle("on", swatch.dataset.accent === s.accent);

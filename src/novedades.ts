@@ -1,6 +1,12 @@
 // lo que trae cada version, para contarlo una vez despues de actualizar. la compilacion falla si falta la de la version
 
 export const NOVEDADES: Record<string, [string, string][]> = {
+  "0.4.2": [
+    ["La grabadora oye el PC en cualquier equipo", "Sigue al parlante de Windows aunque cambies a audífonos o Bluetooth, y en Ajustes → Capturas puedes probar qué llega al video."],
+    ["Stickers, fotos y notas de voz en la burbuja", "Salen dentro del chat y las notas se escuchan ahí mismo. Enter envía y cada chat se cierra con su ×."],
+    ["Pregúntale «¿alguien me escribió?»", "Te dice quién y qué, sin abrir el navegador."],
+    ["Actualizarse ya no interrumpe", "Llega bajada y verificada: la pones ahora o se pone sola al reiniciar."],
+  ],
   "0.4.1": [
     ["WhatsApp en una burbuja", "Llega una burbuja verde que flota; tócala para leer y responder ahí mismo, arrástrala de lado o lánzala fuera para descartarla."],
     ["Sonidos hechos para Cocuyo", "Una kalimba suave para los mensajes y su familia para abrir, enviar y cerrar. Bajitos de fábrica."],

@@ -906,6 +906,9 @@ pub fn run_order(app: &AppHandle, spoken: &str) -> Result<String, String> {
     if let Some(done) = crate::agent::answered_by_voice(app, spoken) {
         return done;
     }
+    if let Some(done) = crate::whatsapp::asked(app, spoken) {
+        return done;
+    }
     if let Some(done) = crate::scripts::answered(app, spoken) {
         return done;
     }
@@ -1457,7 +1460,7 @@ pub fn finish(app: &AppHandle, chord: Chord, cancelled: bool) {
                 done
             } else {
                 let outcome = match &order {
-                    Some(order) => match crate::agent::answered_by_voice(app, &text).or_else(|| crate::scripts::answered(app, &text)).or_else(|| known(app, &text)).or_else(|| email(&text)).or_else(|| owner(app, &text)).or_else(|| crate::investiga::spoken(app, &text)).or_else(|| quick(app, &text)).or_else(|| crate::extensions::spoken(app, &text)) {
+                    Some(order) => match crate::agent::answered_by_voice(app, &text).or_else(|| crate::whatsapp::asked(app, &text)).or_else(|| crate::scripts::answered(app, &text)).or_else(|| known(app, &text)).or_else(|| email(&text)).or_else(|| owner(app, &text)).or_else(|| crate::investiga::spoken(app, &text)).or_else(|| quick(app, &text)).or_else(|| crate::extensions::spoken(app, &text)) {
                         Some(done) => done,
                         None if task_for(app, &text).is_some() => agent(app, &task_for(app, &text).unwrap_or_else(|| text.clone())),
                         None if crate::ai::asking() => follow(app, &text, order),

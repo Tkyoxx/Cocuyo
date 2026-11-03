@@ -2,6 +2,30 @@
 
 Cada versión con lo que trae. La más nueva arriba.
 
+## 0.4.2
+
+**La grabadora oye el PC en cualquier equipo** (Ajustes → Capturas)
+- En algunos PC el video salía con el micrófono pero sin el sonido del PC, y parecía culpa de «Quitar el ruido». No lo era: Cocuyo se quedaba escuchando un parlante que Windows ya había cambiado (audífonos Bluetooth que pasan a manos libres al abrir su micrófono, audífonos que se conectan, HDMI) o no abría los de 7.1. Lo poco que se oía del PC era lo que se colaba por el micrófono, y al quitar el ruido eso también se iba.
+- Ahora Cocuyo tiene su propio oído para el PC: abre el formato exacto que da Windows, mezcla cualquier número de canales a estéreo y si Windows cambia de parlante se pasa solo al nuevo. El micrófono también vuelve solo si se desconecta.
+- «Probar el audio»: escucha 3 segundos y te dice si llegan el PC y el micrófono, con su nivel.
+
+**WhatsApp más completo**
+- Los stickers, las fotos, las notas de voz, los videos, los documentos y las ubicaciones salen dentro del chat. Las notas se escuchan ahí mismo.
+- Enter envía y Shift+Enter baja de línea.
+- Las respuestas rápidas ya no están siempre a la vista: salen con el rayo, solo escriben en la casilla (no envían solas) y puedes poner las tuyas en Ajustes → WhatsApp.
+- Cada chat se cierra con la × roja de su foto (o clic con la rueda, o Ctrl+W). Si cierras el último, la burbuja se va.
+- El chat se cierra al hacer clic en cualquier otro lado, y lo que estabas escribiendo te espera.
+- Los sonidos de la burbuja ya no se quedan mudos si una vez fallaron.
+- «¿Alguien me escribió?», «revisa mi WhatsApp», «¿me llegó algo?»: te dice quién y qué, agrupado por persona, sin abrir el navegador. Si WhatsApp no está conectado, te lo dice.
+
+**Actualizaciones**
+- La versión nueva se baja callada antes de avisarte y llega verificada: «Actualizar ahora» es al instante, y «Al reiniciar» la deja lista para la próxima vez que abras Cocuyo.
+- Si no eliges, se pone cuando dejas el PC quieto un rato; nunca a pantalla completa ni grabando.
+- El aviso muestra la versión que cambia y lo que trae, y al volver te recibe con lo nuevo.
+
+**Por dentro**
+- Enter vuelve a funcionar en el panel de preguntar por archivos.
+
 ## 0.4.1
 
 **WhatsApp en una burbuja** (Ajustes → WhatsApp)

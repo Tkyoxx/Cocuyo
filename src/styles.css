@@ -1148,6 +1148,212 @@ button.solid:active {
     transform: translateX(300%);
   }
 }
+.sc.up {
+  --tint: var(--accent);
+  padding: 15px 16px 14px;
+}
+.up-head {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+.up-badge {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, color-mix(in srgb, var(--tint) 55%, #fff), var(--tint) 58%, color-mix(in srgb, var(--tint) 55%, #000));
+  box-shadow:
+    0 0 0 5px color-mix(in srgb, var(--tint) 14%, transparent),
+    0 6px 22px -4px color-mix(in srgb, var(--tint) 70%, transparent);
+}
+.up-badge.ok {
+  --tint: #5fe39a;
+}
+.up-badge svg {
+  width: 22px;
+  height: 22px;
+  fill: #16120a;
+}
+.up-ring {
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--tint);
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
+.up-spark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff, var(--tint) 60%, transparent 72%);
+  pointer-events: none;
+}
+.up-title {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.up-title b {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 15.5px;
+  font-weight: 680;
+  white-space: nowrap;
+}
+.up-title small {
+  overflow: hidden;
+  color: var(--dim);
+  font-size: 11.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.up-ver {
+  display: inline-grid;
+  overflow: hidden;
+  padding: 1px 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--tint) 18%, transparent);
+  color: var(--tint);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.up-ver s,
+.up-ver em {
+  grid-area: 1 / 1;
+  font-style: normal;
+  text-decoration: none;
+  text-align: center;
+}
+.up-ver s {
+  opacity: 0;
+}
+.up-list {
+  display: grid;
+  gap: 9px;
+  margin: 14px 0 0;
+  padding: 12px 0 0;
+  border-top: 1px solid rgb(255 255 255 / 0.07);
+  list-style: none;
+}
+.up-list li {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.up-list li::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  left: 2px;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--tint);
+  transform: rotate(45deg);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--tint) 60%, transparent);
+}
+.up-list b {
+  font-weight: 640;
+}
+.up-list span {
+  color: rgb(214 212 222 / 0.78);
+  font-size: 12.5px;
+}
+.up-foot {
+  display: flex;
+  gap: 8px;
+  margin-top: 15px;
+}
+.up-foot button {
+  height: 34px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 11px;
+  background: rgb(255 255 255 / 0.09);
+  color: var(--ink);
+  font: 620 12.5px var(--font);
+  transition:
+    background 0.18s,
+    transform 0.3s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+.up-foot button:hover {
+  background: rgb(255 255 255 / 0.14);
+}
+.up-foot button:active {
+  transform: scale(0.95);
+}
+.up-foot .up-go {
+  flex: 1;
+  background: var(--tint);
+  color: #16120a;
+}
+.up-foot .up-go:hover {
+  background: color-mix(in srgb, var(--tint) 88%, #fff);
+}
+
+.sc.hola .up-foot .up-go {
+  flex: 0 0 auto;
+}
+.up-bar {
+  display: none;
+  height: 5px;
+  margin-top: 15px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: rgb(255 255 255 / 0.08);
+}
+.up-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--tint) 70%, #fff), var(--tint));
+  transform: scaleX(0.04);
+  transform-origin: 0 50%;
+  transition: transform 0.25s linear;
+}
+.sc.up.installing .up-foot {
+  display: none;
+}
+.sc.up.installing .up-bar {
+  display: block;
+}
+.up-hint {
+  display: block;
+  margin-top: 10px;
+  color: var(--dim);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.sc.up.deferred .up-hint {
+  color: var(--tint);
+}
+.sc.up.deferred .up-foot {
+  opacity: 0.45;
+}
+.up-sweep {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 34%;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.07), transparent);
+  pointer-events: none;
+}
 #cards.behind {
   opacity: 0;
   pointer-events: none;

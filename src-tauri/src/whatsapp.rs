@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::os::windows::io::AsRawHandle;
 use std::os::windows::process::CommandExt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -23,6 +23,7 @@ const EXE: &str = "gowa.exe";
 const DEVICE: &str = "cocuyo";
 const KEEP: usize = 30;
 const REPLY_WINDOW: Duration = Duration::from_secs(30 * 60);
+const MEDIA_DAYS: u64 = 3;
 
 struct Gateway {
     child: Child,
@@ -50,6 +51,17 @@ impl Drop for Gateway {
     }
 }
 
+#[derive(Clone, Serialize, PartialEq, Debug)]
+pub struct Media {
+    tipo: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ruta: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nombre: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    enlace: Option<String>,
+}
+
 #[derive(Clone, Serialize)]
 pub struct Message {
     chat: String,
@@ -61,6 +73,7 @@ pub struct Message {
     read: bool,
     mine: bool,
     stamp: u64,
+    media: Option<Media>,
 }
 
 #[derive(Clone, Serialize)]
@@ -68,6 +81,8 @@ pub struct Line {
     yo: bool,
     texto: String,
     hora: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    media: Option<Media>,
 }
 
 static GATEWAY: Mutex<Option<Gateway>> = Mutex::new(None);
@@ -178,6 +193,7 @@ pub fn start(app: &AppHandle) -> Result<(), String> {
         .env("WHATSAPP_WEBHOOK", format!("http://127.0.0.1:{hook}/wa"))
         .env("WHATSAPP_WEBHOOK_SECRET", &secret)
         .env("WHATSAPP_WEBHOOK_EVENTS", "message")
+        .env("WHATSAPP_AUTO_DOWNLOAD_MEDIA", "true")
         .env("WHATSAPP_WEBHOOK_IGNORE_JIDS", if groups { "status@broadcast" } else { "@g.us,status@broadcast" })
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -186,6 +202,10 @@ pub fn start(app: &AppHandle) -> Result<(), String> {
         .spawn()
         .map_err(|e| format!("La pasarela de WhatsApp no arrancó: {e}"))?;
     let job = job_for(&child).ok_or("No pude atar la pasarela de WhatsApp a Cocuyo.")?;
+    let media = dir.join("statics").join("media");
+    let _ = std::fs::create_dir_all(&media);
+    let _ = app.asset_protocol_scope().allow_directory(&media, true);
+    std::thread::spawn(move || tidy_media(&media, Duration::from_secs(MEDIA_DAYS * 86_400)));
     *GATEWAY.lock().unwrap() = Some(Gateway { child, port, password, _job: job });
     let since = Instant::now();
     while call("GET", "/devices", None).is_err() {
@@ -363,7 +383,85 @@ fn keep(message: Message) {
 fn thread(chat: &str) -> Vec<Line> {
     let inbox = INBOX.lock().unwrap();
     let ours: Vec<&Message> = inbox.iter().filter(|m| m.chat == chat).collect();
-    ours[ours.len().saturating_sub(12)..].iter().map(|m| Line { yo: m.mine, texto: m.text.clone(), hora: m.stamp }).collect()
+    ours[ours.len().saturating_sub(12)..].iter().map(|m| Line { yo: m.mine, texto: m.text.clone(), hora: m.stamp, media: m.media.clone() }).collect()
+}
+
+fn tidy_media(media: &Path, older: Duration) {
+    let Ok(files) = std::fs::read_dir(media) else { return };
+    for file in files.flatten() {
+        let old = file.metadata().ok().and_then(|m| m.modified().ok()).and_then(|t| t.elapsed().ok()).is_some_and(|age| age > older);
+        if old && file.path().is_file() {
+            let _ = std::fs::remove_file(file.path());
+        }
+    }
+}
+
+fn local(dir: &Path, relative: &str) -> Option<String> {
+    let relative = relative.replace('\\', "/");
+    let inside = relative.starts_with("statics/media/") && !relative.contains("..") && !relative.contains(':') && relative.len() < 300;
+    let path = dir.join(&relative);
+    (inside && path.is_file()).then(|| path.to_string_lossy().into_owned())
+}
+
+pub fn media_of(dir: &Path, said: &Value) -> Option<Media> {
+    let file = |field: &Value| field.as_str().or(field["path"].as_str()).and_then(|path| local(dir, path));
+    let text = |field: &Value, key: &str| field[key].as_str().map(str::trim).filter(|t| !t.is_empty()).map(|t| t.chars().take(120).collect::<String>());
+    let plain = |tipo: &'static str, ruta: Option<String>, nombre: Option<String>| Some(Media { tipo, ruta, nombre, enlace: None });
+    for (key, tipo) in [("sticker", "sticker"), ("image", "foto"), ("video_note", "video"), ("video", "video"), ("audio", "nota"), ("ptt", "nota")] {
+        let field = &said[key];
+        if !field.is_null() {
+            return plain(tipo, file(field), None);
+        }
+    }
+    let document = &said["document"];
+    if !document.is_null() {
+        let named = text(document, "filename").or_else(|| file(document).and_then(|p| Path::new(&p).file_name().map(|n| n.to_string_lossy().into_owned())));
+        return plain("documento", file(document), named);
+    }
+    for key in ["location", "live_location"] {
+        let place = &said[key];
+        if let (Some(lat), Some(lon)) = (place["degreesLatitude"].as_f64(), place["degreesLongitude"].as_f64()) {
+            let nombre = text(place, "name").or_else(|| text(place, "address"));
+            return Some(Media { tipo: "ubicacion", ruta: None, nombre, enlace: Some(format!("https://www.google.com/maps?q={lat:.6},{lon:.6}")) });
+        }
+    }
+    let contact = if said["contact"].is_null() { &said["contacts_array"][0] } else { &said["contact"] };
+    if !contact.is_null() {
+        return plain("contacto", None, text(contact, "displayName").or_else(|| text(contact, "phone_number")));
+    }
+    None
+}
+
+pub fn label(media: &Media) -> String {
+    let name = media.nombre.clone().unwrap_or_default();
+    let named = |icon: &str, fallback: &str| format!("{icon} {}", if name.is_empty() { crate::i18n::tr(fallback) } else { name.clone() });
+    match media.tipo {
+        "sticker" => crate::i18n::tr("Sticker"),
+        "foto" => named("📷", "Foto"),
+        "nota" => named("🎤", "Nota de voz"),
+        "video" => named("🎥", "Video"),
+        "documento" => named("📄", "Documento"),
+        "ubicacion" => named("📍", "Ubicación"),
+        _ => named("👤", "Contacto"),
+    }
+}
+
+fn spoken_of(message: &Message) -> String {
+    let Some(media) = &message.media else { return message.text.clone() };
+    let what = crate::i18n::tr(match media.tipo {
+        "sticker" => "te mandó un sticker",
+        "foto" => "te mandó una foto",
+        "nota" => "te mandó una nota de voz",
+        "video" => "te mandó un video",
+        "documento" => "te mandó un documento",
+        "ubicacion" => "te mandó una ubicación",
+        _ => "te mandó un contacto",
+    });
+    if message.text.is_empty() {
+        what
+    } else {
+        format!("{what}: {}", message.text)
+    }
 }
 
 fn avatar_of(chat: &str) -> Option<Option<String>> {
@@ -393,13 +491,18 @@ fn fetch_avatar(app: &AppHandle, chat: &str) {
 fn arrived(app: &AppHandle, event: &Value) {
     let said = &event["payload"];
     let text: String = said["body"].as_str().unwrap_or("").trim().chars().take(4000).collect();
-    if event["event"] != "message" || text.is_empty() {
+    let media = dir(app).and_then(|dir| media_of(&dir, said));
+    if event["event"] != "message" || (text.is_empty() && media.is_none()) {
         return;
     }
     let chat = said["chat_id"].as_str().unwrap_or("").to_string();
     let mine = said["is_from_me"].as_bool().unwrap_or(false);
     let name = said["sender_display_name"].as_str().or(said["from_name"].as_str()).unwrap_or("Alguien").to_string();
-    keep(Message { chat: chat.clone(), name: name.clone(), text: text.clone(), at: Instant::now(), read: mine, mine, stamp: now_ms() });
+    let shown = match (&media, text.is_empty()) {
+        (Some(media), true) => label(media),
+        _ => text.clone(),
+    };
+    keep(Message { chat: chat.clone(), name: name.clone(), text: text.clone(), at: Instant::now(), read: mine, mine, stamp: now_ms(), media });
     if mine {
         let _ = app.emit_to(crate::overlay::LABEL, "whatsapp-hilo", json!({ "chat": chat, "hilo": thread(&chat) }));
         return;
@@ -413,7 +516,7 @@ fn arrived(app: &AppHandle, event: &Value) {
     let _ = app.emit_to(
         crate::overlay::LABEL,
         "whatsapp",
-        json!({ "chat": chat, "nombre": name, "texto": text, "hora": now_ms(), "hilo": thread(&chat), "sonar": sonar, "avatar": face.clone().flatten() }),
+        json!({ "chat": chat, "nombre": name, "texto": shown, "hora": now_ms(), "hilo": thread(&chat), "sonar": sonar, "avatar": face.clone().flatten() }),
     );
     if face.is_none() {
         let app = app.clone();
@@ -429,7 +532,7 @@ pub async fn whatsapp_responder(chat: String, texto: String) -> Result<(), Strin
     }
     tauri::async_runtime::spawn_blocking(move || {
         send(&chat, &text)?;
-        keep(Message { chat: chat.clone(), name: String::new(), text, at: Instant::now(), read: true, mine: true, stamp: now_ms() });
+        keep(Message { chat: chat.clone(), name: String::new(), text, at: Instant::now(), read: true, mine: true, stamp: now_ms(), media: None });
         INBOX.lock().unwrap().iter_mut().filter(|m| m.chat == chat).for_each(|m| m.read = true);
         Ok(())
     })
@@ -441,6 +544,25 @@ pub async fn whatsapp_responder(chat: String, texto: String) -> Result<(), Strin
 pub fn whatsapp_hilo(chat: String) -> Vec<Line> {
     INBOX.lock().unwrap().iter_mut().filter(|m| m.chat == chat).for_each(|m| m.read = true);
     thread(&chat)
+}
+
+#[tauri::command]
+pub fn whatsapp_abrir(app: AppHandle, que: String) -> Result<(), String> {
+    if que.starts_with("https://www.google.com/maps?q=") && !que.contains(|c: char| c.is_whitespace() || c == '"') {
+        return crate::apps::open(&que);
+    }
+    let media = dir(&app).ok_or("No encontré la carpeta de Cocuyo.")?.join("statics").join("media");
+    let path = PathBuf::from(&que);
+    if path.parent() != Some(media.as_path()) || !path.is_file() {
+        return Err("Ese archivo no llegó por WhatsApp.".into());
+    }
+    const SAFE: [&str; 22] = ["pdf", "txt", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "csv", "jpg", "jpeg", "png", "webp", "gif", "mp4", "mov", "ogg", "mp3", "m4a"];
+    let kind = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    if SAFE.contains(&kind.as_str()) {
+        crate::apps::open(&que)
+    } else {
+        Command::new("explorer.exe").arg(format!("/select,{que}")).spawn().map(|_| ()).map_err(|e| e.to_string())
+    }
 }
 
 fn last_chat() -> Option<(String, String)> {
@@ -491,26 +613,107 @@ fn replying(spoken: &str) -> Option<String> {
     Some(first.to_uppercase().chain(chars).collect())
 }
 
+fn about_whatsapp(clean: &str) -> bool {
+    ["whatsapp", "wasap", "guasap", "watsap", "wasa", "wpp", "whats", "mensaje", "message", "chat"].iter().any(|w| clean.contains(w))
+}
+
 fn reading(spoken: &str) -> bool {
     let clean = crate::intent::normalize(spoken);
-    ["que me escribieron", "lee mis mensajes", "leeme los mensajes", "tengo mensajes", "mensajes nuevos", "quien me escribio", "read my messages", "any messages"]
+    const SENDING: [&str; 16] = ["mandale", "mandarle", "enviale", "enviarle", "envia ", "manda ", "escribele", "escribirle", "dile ", "decile", "avisale", "preguntale", "respondele", "contestale", "send ", "text "];
+    if SENDING.iter().any(|lead| clean.starts_with(lead)) || replying(spoken).is_some() {
+        return false;
+    }
+    const ALWAYS: [&str; 12] = ["me escribio", "me escribieron", "me ha escrito", "me han escrito", "me hablaron", "me han hablado", "alguien me hablo", "quien me hablo", "read my messages", "any messages", "who texted me", "did anyone text"];
+    const ASKING: [&str; 40] = [
+        "me llego", "me llegaron", "me ha llegado", "me han llegado", "me mando", "me mandaron", "me dijo", "me dijeron", "me respondio", "me respondieron", "me contesto", "me contestaron",
+        "tengo mensajes", "tengo algun", "tengo algo", "tengo whatsapp", "tengo nuevos", "hay mensajes", "hay algo", "hay algun", "hay whatsapp", "mensajes nuevos", "mensaje nuevo", "nuevos mensajes",
+        "nuevo mensaje", "algo nuevo", "algun mensaje", "lee mis", "lee los", "leeme", "lee el whatsapp", "revisa", "mira si", "mira mi", "mira el", "chequea", "checa", "que hay en", "que dice", "check my",
+    ];
+    ALWAYS.iter().any(|ask| clean.contains(ask)) || (about_whatsapp(&clean) && ASKING.iter().any(|ask| clean.contains(ask)))
+}
+
+fn ago(stamp: u64) -> String {
+    let minutes = now_ms().saturating_sub(stamp) / 60_000;
+    match minutes {
+        0 => crate::i18n::tr("hace un momento"),
+        1 => crate::i18n::tr("hace un minuto"),
+        2..=59 => crate::i18n::tr("hace {} minutos").replace("{}", &minutes.to_string()),
+        60..=119 => crate::i18n::tr("hace una hora"),
+        _ => crate::i18n::tr("hace {} horas").replace("{}", &(minutes / 60).to_string()),
+    }
+}
+
+pub fn summary(inbox: &mut [Message]) -> String {
+    let mut people: Vec<(String, Vec<String>)> = Vec::new();
+    for message in inbox.iter().filter(|m| !m.read && !m.mine) {
+        let said = spoken_of(message);
+        match people.iter_mut().find(|(name, _)| *name == message.name) {
+            Some((_, all)) => all.push(said),
+            None => people.push((message.name.clone(), vec![said])),
+        }
+    }
+    let last = inbox.iter().rev().find(|m| !m.mine && m.stamp + 6 * 3_600_000 > now_ms()).map(|m| (m.name.clone(), spoken_of(m), m.stamp));
+    inbox.iter_mut().for_each(|m| m.read = true);
+    if people.is_empty() {
+        return match last {
+            Some((name, said, stamp)) => format!("{} {name}, {}: {said}", crate::i18n::tr("Nada nuevo. Lo último fue de"), ago(stamp)),
+            None => crate::i18n::tr("No tienes mensajes nuevos de WhatsApp."),
+        };
+    }
+    let total: usize = people.iter().map(|(_, all)| all.len()).sum();
+    let parts: Vec<String> = people
         .iter()
-        .any(|ask| clean.contains(ask))
+        .take(5)
+        .map(|(name, all)| {
+            let shown = all[all.len().saturating_sub(3)..].join(". ");
+            if all.len() == 1 {
+                format!("{name}: {shown}")
+            } else {
+                format!("{name} ({}): {shown}", all.len())
+            }
+        })
+        .collect();
+    let head = match (total, people.len()) {
+        (1, _) => crate::i18n::tr("Un mensaje."),
+        (n, 1) => crate::i18n::tr("{} mensajes.").replace("{}", &n.to_string()),
+        (n, p) => crate::i18n::tr("{} mensajes de {} personas.").replacen("{}", &n.to_string(), 1).replacen("{}", &p.to_string(), 1),
+    };
+    let rest = people.len().saturating_sub(5);
+    let more = if rest > 0 { format!(" {}", crate::i18n::tr("Y {} más.").replace("{}", &rest.to_string())) } else { String::new() };
+    format!("{head} {}.{more}", parts.join(". ").trim_end_matches('.'))
+}
+
+pub fn connected() -> bool {
+    running()
+}
+
+pub fn read_out(app: &AppHandle) -> Result<String, String> {
+    if !running() {
+        let hint = if installed(app) {
+            "WhatsApp está desconectado de Cocuyo. Conéctalo en Ajustes → WhatsApp y te leo los mensajes sin abrir nada."
+        } else {
+            "Todavía no conectas WhatsApp a Cocuyo. Hazlo en Ajustes → WhatsApp y te leo los mensajes sin abrir nada."
+        };
+        return Err(crate::i18n::tr(hint));
+    }
+    if !status().0 {
+        return Err(crate::i18n::tr("WhatsApp no tiene la sesión abierta: escanea el código en Ajustes → WhatsApp."));
+    }
+    let said = summary(&mut INBOX.lock().unwrap());
+    let _ = app.emit_to(crate::overlay::LABEL, "whatsapp-leidos", ());
+    Ok(said)
+}
+
+pub fn asked(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
+    (reading(spoken) && (running() || about_whatsapp(&crate::intent::normalize(spoken)))).then(|| read_out(app))
 }
 
 pub fn spoken(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
+    if let Some(done) = asked(app, spoken) {
+        return Some(done);
+    }
     if !running() {
         return None;
-    }
-    if reading(spoken) {
-        let mut inbox = INBOX.lock().unwrap();
-        let fresh: Vec<String> = inbox.iter().filter(|m| !m.read && !m.mine).map(|m| format!("{}: {}", m.name, m.text)).collect();
-        inbox.iter_mut().for_each(|m| m.read = true);
-        return Some(Ok(match fresh.len() {
-            0 => "No tienes mensajes nuevos de WhatsApp.".to_string(),
-            1 => format!("Un mensaje. {}", fresh[0]),
-            n => format!("{n} mensajes. {}", fresh.join(". ")),
-        }));
     }
     let text = replying(spoken)?;
     let Some((chat, name)) = last_chat() else {
@@ -521,7 +724,7 @@ pub fn spoken(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
         return Some(Ok("Quedó sin enviar.".into()));
     }
     Some(send(&chat, &text).map(|()| {
-        keep(Message { chat: chat.clone(), name: String::new(), text: text.clone(), at: Instant::now(), read: true, mine: true, stamp: now_ms() });
+        keep(Message { chat: chat.clone(), name: String::new(), text: text.clone(), at: Instant::now(), read: true, mine: true, stamp: now_ms(), media: None });
         format!("Listo, le respondí a {name}.")
     }))
 }
@@ -558,5 +761,51 @@ mod tests {
         assert!(reading("¿Qué me escribieron?"));
         assert!(reading("léeme los mensajes"));
         assert!(!reading("escribe un mensaje"));
+        assert!(reading("¿alguien me escribió al WhatsApp?"));
+        assert!(reading("mira si alguien me escribió"));
+        assert!(reading("revisa mi wasap"));
+        assert!(reading("¿tengo mensajes nuevos?"));
+        assert!(reading("¿me llegó algo al WhatsApp?"));
+        assert!(reading("qué me dijo Angela por WhatsApp"));
+        assert!(!reading("abre WhatsApp"));
+        assert!(!reading("entra a whatsapp"));
+        assert!(!reading("mándale un WhatsApp a Ana que hay comida"));
+        assert!(!reading("escríbele a mamá por WhatsApp que ya me llegó el paquete"));
+        assert!(!reading("respóndele que ya revisa el correo"));
+    }
+
+    fn message(name: &str, text: &str, media: Option<Media>) -> Message {
+        Message { chat: name.into(), name: name.into(), text: text.into(), at: Instant::now(), read: false, mine: false, stamp: now_ms(), media }
+    }
+
+    #[test]
+    fn reads_who_wrote_grouped_and_says_stickers() {
+        let sticker = Media { tipo: "sticker", ruta: None, nombre: None, enlace: None };
+        let mut inbox = vec![message("Angela", "hola", None), message("Pedro", "", Some(sticker)), message("Angela", "¿vienes?", None)];
+        let said = summary(&mut inbox);
+        assert!(said.starts_with("3 mensajes de 2 personas."), "{said}");
+        assert!(said.contains("Angela (2): hola. ¿vienes?"), "{said}");
+        assert!(said.contains("Pedro: te mandó un sticker"), "{said}");
+        assert!(inbox.iter().all(|m| m.read));
+        let again = summary(&mut inbox);
+        assert!(again.starts_with("Nada nuevo. Lo último fue de Angela"), "{again}");
+    }
+
+    #[test]
+    fn media_stays_inside_the_gateway_folder() {
+        let dir = std::env::temp_dir().join(format!("cocuyo-wa-{}", std::process::id()));
+        let media = dir.join("statics").join("media");
+        std::fs::create_dir_all(&media).unwrap();
+        std::fs::write(media.join("a.webp"), b"RIFF").unwrap();
+        let sticker = media_of(&dir, &json!({ "sticker": "statics/media/a.webp" })).unwrap();
+        assert_eq!(sticker.tipo, "sticker");
+        assert!(sticker.ruta.as_deref().is_some_and(|r| r.ends_with("a.webp")));
+        assert_eq!(media_of(&dir, &json!({ "sticker": "statics/media/../../secreto.txt" })).unwrap().ruta, None);
+        assert_eq!(media_of(&dir, &json!({ "image": { "path": "C:/Windows/win.ini", "caption": "hola" } })).unwrap().ruta, None);
+        let place = media_of(&dir, &json!({ "location": { "degreesLatitude": 4.6, "degreesLongitude": -74.08, "name": "Parque" } })).unwrap();
+        assert_eq!(place.nombre.as_deref(), Some("Parque"));
+        assert!(place.enlace.unwrap().starts_with("https://www.google.com/maps?q=4.600000,-74.080000"));
+        assert_eq!(media_of(&dir, &json!({ "body": "solo texto" })), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
