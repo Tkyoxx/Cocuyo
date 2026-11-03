@@ -158,6 +158,7 @@ function closeMenu() {
 }
 
 island.onOpen = () => {
+  void call("suelta_lista");
   if (guide.open || installer.open) return;
   menu.show();
   cards.behind = true;
@@ -335,9 +336,7 @@ function offerFile(file: Dropped, title: string, seconds: number) {
   cards.show({ script: "Cocuyo", titulo: title, texto: "¿Qué hago con esto?", icono: ICON_OF[file.kind], segundos: seconds, botones: buttons });
 }
 
-if ("__TAURI_INTERNALS__" in window) void getCurrentWebview().onDragDropEvent(async (event) => {
-  const kind = event.payload.type;
-  const at = "position" in event.payload ? { x: event.payload.position.x / devicePixelRatio, y: event.payload.position.y / devicePixelRatio } : null;
+async function dropped(kind: string, at: { x: number; y: number } | null, paths: string[]) {
   const toChat = !!at && burbuja.takes(at.x, at.y);
   if (kind === "enter" || kind === "over") {
     burbuja.hovering(toChat);
@@ -346,19 +345,30 @@ if ("__TAURI_INTERNALS__" in window) void getCurrentWebview().onDragDropEvent(as
   }
   burbuja.hovering(false);
   island.dropping(false);
-  if (kind !== "drop" || !event.payload.paths.length) return;
+  if (kind !== "drop" || !paths.length) return;
   if (toChat) {
-    void burbuja.attach(event.payload.paths);
+    void burbuja.attach(paths);
     return;
   }
   island.gulp();
   try {
-    const kept = await call<Dropped[]>("bandeja_recibir", { paths: event.payload.paths });
+    const kept = await call<Dropped[]>("bandeja_recibir", { paths });
     offerFile(kept[0], kept.length > 1 ? `${kept[0].name} y ${kept.length - 1} más` : kept[0].name, 30);
   } catch (error) {
     caption.say("app", String(error), 5200);
   }
-});
+}
+
+if ("__TAURI_INTERNALS__" in window) {
+  void getCurrentWebview().onDragDropEvent((event) => {
+    const p = event.payload;
+    const at = "position" in p ? { x: p.position.x / devicePixelRatio, y: p.position.y / devicePixelRatio } : null;
+    void dropped(p.type, at, "paths" in p ? p.paths : []);
+  });
+  on<{ tipo: string; x?: number; y?: number; rutas: string[] }>("suelta", (e) => void dropped(e.tipo, e.x === undefined ? null : { x: e.x, y: e.y ?? 0 }, e.rutas));
+  void call("suelta_lista");
+  for (const wait of [3000, 15000]) setTimeout(() => void call("suelta_lista"), wait);
+}
 
 function announce(result: Captured) {
   const size = `${result.w} × ${result.h} px`;

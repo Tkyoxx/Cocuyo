@@ -22,6 +22,7 @@ Cada versión con lo que trae. La más nueva arriba.
 - La primera vez que prendes el PC cada día: el clima, lo que tienes hoy en la agenda y quién te escribió. Espera si estás jugando a pantalla completa.
 
 **Lo que se arregló**
+- Soltar archivos en la isla ya funciona: el mouse mostraba el símbolo de prohibido. La isla arranca escondida y el receptor de archivos se ponía antes de que existieran las ventanitas del navegador interno; la que queda bajo el mouse tenía el del navegador, que rechazaba todo. Ahora Cocuyo pone el suyo cuando la isla ya está y lo repone si hace falta.
 - Un clip 📎 junto al lápiz del menú para elegir un documento o una imagen y preguntarle por él. Antes solo se podía soltándolo encima de la isla, y casi nadie lo encontraba.
 - Los tres puntitos de «pensando» se quedaban al lado de la respuesta cuando Cocuyo contestaba en vivo, y la isla seguía pensando. Ahora la respuesta los reemplaza.
 

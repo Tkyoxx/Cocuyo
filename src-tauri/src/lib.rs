@@ -48,6 +48,7 @@ mod resumen;
 mod ruido;
 mod scripts;
 mod settings;
+mod suelta;
 mod spotify;
 mod system;
 mod talk;
@@ -283,6 +284,7 @@ pub fn run() {
             bandeja::bandeja_texto,
             bandeja::bandeja_abrir,
             bandeja::bandeja_elegir,
+            suelta::suelta_lista,
             update::update_choice,
             whatsapp::whatsapp_estado,
             whatsapp::whatsapp_conectar,
