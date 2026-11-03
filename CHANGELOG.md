@@ -2,7 +2,7 @@
 
 Cada versión con lo que trae. La más nueva arriba.
 
-## 0.4.4
+## 0.4.5
 
 **Dile «sí» sin soltar nada** (Ajustes → Agente)
 - Cuando Cocuyo pide permiso («¿Lo hago?»), después de preguntar escucha unos segundos: «sí», «dale», «hazlo», «no», «cancela» o «siempre hoy». Lo oye solo tu PC, con el reconocimiento local.

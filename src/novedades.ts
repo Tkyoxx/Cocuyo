@@ -1,7 +1,7 @@
 // lo que trae cada version, para contarlo una vez despues de actualizar. la compilacion falla si falta la de la version
 
 export const NOVEDADES: Record<string, [string, string][]> = {
-  "0.4.4": [
+  "0.4.5": [
     ["Dile «sí» sin soltar nada", "Cuando Cocuyo pide permiso, escucha unos segundos: «sí», «dale», «no» o «siempre hoy»."],
     ["WhatsApp a tu manera", "«Escríbele a Angela que ya voy» sale directo, «mañana a las 7 mándale buenos días» queda programado y los archivos se sueltan en la burbuja."],
     ["YouTube Music", "Si no usas Spotify, «pon…» busca y pone la canción en tu YouTube Music, gratis y sin claves."],
