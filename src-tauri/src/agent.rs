@@ -193,6 +193,7 @@ enum Doer {
     WhatsappRead,
     WhatsappChat,
     WhatsappPerson,
+    WhatsappSend,
     Extension(String),
     Mcp(String, String),
 }
@@ -272,6 +273,19 @@ fn toolbox(app: &AppHandle) -> (Vec<Value>, HashMap<String, Doer>) {
             object(json!({ "persona": { "type": "string", "description": "El nombre como lo dijo la persona" } }), &["persona"]),
         ));
         doers.insert("cocuyo_whatsapp_chat".to_string(), Doer::WhatsappChat);
+        tools.push(function(
+            "cocuyo_whatsapp_enviar",
+            "Manda un WhatsApp por la conexión directa de Cocuyo, sin abrir la app ni tocar el mouse. Es la vía para cualquier mensaje de WhatsApp \
+             («escríbele a…», «dile a…», «mándale a…»); busca a la persona en sus chats y contactos y pide permiso antes de enviar si así está configurado.",
+            object(
+                json!({
+                    "para": { "type": "string", "description": "El nombre como lo dijo la persona" },
+                    "texto": { "type": "string", "description": "El mensaje tal cual se envía, en primera persona" }
+                }),
+                &["para", "texto"],
+            ),
+        ));
+        doers.insert("cocuyo_whatsapp_enviar".to_string(), Doer::WhatsappSend);
         tools.push(function(
             "cocuyo_whatsapp_persona",
             "Guarda o reemplaza una ficha corta de un contacto de WhatsApp para tener contexto la próxima vez: quién es para la persona, cómo se \
@@ -455,6 +469,7 @@ fn act(app: &AppHandle, doer: &Doer, args: &Value) -> Result<Done, String> {
         Doer::WhatsappRead => crate::whatsapp::read_out(app).map(Done::from),
         Doer::WhatsappChat => crate::whatsapp::chat_for_ai(app, &text(args, "persona")).map(Done::from),
         Doer::WhatsappPerson => crate::whatsapp::save_person(app, &text(args, "persona"), &text(args, "ficha")).map(Done::from),
+        Doer::WhatsappSend => crate::whatsapp::send_to(app, &text(args, "para"), &text(args, "texto")).map(Done::from),
         Doer::Window => crate::pc::open(app, &text(args, "app")).map(Done::from),
         Doer::Minutes => if text(args, "accion") == "terminar" { crate::minutes::finish(app) } else { crate::minutes::start(app) }.map(Done::from),
         Doer::Message => send_message(app, &text(args, "app"), &text(args, "para"), &text(args, "texto")).map(Done::from),
@@ -488,6 +503,7 @@ fn label(name: &str, args: &Value) -> String {
         "cocuyo_whatsapp_leer" => "Mirando tus WhatsApp".into(),
         "cocuyo_whatsapp_chat" => format!("Leyendo el chat con {}", text(args, "persona")),
         "cocuyo_whatsapp_persona" => format!("Anotando quién es {}", text(args, "persona")),
+        "cocuyo_whatsapp_enviar" => format!("Escribiéndole a {}", text(args, "para")),
         "cocuyo_hacer" => {
             let actions = args.get("acciones").and_then(Value::as_array).map_or(0, Vec::len);
             if actions == 1 { "Usando el mouse".into() } else { format!("Usando el mouse ({actions} pasos)") }
@@ -621,19 +637,35 @@ pub fn voice_prompt(app: &AppHandle) -> String {
 const QUICK: [&str; 3] = ["cocuyo_orden", "cocuyo_script", "cocuyo_mensaje"];
 
 pub fn quick_message(spoken: &str) -> Option<(String, String, String)> {
+    parse_message(spoken, false)
+}
+
+pub fn loose_message(spoken: &str) -> Option<(String, String, String)> {
+    parse_message(spoken, true)
+}
+
+fn parse_message(spoken: &str, loose: bool) -> Option<(String, String, String)> {
     let all: Vec<&str> = spoken.split_whitespace().collect();
     let flat = |word: &str| crate::intent::normalize(word).trim().to_string();
-    let at = all.iter().position(|word| matches!(flat(word).as_str(), "whatsapp" | "wasap" | "guasap" | "whatsap" | "discord" | "telegram"))?;
-    let chat = match flat(all[at]).as_str() {
-        "discord" => "Discord",
-        "telegram" => "Telegram",
+    let found = all.iter().position(|word| matches!(flat(word).as_str(), "whatsapp" | "wasap" | "guasap" | "whatsap" | "discord" | "telegram"));
+    if found.is_none() && !loose {
+        return None;
+    }
+    let chat = match found.map(|at| flat(all[at])).as_deref() {
+        Some("discord") => "Discord",
+        Some("telegram") => "Telegram",
         _ => "WhatsApp",
     };
-    let mut from = at;
-    while from > 0 && matches!(flat(all[from - 1]).as_str(), "por" | "en" | "al" | "via" | "desde" | "el" | "mi") {
-        from -= 1;
-    }
-    let words: Vec<&str> = all[..from].iter().chain(all[at + 1..].iter()).copied().collect();
+    let words: Vec<&str> = match found {
+        Some(at) => {
+            let mut from = at;
+            while from > 0 && matches!(flat(all[from - 1]).as_str(), "por" | "en" | "al" | "via" | "desde" | "el" | "mi") {
+                from -= 1;
+            }
+            all[..from].iter().chain(all[at + 1..].iter()).copied().collect()
+        }
+        None => all.clone(),
+    };
     let plain: Vec<String> = words.iter().map(|word| flat(word)).collect();
     let word = |i: usize| plain.get(i).map(String::as_str).unwrap_or("");
     let mut i = 0;
@@ -702,8 +734,8 @@ pub fn send_message(app: &AppHandle, chat: &str, who: &str, text: &str) -> Resul
     }
     let confirm = crate::settings::load(app).agent_confirm;
     let key = format!("{chat} {who}");
-    if chat == "WhatsApp" {
-        if let Some((jid, name)) = crate::whatsapp::contact(who) {
+    if chat == "WhatsApp" && crate::whatsapp::connected() {
+        if let Some((jid, name)) = crate::whatsapp::who_is(who) {
             if confirm && !permission_for(app, &format!("Enviar a {name} por WhatsApp: «{text}»"), &key) {
                 return Ok("Quedó sin enviar.".into());
             }
@@ -737,7 +769,7 @@ fn prompt(app: &AppHandle, said: &str, with_hands: bool) -> String {
              escribe y pulsa teclas sobre esos números y te muestra cómo quedó, así no adivinas posiciones ni dependes de la resolución. \
              Mete en un solo cocuyo_hacer todo lo que ya sabes que viene. Los atajos de teclado suelen ser lo más rápido.\n\
              Si la persona nombra una app o ventana, usa esa y no otra parecida.\n\
-             Mensajes: abre la app, busca el chat (WhatsApp: el buscador de arriba; Discord: ctrl+k y el nombre; Telegram: el buscador) y entra; \
+             Mensajes: usa cocuyo_mensaje (y para WhatsApp, cocuyo_whatsapp_enviar si está: sale directo sin abrir nada). Solo si eso falla, abre la app, busca el chat (WhatsApp: el buscador de arriba; Discord: ctrl+k y el nombre; Telegram: el buscador) y entra; \
              cuando la vista muestre ese chat abierto, escribe en el campo del mensaje y envía con enter en un cocuyo_hacer con «confirmar» y «destino». \
              Si hay varios contactos que encajan, pregunta cuál. Escribe el mensaje como lo diría la persona, en primera persona.\n\
              Nunca escribas contraseñas, códigos ni datos de tarjetas: eso lo hace la persona. Si te dice que la persona movió el mouse, detente y avísale.",
@@ -879,6 +911,14 @@ mod tests {
         assert_eq!(got("mándale a Angela que llego tarde"), None);
         assert_eq!(got("dime qué me escribió Angela por WhatsApp"), None);
         assert!(speaks_of_them("que si ella puede venir") && !speaks_of_them("Llego tarde"));
+        let loose = |said: &str| loose_message(said).map(|(app, who, text)| format!("{app}|{who}|{text}"));
+        assert_eq!(loose("escríbele a Angela que ya voy").as_deref(), Some("WhatsApp|Angela|Ya voy"));
+        assert_eq!(loose("Oye Cocuyo, dile a mi mamá que llego tarde").as_deref(), Some("WhatsApp|mamá|Llego tarde"));
+        assert_eq!(loose("mándale un mensaje a Juan Pérez diciéndole que ya salí").as_deref(), Some("WhatsApp|Juan Pérez|Ya salí"));
+        assert_eq!(loose("escríbele a Pedro por Discord que ya entro").as_deref(), Some("Discord|Pedro|Ya entro"));
+        assert_eq!(loose("pon música de Bad Bunny"), None);
+        assert_eq!(loose("escribe un correo"), None);
+        assert_eq!(loose("dime qué me escribió Angela"), None);
     }
 
     #[test]

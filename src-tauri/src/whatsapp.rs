@@ -830,7 +830,7 @@ pub fn whatsapp_persona_borrar(app: AppHandle, chat: String) -> Result<(), Strin
     keep_people(&app, &all)
 }
 
-fn who_is(who: &str) -> Option<(String, String)> {
+pub fn who_is(who: &str) -> Option<(String, String)> {
     let mut known: Vec<(String, String)> = Vec::new();
     for m in INBOX.lock().unwrap().iter().filter(|m| !m.mine && m.chat.ends_with("@s.whatsapp.net")) {
         if !known.iter().any(|(chat, _)| *chat == m.chat) {
@@ -920,8 +920,33 @@ pub fn asked(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
     (reading(spoken) && (running() || about_whatsapp(&crate::intent::normalize(spoken)))).then(|| read_out(app))
 }
 
+pub fn send_to(app: &AppHandle, who: &str, text: &str) -> Result<String, String> {
+    if !running() || !status().0 {
+        return Err("WhatsApp no está conectado a Cocuyo.".into());
+    }
+    if who_is(who).is_none() {
+        return Err(format!("No encontré a «{who}» en tus chats ni en tus contactos de WhatsApp."));
+    }
+    crate::agent::send_message(app, "WhatsApp", who, text)
+}
+
+fn sending(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
+    if !running() {
+        return None;
+    }
+    let (chat, who, text) = crate::agent::loose_message(spoken)?;
+    if chat != "WhatsApp" || who_is(&who).is_none() {
+        return None;
+    }
+    Some(crate::agent::send_message(app, &chat, &who, &text))
+}
+
+pub fn early(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
+    asked(app, spoken).or_else(|| sending(app, spoken))
+}
+
 pub fn spoken(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
-    if let Some(done) = asked(app, spoken) {
+    if let Some(done) = early(app, spoken) {
         return Some(done);
     }
     if !running() {
