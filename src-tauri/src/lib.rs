@@ -288,6 +288,8 @@ pub fn run() {
             whatsapp::whatsapp_responder,
             whatsapp::whatsapp_hilo,
             whatsapp::whatsapp_abrir,
+            whatsapp::whatsapp_personas,
+            whatsapp::whatsapp_persona_borrar,
             bandeja::bandeja_preguntar,
             bandeja::bandeja_cerrar,
             bandeja::anotar_abrir,

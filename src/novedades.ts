@@ -1,6 +1,12 @@
 // lo que trae cada version, para contarlo una vez despues de actualizar. la compilacion falla si falta la de la version
 
 export const NOVEDADES: Record<string, [string, string][]> = {
+  "0.4.3": [
+    ["Las letras salen también jugando", "Con un juego a pantalla completa ya se ve lo que dices y lo que responde Cocuyo."],
+    ["El visto de verdad", "Tus mensajes muestran enviado, entregado y leído en azul, y al abrir un chat les llega tu visto."],
+    ["La IA entiende la conversación", "Si se lo pides, lee los últimos 20 mensajes de un chat y te propone una ficha de esa persona; solo se guarda si dices que sí."],
+    ["Una barra a la medida", "El chat tiene su propia barra para subir y bajar, discreta, y ya no aparece la de lado."],
+  ],
   "0.4.2": [
     ["La grabadora oye el PC en cualquier equipo", "Sigue al parlante de Windows aunque cambies a audífonos o Bluetooth, y en Ajustes → Capturas puedes probar qué llega al video."],
     ["Stickers, fotos y notas de voz en la burbuja", "Salen dentro del chat y las notas se escuchan ahí mismo. Enter envía y cada chat se cierra con su ×."],

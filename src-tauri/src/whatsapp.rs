@@ -74,7 +74,15 @@ pub struct Message {
     mine: bool,
     stamp: u64,
     media: Option<Media>,
+    #[serde(skip)]
+    id: String,
+    #[serde(skip)]
+    tick: u8,
 }
+
+const SENT: u8 = 1;
+const DELIVERED: u8 = 2;
+const SEEN: u8 = 3;
 
 #[derive(Clone, Serialize)]
 pub struct Line {
@@ -83,6 +91,8 @@ pub struct Line {
     hora: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     media: Option<Media>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    estado: Option<&'static str>,
 }
 
 static GATEWAY: Mutex<Option<Gateway>> = Mutex::new(None);
@@ -192,7 +202,7 @@ pub fn start(app: &AppHandle) -> Result<(), String> {
         .env("APP_BASIC_AUTH", format!("cocuyo:{password}"))
         .env("WHATSAPP_WEBHOOK", format!("http://127.0.0.1:{hook}/wa"))
         .env("WHATSAPP_WEBHOOK_SECRET", &secret)
-        .env("WHATSAPP_WEBHOOK_EVENTS", "message")
+        .env("WHATSAPP_WEBHOOK_EVENTS", "message,message.ack")
         .env("WHATSAPP_AUTO_DOWNLOAD_MEDIA", "true")
         .env("WHATSAPP_WEBHOOK_IGNORE_JIDS", if groups { "status@broadcast" } else { "@g.us,status@broadcast" })
         .stdin(Stdio::null())
@@ -372,7 +382,8 @@ fn now_ms() -> u64 {
 
 fn keep(message: Message) {
     let mut inbox = INBOX.lock().unwrap();
-    let echo = message.mine && inbox.iter().rev().take(6).any(|old| old.mine && old.chat == message.chat && old.text == message.text && old.at.elapsed() < Duration::from_secs(20));
+    let twin = !message.id.is_empty() && inbox.iter().any(|old| old.id == message.id);
+    let echo = twin || (message.mine && inbox.iter().rev().take(6).any(|old| old.mine && old.chat == message.chat && old.text == message.text && old.at.elapsed() < Duration::from_secs(20)));
     if !echo {
         inbox.push(message);
     }
@@ -383,7 +394,66 @@ fn keep(message: Message) {
 fn thread(chat: &str) -> Vec<Line> {
     let inbox = INBOX.lock().unwrap();
     let ours: Vec<&Message> = inbox.iter().filter(|m| m.chat == chat).collect();
-    ours[ours.len().saturating_sub(12)..].iter().map(|m| Line { yo: m.mine, texto: m.text.clone(), hora: m.stamp, media: m.media.clone() }).collect()
+    ours[ours.len().saturating_sub(12)..]
+        .iter()
+        .map(|m| Line {
+            yo: m.mine,
+            texto: m.text.clone(),
+            hora: m.stamp,
+            media: m.media.clone(),
+            estado: m.mine.then_some(match m.tick {
+                SEEN => "leido",
+                DELIVERED => "entregado",
+                _ => "listo",
+            }),
+        })
+        .collect()
+}
+
+pub fn receipt(inbox: &mut [Message], ids: &[String], kind: &str) -> Vec<String> {
+    let mut touched = Vec::new();
+    for message in inbox.iter_mut().filter(|m| !m.id.is_empty() && ids.contains(&m.id)) {
+        let changed = if message.mine {
+            let tick = if kind.starts_with("read") || kind == "played" { SEEN } else if kind == "delivered" || kind.is_empty() { DELIVERED } else { 0 };
+            let up = tick > message.tick;
+            message.tick = message.tick.max(tick);
+            up
+        } else if kind.starts_with("read") {
+            let fresh = !message.read || message.tick < SEEN;
+            message.read = true;
+            message.tick = SEEN;
+            fresh
+        } else {
+            false
+        };
+        if changed && !touched.contains(&message.chat) {
+            touched.push(message.chat.clone());
+        }
+    }
+    touched
+}
+
+fn mark_seen(chat: &str) {
+    let pending: Vec<String> = {
+        let mut inbox = INBOX.lock().unwrap();
+        inbox
+            .iter_mut()
+            .filter(|m| m.chat == chat && !m.mine && !m.id.is_empty() && m.tick < SEEN)
+            .map(|m| {
+                m.tick = SEEN;
+                m.id.clone()
+            })
+            .collect()
+    };
+    if pending.is_empty() || !running() {
+        return;
+    }
+    let chat = chat.to_string();
+    std::thread::spawn(move || {
+        for id in pending {
+            let _ = call("POST", &format!("/message/{id}/read"), Some(&json!({ "phone": chat })));
+        }
+    });
 }
 
 fn tidy_media(media: &Path, older: Duration) {
@@ -490,6 +560,14 @@ fn fetch_avatar(app: &AppHandle, chat: &str) {
 
 fn arrived(app: &AppHandle, event: &Value) {
     let said = &event["payload"];
+    if event["event"] == "message.ack" {
+        let ids: Vec<String> = said["ids"].as_array().map(|all| all.iter().filter_map(|id| id.as_str().map(str::to_string)).collect()).unwrap_or_default();
+        let touched = receipt(&mut INBOX.lock().unwrap(), &ids, said["receipt_type"].as_str().unwrap_or(""));
+        for chat in touched {
+            let _ = app.emit_to(crate::overlay::LABEL, "whatsapp-hilo", json!({ "chat": chat, "hilo": thread(&chat) }));
+        }
+        return;
+    }
     let text: String = said["body"].as_str().unwrap_or("").trim().chars().take(4000).collect();
     let media = dir(app).and_then(|dir| media_of(&dir, said));
     if event["event"] != "message" || (text.is_empty() && media.is_none()) {
@@ -502,7 +580,8 @@ fn arrived(app: &AppHandle, event: &Value) {
         (Some(media), true) => label(media),
         _ => text.clone(),
     };
-    keep(Message { chat: chat.clone(), name: name.clone(), text: text.clone(), at: Instant::now(), read: mine, mine, stamp: now_ms(), media });
+    let id = said["id"].as_str().unwrap_or("").chars().take(80).collect();
+    keep(Message { chat: chat.clone(), name: name.clone(), text: text.clone(), at: Instant::now(), read: mine, mine, stamp: now_ms(), media, id, tick: if mine { SENT } else { 0 } });
     if mine {
         let _ = app.emit_to(crate::overlay::LABEL, "whatsapp-hilo", json!({ "chat": chat, "hilo": thread(&chat) }));
         return;
@@ -531,9 +610,10 @@ pub async fn whatsapp_responder(chat: String, texto: String) -> Result<(), Strin
         return Err("Escribe algo.".into());
     }
     tauri::async_runtime::spawn_blocking(move || {
-        send(&chat, &text)?;
-        keep(Message { chat: chat.clone(), name: String::new(), text, at: Instant::now(), read: true, mine: true, stamp: now_ms(), media: None });
+        let id = send(&chat, &text)?;
+        keep(Message { chat: chat.clone(), name: String::new(), text, at: Instant::now(), read: true, mine: true, stamp: now_ms(), media: None, id, tick: SENT });
         INBOX.lock().unwrap().iter_mut().filter(|m| m.chat == chat).for_each(|m| m.read = true);
+        mark_seen(&chat);
         Ok(())
     })
     .await
@@ -543,6 +623,7 @@ pub async fn whatsapp_responder(chat: String, texto: String) -> Result<(), Strin
 #[tauri::command]
 pub fn whatsapp_hilo(chat: String) -> Vec<Line> {
     INBOX.lock().unwrap().iter_mut().filter(|m| m.chat == chat).for_each(|m| m.read = true);
+    mark_seen(&chat);
     thread(&chat)
 }
 
@@ -569,10 +650,10 @@ fn last_chat() -> Option<(String, String)> {
     INBOX.lock().unwrap().iter().rev().find(|message| !message.mine && message.at.elapsed() < REPLY_WINDOW).map(|message| (message.chat.clone(), message.name.clone()))
 }
 
-pub fn send(chat: &str, text: &str) -> Result<(), String> {
+pub fn send(chat: &str, text: &str) -> Result<String, String> {
     let said = call("POST", "/send/message", Some(&json!({ "phone": chat, "message": text })))?;
     if said["code"] == "SUCCESS" {
-        Ok(())
+        Ok(said["results"]["message_id"].as_str().unwrap_or("").chars().take(80).collect())
     } else {
         Err(format!("WhatsApp no lo mandó: {}", said["message"].as_str().unwrap_or("sin explicación")))
     }
@@ -699,9 +780,140 @@ pub fn read_out(app: &AppHandle) -> Result<String, String> {
     if !status().0 {
         return Err(crate::i18n::tr("WhatsApp no tiene la sesión abierta: escanea el código en Ajustes → WhatsApp."));
     }
+    let fresh: Vec<String> = INBOX.lock().unwrap().iter().filter(|m| !m.read && !m.mine).map(|m| m.chat.clone()).fold(Vec::new(), |mut all, chat| {
+        if !all.contains(&chat) {
+            all.push(chat);
+        }
+        all
+    });
     let said = summary(&mut INBOX.lock().unwrap());
+    fresh.iter().for_each(|chat| mark_seen(chat));
     let _ = app.emit_to(crate::overlay::LABEL, "whatsapp-leidos", ());
     Ok(said)
+}
+
+fn people_file(app: &AppHandle) -> Option<PathBuf> {
+    Some(app.path().app_config_dir().ok()?.join("personas.json"))
+}
+
+fn people(app: &AppHandle) -> serde_json::Map<String, Value> {
+    people_file(app).and_then(|file| std::fs::read(file).ok()).and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok()).and_then(|v| v.as_object().cloned()).unwrap_or_default()
+}
+
+fn keep_people(app: &AppHandle, all: &serde_json::Map<String, Value>) -> Result<(), String> {
+    let file = people_file(app).ok_or("No encontré la carpeta de Cocuyo.")?;
+    if let Some(dir) = file.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    std::fs::write(file, serde_json::to_vec_pretty(all).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+}
+
+#[derive(Serialize)]
+pub struct Persona {
+    chat: String,
+    nombre: String,
+    contexto: String,
+}
+
+#[tauri::command]
+pub fn whatsapp_personas(app: AppHandle) -> Vec<Persona> {
+    people(&app)
+        .into_iter()
+        .map(|(chat, v)| Persona { chat, nombre: v["nombre"].as_str().unwrap_or("").to_string(), contexto: v["contexto"].as_str().unwrap_or("").to_string() })
+        .collect()
+}
+
+#[tauri::command]
+pub fn whatsapp_persona_borrar(app: AppHandle, chat: String) -> Result<(), String> {
+    let mut all = people(&app);
+    all.remove(&chat);
+    keep_people(&app, &all)
+}
+
+fn who_is(who: &str) -> Option<(String, String)> {
+    let mut known: Vec<(String, String)> = Vec::new();
+    for m in INBOX.lock().unwrap().iter().filter(|m| !m.mine && m.chat.ends_with("@s.whatsapp.net")) {
+        if !known.iter().any(|(chat, _)| *chat == m.chat) {
+            known.push((m.chat.clone(), m.name.clone()));
+        }
+    }
+    if let Some(found) = best_match(who, &known) {
+        return Some(found);
+    }
+    let query: String = who.trim().bytes().take(60).map(|b| if b.is_ascii_alphanumeric() { (b as char).to_string() } else { format!("%{b:02X}") }).collect();
+    let listed: Vec<(String, String)> = call("GET", &format!("/chats?limit=25&search={query}"), None)
+        .ok()
+        .and_then(|said| said["results"]["data"].as_array().cloned())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|c| Some((c["jid"].as_str()?.to_string(), c["name"].as_str().filter(|n| !n.trim().is_empty())?.to_string())))
+        .collect();
+    best_match(who, &listed).or_else(|| contact(who))
+}
+
+fn history(chat: &str, name: &str) -> Vec<String> {
+    let said = call("GET", &format!("/chat/{chat}/messages?limit=20"), None).unwrap_or_default();
+    let mut lines: Vec<(String, String)> = said["results"]["data"]
+        .as_array()
+        .map(|all| {
+            all.iter()
+                .filter_map(|m| {
+                    let text = m["content"].as_str().map(str::trim).filter(|t| !t.is_empty()).map(|t| t.chars().take(600).collect::<String>());
+                    let text = text.or_else(|| m["media_type"].as_str().filter(|t| !t.is_empty() && *t != "call").map(|t| format!("[{t}]")))?;
+                    let who = if m["is_from_me"].as_bool().unwrap_or(false) { "Yo".to_string() } else { m["sender_display_name"].as_str().filter(|n| !n.is_empty()).unwrap_or(name).to_string() };
+                    Some((m["timestamp"].as_str().unwrap_or("").to_string(), format!("{who}: {text}")))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    if lines.is_empty() {
+        return INBOX
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|m| m.chat == chat)
+            .map(|m| format!("{}: {}", if m.mine { "Yo" } else { m.name.as_str() }, if m.text.is_empty() { m.media.as_ref().map(label).unwrap_or_default() } else { m.text.clone() }))
+            .collect();
+    }
+    lines.sort_by(|a, b| a.0.cmp(&b.0));
+    lines.into_iter().map(|(_, line)| line).collect()
+}
+
+pub fn chat_for_ai(app: &AppHandle, who: &str) -> Result<String, String> {
+    if !running() || !status().0 {
+        return Err("WhatsApp no está conectado a Cocuyo.".into());
+    }
+    let (chat, name) = who_is(who).ok_or_else(|| format!("No encontré a «{who}» en tus chats de WhatsApp."))?;
+    if !crate::agent::ask_first(app, &format!("Dejar que la IA lea tus últimos 20 mensajes con {name} para tener contexto"), &format!("leer chat {name}")) {
+        return Ok(format!("La persona no quiso que leyeras el chat con {name}."));
+    }
+    let lines = history(&chat, &name);
+    let card = people(app).get(&chat).and_then(|v| v["contexto"].as_str().map(str::to_string));
+    let mut out = format!("Chat de WhatsApp con {name}.");
+    if let Some(card) = card {
+        out.push_str(&format!("\nLo que ya sabes de {name}: {card}"));
+    }
+    if lines.is_empty() {
+        out.push_str("\nNo hay mensajes guardados con esta persona.");
+    } else {
+        out.push_str(&format!("\nÚltimos mensajes, del más viejo al más nuevo:\n{}", lines.join("\n")));
+    }
+    Ok(out)
+}
+
+pub fn save_person(app: &AppHandle, who: &str, context: &str) -> Result<String, String> {
+    let context: String = context.trim().chars().take(700).collect();
+    if context.is_empty() {
+        return Err("La ficha está vacía.".into());
+    }
+    let (chat, name) = who_is(who).ok_or_else(|| format!("No encontré a «{who}» en tus chats de WhatsApp."))?;
+    if !crate::agent::ask_first(app, &format!("Guardar esto sobre {name} para la próxima vez:\n«{context}»"), "") {
+        return Ok(format!("La persona no quiso guardar la ficha de {name}."));
+    }
+    let mut all = people(app);
+    all.insert(chat, json!({ "nombre": name, "contexto": context, "hora": now_ms() }));
+    keep_people(app, &all)?;
+    Ok(format!("Guardé lo que sé de {name}."))
 }
 
 pub fn asked(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
@@ -723,8 +935,9 @@ pub fn spoken(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
     if !crate::agent::ask_first(app, &what, &format!("WhatsApp {name}")) {
         return Some(Ok("Quedó sin enviar.".into()));
     }
-    Some(send(&chat, &text).map(|()| {
-        keep(Message { chat: chat.clone(), name: String::new(), text: text.clone(), at: Instant::now(), read: true, mine: true, stamp: now_ms(), media: None });
+    Some(send(&chat, &text).map(|id| {
+        keep(Message { chat: chat.clone(), name: String::new(), text: text.clone(), at: Instant::now(), read: true, mine: true, stamp: now_ms(), media: None, id, tick: SENT });
+        mark_seen(&chat);
         format!("Listo, le respondí a {name}.")
     }))
 }
@@ -775,7 +988,25 @@ mod tests {
     }
 
     fn message(name: &str, text: &str, media: Option<Media>) -> Message {
-        Message { chat: name.into(), name: name.into(), text: text.into(), at: Instant::now(), read: false, mine: false, stamp: now_ms(), media }
+        Message { chat: name.into(), name: name.into(), text: text.into(), at: Instant::now(), read: false, mine: false, stamp: now_ms(), media, id: String::new(), tick: 0 }
+    }
+
+    #[test]
+    fn ticks_only_go_up_and_my_own_reads_clear_the_count() {
+        let mut inbox = vec![
+            Message { id: "mio".into(), mine: true, tick: SENT, ..message("Ana", "voy", None) },
+            Message { id: "suyo".into(), ..message("Ana", "¿vienes?", None) },
+        ];
+        assert_eq!(receipt(&mut inbox, &["mio".into()], "delivered"), vec!["Ana".to_string()]);
+        assert_eq!(inbox[0].tick, DELIVERED);
+        assert_eq!(receipt(&mut inbox, &["mio".into()], "read"), vec!["Ana".to_string()]);
+        assert!(receipt(&mut inbox, &["mio".into()], "delivered").is_empty());
+        assert_eq!(inbox[0].tick, SEEN);
+        assert!(receipt(&mut inbox, &["suyo".into()], "delivered").is_empty());
+        assert!(!inbox[1].read);
+        assert_eq!(receipt(&mut inbox, &["suyo".into()], "read-self"), vec!["Ana".to_string()]);
+        assert!(inbox[1].read);
+        assert!(receipt(&mut inbox, &["otro".into()], "read").is_empty());
     }
 
     #[test]

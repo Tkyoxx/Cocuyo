@@ -191,6 +191,8 @@ enum Doer {
     Phone,
     Research,
     WhatsappRead,
+    WhatsappChat,
+    WhatsappPerson,
     Extension(String),
     Mcp(String, String),
 }
@@ -263,6 +265,21 @@ fn toolbox(app: &AppHandle) -> (Vec<Value>, HashMap<String, Doer>) {
             object(json!({}), &[]),
         ));
         doers.insert("cocuyo_whatsapp_leer".to_string(), Doer::WhatsappRead);
+        tools.push(function(
+            "cocuyo_whatsapp_chat",
+            "Trae los últimos 20 mensajes del chat de WhatsApp con una persona, y lo que ya se sabe de ella, para entender la conversación antes de \
+             responderle, resumirla o aconsejar qué decir. La persona aprueba que lo leas.",
+            object(json!({ "persona": { "type": "string", "description": "El nombre como lo dijo la persona" } }), &["persona"]),
+        ));
+        doers.insert("cocuyo_whatsapp_chat".to_string(), Doer::WhatsappChat);
+        tools.push(function(
+            "cocuyo_whatsapp_persona",
+            "Guarda o reemplaza una ficha corta de un contacto de WhatsApp para tener contexto la próxima vez: quién es para la persona, cómo se \
+             hablan, datos útiles que salieron en el chat. Escríbela completa (la nueva reemplaza la vieja), en pocas frases y sin datos sensibles. \
+             La persona ve la ficha y decide si se guarda.",
+            object(json!({ "persona": { "type": "string" }, "ficha": { "type": "string" } }), &["persona", "ficha"]),
+        ));
+        doers.insert("cocuyo_whatsapp_persona".to_string(), Doer::WhatsappPerson);
     }
     if crate::remoto::ready(app) {
         tools.push(function(
@@ -436,6 +453,8 @@ fn act(app: &AppHandle, doer: &Doer, args: &Value) -> Result<Done, String> {
         Doer::Screen => crate::capture::screen_text().map(Done::from),
         Doer::Remember => crate::ai::memorize(app, &text(args, "dato")).map(|()| String::from("Guardado.").into()),
         Doer::WhatsappRead => crate::whatsapp::read_out(app).map(Done::from),
+        Doer::WhatsappChat => crate::whatsapp::chat_for_ai(app, &text(args, "persona")).map(Done::from),
+        Doer::WhatsappPerson => crate::whatsapp::save_person(app, &text(args, "persona"), &text(args, "ficha")).map(Done::from),
         Doer::Window => crate::pc::open(app, &text(args, "app")).map(Done::from),
         Doer::Minutes => if text(args, "accion") == "terminar" { crate::minutes::finish(app) } else { crate::minutes::start(app) }.map(Done::from),
         Doer::Message => send_message(app, &text(args, "app"), &text(args, "para"), &text(args, "texto")).map(Done::from),
@@ -466,6 +485,9 @@ fn label(name: &str, args: &Value) -> String {
         "cocuyo_mirar" => "Mirando la ventana".into(),
         "cocuyo_celular" => "Dejándolo en el celular".into(),
         "cocuyo_investigar" => "Empezando la investigación".into(),
+        "cocuyo_whatsapp_leer" => "Mirando tus WhatsApp".into(),
+        "cocuyo_whatsapp_chat" => format!("Leyendo el chat con {}", text(args, "persona")),
+        "cocuyo_whatsapp_persona" => format!("Anotando quién es {}", text(args, "persona")),
         "cocuyo_hacer" => {
             let actions = args.get("acciones").and_then(Value::as_array).map_or(0, Vec::len);
             if actions == 1 { "Usando el mouse".into() } else { format!("Usando el mouse ({actions} pasos)") }
@@ -685,7 +707,7 @@ pub fn send_message(app: &AppHandle, chat: &str, who: &str, text: &str) -> Resul
             if confirm && !permission_for(app, &format!("Enviar a {name} por WhatsApp: «{text}»"), &key) {
                 return Ok("Quedó sin enviar.".into());
             }
-            return crate::whatsapp::send(&jid, &text).map(|()| format!("Listo, le mandé a {name}: «{text}»."));
+            return crate::whatsapp::send(&jid, &text).map(|_| format!("Listo, le mandé a {name}: «{text}»."));
         }
     }
     progress(app, &format!("Escribiéndole a {who}"), false);

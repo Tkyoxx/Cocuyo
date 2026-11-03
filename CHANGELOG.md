@@ -2,6 +2,24 @@
 
 Cada versión con lo que trae. La más nueva arriba.
 
+## 0.4.3
+
+**Las letras salen también jugando**
+- Con un juego a pantalla completa (Rocket League en ventana completa, por ejemplo) se veía el globo de lo que decías y de lo que respondía Cocuyo, pero vacío; las letras llegaban solo al cambiar de ventana. Al esconderse la isla se pausaban todas las animaciones de la ventana, y las palabras aparecen justamente con una. Ahora la pausa es solo para la isla escondida.
+
+**El visto de verdad en WhatsApp**
+- Lo que envías muestra en qué va: un reloj mientras sale, ✓ enviado, ✓✓ entregado y ✓✓ en azul cuando lo leen.
+- Al abrir un chat en la burbuja, o cuando Cocuyo te lee los mensajes, les llega tu visto. Si lo tienes apagado en la privacidad de WhatsApp, se respeta.
+- Si lees un chat en el celular, la burbuja se entera y deja de contarlo como nuevo.
+
+**La IA entiende la conversación**
+- Si le pides algo de un chat («¿qué me dijo Angela?», «ayúdame a responderle a Pedro»), la IA puede leer los últimos 20 mensajes con esa persona. Te pregunta antes, con «Siempre hoy».
+- Puede proponerte una ficha corta de cada contacto (quién es para ti, cómo se hablan) para tener contexto la próxima vez. Solo se guarda si dices que sí, y en Ajustes → WhatsApp la ves y la borras.
+
+**Una barra a la medida**
+- El chat tiene su propia barra para subir y bajar: delgada, aparece al mover o al pasar el mouse, se ilumina en verde al arrastrarla y se va sola. Clic arriba o abajo de ella pasa de a una página.
+- Ya no aparece la barra de lado por un instante al enviar un mensaje.
+
 ## 0.4.2
 
 **La grabadora oye el PC en cualquier equipo** (Ajustes → Capturas)

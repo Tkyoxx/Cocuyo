@@ -490,6 +490,9 @@ class SettingsPage implements Page {
              <div class="srow stack"><div><b>Animaciones</b><small>Suaves: sin el vuelo, el destello ni las chispas; solo aparece.</small></div><div class="srow chips flat" id="s-wa-motion"><button class="chip" data-v="completa">Completas</button><button class="chip" data-v="suave">Suaves</button></div></div>
              <div class="srow slim"><div><b>Ver cómo se ve</b><small>Una burbuja de prueba: puedes responderle y nada sale de tu PC.</small></div><button class="ghost pick" id="s-wa-demo">Probar</button></div>
            </div>
+           <div class="card">
+             <div class="srow stack"><div><b>Lo que la IA sabe de tus contactos</b><small>Cuando le pides que lea un chat, la IA puede proponerte una ficha corta de esa persona. Solo se guarda si dices que sí, y aquí la borras.</small></div><div class="wa-people" id="s-wa-people"></div></div>
+           </div>
            </div>
            <div class="scol">
            <div class="card">
@@ -734,6 +737,12 @@ class SettingsPage implements Page {
       burbuja({ oir: this.settings?.whatsappSound || "kalimba" });
     });
     q("#s-wa-go").addEventListener("click", () => void this.whatsappButton());
+    q("#s-wa-people").addEventListener("click", async (e) => {
+      const forget = (e.target as HTMLElement).closest<HTMLElement>("[data-forget]");
+      if (!forget) return;
+      await call("whatsapp_persona_borrar", { chat: forget.dataset.forget });
+      void this.paintPeople();
+    });
     q("#s-wa-quick").addEventListener("click", (e) => {
       const chip = (e.target as HTMLElement).closest<HTMLElement>("[data-v]");
       if (chip) void this.save({ whatsappQuick: chip.dataset.v ?? "boton" });
@@ -1584,7 +1593,16 @@ class SettingsPage implements Page {
 
   private waLinking = 0;
 
+  private async paintPeople() {
+    const people = await call<{ chat: string; nombre: string; contexto: string }[]>("whatsapp_personas", undefined, []);
+    const box = this.el.querySelector<HTMLElement>("#s-wa-people")!;
+    box.innerHTML = people.length
+      ? people.map((p) => `<div class="wa-person"><div><b>${esc(p.nombre)}</b><small>${esc(p.contexto)}</small></div><button class="ghost" data-forget="${esc(p.chat)}">${esc(tr("Borrar"))}</button></div>`).join("")
+      : `<small class="empty-line">${tr("Ninguna todavía.")}</small>`;
+  }
+
   private async paintWhatsapp() {
+    void this.paintPeople();
     const state = await call<{ instalado: boolean; corriendo: boolean; conectado: boolean; numero: string }>("whatsapp_estado", undefined, { instalado: false, corriendo: false, conectado: false, numero: "" });
     const go = this.el.querySelector<HTMLButtonElement>("#s-wa-go")!;
     const said = this.el.querySelector("#s-wa-state")!;

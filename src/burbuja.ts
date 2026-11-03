@@ -17,7 +17,7 @@ export interface Linea {
   texto: string;
   hora: number;
   media?: Media;
-  estado?: "enviando" | "listo" | "mal";
+  estado?: "enviando" | "listo" | "entregado" | "leido" | "mal";
   error?: string;
 }
 
@@ -207,6 +207,10 @@ export class Burbuja {
   private panel!: HTMLElement;
   private thread!: HTMLElement;
   private input!: HTMLTextAreaElement;
+  private rail!: HTMLElement;
+  private thumb!: HTMLElement;
+  private thumbSize = 0;
+  private railTimer = 0;
   private quick!: HTMLElement;
   private bolt!: HTMLButtonElement;
   private playing: { audio: HTMLAudioElement; note: HTMLElement } | null = null;
@@ -240,7 +244,7 @@ export class Burbuja {
       <div class="wa-peek"><div class="wa-peek-in"><b class="wa-who"></b><div class="wa-peek-body"><img class="wa-peek-pic" alt="" hidden><p class="wa-said"></p></div></div></div>
       <section class="wa-panel" aria-label="WhatsApp">
         <header class="wa-head"><span class="wa-hface"></span><div class="wa-htext"><b class="wa-hname"></b><small class="wa-hsub">WhatsApp</small></div><div class="wa-tabs"></div><button class="wa-close" aria-label="${tr("Cerrar")}">×</button></header>
-        <div class="wa-thread"></div>
+        <div class="wa-scroll"><div class="wa-thread"></div><div class="wa-rail off"><span class="wa-thumb"><b></b></span></div></div>
         <div class="wa-quick" hidden></div>
         <form class="wa-write"><button type="button" class="wa-bolt" aria-label="${esc(tr("Respuestas rápidas"))}" title="${esc(tr("Respuestas rápidas"))}">${BOLT}</button><textarea rows="1" autocomplete="off" spellcheck="true" maxlength="2000" placeholder="${esc(tr("Escribe tu respuesta"))}"></textarea><button class="wa-send" aria-label="${tr("Enviar")}">${SEND}</button></form>
       </section>
@@ -260,6 +264,8 @@ export class Burbuja {
     this.panel = q(".wa-panel");
     this.thread = q(".wa-thread");
     this.input = q("textarea");
+    this.rail = q(".wa-rail");
+    this.thumb = q(".wa-thumb");
     this.quick = q(".wa-quick");
     this.bolt = q(".wa-bolt");
     this.tabs = q(".wa-tabs");
@@ -281,8 +287,11 @@ export class Burbuja {
     on<{ chat: string; hilo: Linea[] }>("whatsapp-hilo", ({ chat, hilo }) => {
       const known = this.chats.get(chat);
       if (!known) return;
+      const same = known.hilo.length === hilo.length && hilo.every((l, i) => l.texto === known.hilo[i].texto && l.yo === known.hilo[i].yo);
       known.hilo = hilo;
-      if (this.state === "abierta" && this.current === chat) this.paintThread(false);
+      if (this.state !== "abierta" || this.current !== chat) return;
+      if (same) this.paintTicks();
+      else this.paintThread(false);
     });
   }
 
@@ -487,7 +496,42 @@ export class Burbuja {
       const opener = target.closest<HTMLElement>("[data-open]");
       if (opener && !this.chats.get(this.current ?? "")?.prueba) void call("whatsapp_abrir", { que: opener.dataset.open });
     });
-    this.thread.addEventListener("load", () => (this.thread.scrollTop = this.thread.scrollHeight), true);
+    this.thread.addEventListener(
+      "load",
+      () => {
+        this.thread.scrollTop = this.thread.scrollHeight;
+        this.measureRail();
+      },
+      true,
+    );
+    this.thread.addEventListener("scroll", () => this.placeThumb(true), { passive: true });
+    this.thumb.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.thumb.setPointerCapture(e.pointerId);
+      this.rail.classList.add("drag");
+      const start = { y: e.clientY, top: this.thread.scrollTop };
+      const move = (m: PointerEvent) => {
+        const span = this.rail.clientHeight - this.thumbSize;
+        const room = this.thread.scrollHeight - this.thread.clientHeight;
+        if (span > 0) this.thread.scrollTop = start.top + ((m.clientY - start.y) * room) / span;
+      };
+      const up = () => {
+        this.rail.classList.remove("drag");
+        this.thumb.removeEventListener("pointermove", move);
+        this.thumb.removeEventListener("pointerup", up);
+        this.thumb.removeEventListener("pointercancel", up);
+        this.placeThumb(true);
+      };
+      this.thumb.addEventListener("pointermove", move);
+      this.thumb.addEventListener("pointerup", up);
+      this.thumb.addEventListener("pointercancel", up);
+    });
+    this.rail.addEventListener("pointerdown", (e) => {
+      if (e.target !== this.rail) return;
+      const thumbTop = this.thumb.getBoundingClientRect().top;
+      this.thread.scrollBy({ top: (e.clientY < thumbTop ? -1 : 1) * this.thread.clientHeight * 0.85, behavior: "smooth" });
+    });
     document.addEventListener(
       "pointerdown",
       (e) => {
@@ -538,8 +582,54 @@ export class Burbuja {
   }
 
   private fit() {
+    const before = this.input.style.height;
     this.input.style.height = "auto";
     this.input.style.height = `${Math.min(96, this.input.scrollHeight)}px`;
+    if (this.input.style.height !== before) this.measureRail();
+  }
+
+  private measureRail() {
+    const { scrollHeight: total, clientHeight: view } = this.thread;
+    const overflow = total - view > 2;
+    this.rail.classList.toggle("off", !overflow);
+    if (!overflow) return;
+    const track = this.rail.clientHeight;
+    const size = Math.max(28, Math.round((track * view) / total));
+    if (size !== this.thumbSize) {
+      this.thumbSize = size;
+      this.thumb.style.height = `${size}px`;
+    }
+    this.placeThumb(false);
+  }
+
+  private placeThumb(wake: boolean) {
+    const { scrollTop, scrollHeight, clientHeight } = this.thread;
+    const room = scrollHeight - clientHeight;
+    const span = this.rail.clientHeight - this.thumbSize;
+    const y = room > 0 && span > 0 ? (Math.min(room, Math.max(0, scrollTop)) / room) * span : 0;
+    this.thumb.style.transform = `translateY(${y.toFixed(1)}px)`;
+    if (!wake) return;
+    this.rail.classList.add("on");
+    clearTimeout(this.railTimer);
+    this.railTimer = window.setTimeout(() => this.rail.classList.remove("on"), 1100);
+  }
+
+  private paintTicks() {
+    const chat = this.current ? this.chats.get(this.current) : null;
+    if (!chat) return;
+    const lines = this.thread.children;
+    chat.hilo.forEach((l, i) => {
+      const el = lines[i];
+      if (!l.yo || !el) return;
+      el.classList.remove("enviando", "listo", "entregado", "leido");
+      el.classList.add(l.estado ?? "listo");
+    });
+  }
+
+  private tick(line: HTMLElement, mine: Linea, estado: "listo" | "entregado" | "leido") {
+    mine.estado = estado;
+    line.classList.remove("enviando", "listo", "entregado", "leido");
+    line.classList.add(estado);
   }
 
   private toggleNote(note: HTMLElement) {
@@ -868,7 +958,7 @@ export class Burbuja {
           this.anim(this.panel, [{ transform: "scale(.14)" }, { transform: "none" }], OPEN),
           this.anim(this.panel, [{ opacity: 0 }, { opacity: 1 }], { duration: 170, easing: "ease-out" }),
           this.anim(this.orb, [{ transform: "scale(.86)" }, { transform: "none" }], LAND),
-          ...[...this.panel.querySelectorAll<HTMLElement>(".wa-head, .wa-thread, .wa-quick, .wa-write")].map((el, i) =>
+          ...[...this.panel.querySelectorAll<HTMLElement>(".wa-head, .wa-scroll, .wa-quick, .wa-write")].map((el, i) =>
             this.anim(el, [{ opacity: 0, transform: "translateY(8px)" }, { opacity: 1, transform: "none" }], { duration: 320, delay: 110 + i * 45, easing: EASE_OUT, fill: "backwards" }),
           ),
         ]);
@@ -911,6 +1001,7 @@ export class Burbuja {
       })
       .join("");
     this.thread.scrollTop = this.thread.scrollHeight;
+    this.measureRail();
     const last = this.thread.lastElementChild as HTMLElement | null;
     if (animateLast && last) void this.anim(last, [{ opacity: 0, transform: "translateY(14px) scale(.9)" }, { opacity: 1, transform: "none" }], POP);
   }
@@ -941,12 +1032,13 @@ export class Burbuja {
     const sent = chat.prueba ? Promise.resolve() : call("whatsapp_responder", { chat: chat.chat, texto: text });
     try {
       await sent;
-      mine.estado = "listo";
-      line.classList.replace("enviando", "listo");
+      if (mine.estado === "enviando") this.tick(line, mine, "listo");
       this.pulse();
       if (chat.prueba) {
         const said = chat.hilo.filter((l) => l.yo).length;
+        setTimeout(() => this.tick(line, mine, "entregado"), 650);
         setTimeout(() => {
+          this.tick(line, mine, "leido");
           if (this.current !== chat.chat || this.state !== "abierta") return;
           const reply = said > 1 ? "Arrástrame al otro lado, o lánzame fuera de la pantalla y me despido 👋" : "¡Así de fácil! Nada salió de tu PC: esto es una prueba 😄";
           chat.hilo.push({ yo: false, texto: tr(reply), hora: Date.now() });
