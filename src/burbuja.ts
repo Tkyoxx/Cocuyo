@@ -207,6 +207,8 @@ export class Burbuja {
   private panel!: HTMLElement;
   private thread!: HTMLElement;
   private input!: HTMLTextAreaElement;
+  private attachBar!: HTMLElement;
+  private adjuntos: string[] = [];
   private rail!: HTMLElement;
   private thumb!: HTMLElement;
   private thumbSize = 0;
@@ -246,6 +248,7 @@ export class Burbuja {
         <header class="wa-head"><span class="wa-hface"></span><div class="wa-htext"><b class="wa-hname"></b><small class="wa-hsub">WhatsApp</small></div><div class="wa-tabs"></div><button class="wa-close" aria-label="${tr("Cerrar")}">×</button></header>
         <div class="wa-scroll"><div class="wa-thread"></div><div class="wa-rail off"><span class="wa-thumb"><b></b></span></div></div>
         <div class="wa-quick" hidden></div>
+        <div class="wa-attach" hidden></div>
         <form class="wa-write"><button type="button" class="wa-bolt" aria-label="${esc(tr("Respuestas rápidas"))}" title="${esc(tr("Respuestas rápidas"))}">${BOLT}</button><textarea rows="1" autocomplete="off" spellcheck="true" maxlength="2000" placeholder="${esc(tr("Escribe tu respuesta"))}"></textarea><button class="wa-send" aria-label="${tr("Enviar")}">${SEND}</button></form>
       </section>
       <div class="wa-flyer"><div class="wa-halo"></div><i class="wa-glow"></i><i class="wa-sweep"></i><button class="wa-orb" aria-label="WhatsApp">${GLYPH}<span class="wa-mini"></span><span class="wa-count"></span></button></div>
@@ -267,6 +270,13 @@ export class Burbuja {
     this.rail = q(".wa-rail");
     this.thumb = q(".wa-thumb");
     this.quick = q(".wa-quick");
+    this.attachBar = q(".wa-attach");
+    this.attachBar.addEventListener("click", (e) => {
+      const out = (e.target as HTMLElement).closest<HTMLElement>("[data-quitar]");
+      if (!out) return;
+      this.adjuntos.splice(Number(out.dataset.quitar), 1);
+      this.paintAttach();
+    });
     this.bolt = q(".wa-bolt");
     this.tabs = q(".wa-tabs");
     this.sparks = q(".wa-sparks");
@@ -675,6 +685,62 @@ export class Burbuja {
     audio.load();
   }
 
+  takes(x: number, y: number) {
+    if (this.state === "fuera" || this.state === "yendose" || !this.current) return false;
+    const inside = (el: HTMLElement) => {
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && x >= r.left - 14 && x <= r.right + 14 && y >= r.top - 14 && y <= r.bottom + 14;
+    };
+    return inside(this.orb) || (this.state === "abierta" && inside(this.panel));
+  }
+
+  hovering(on: boolean) {
+    this.root.classList.toggle("soltando", on);
+  }
+
+  async attach(paths: string[]) {
+    this.hovering(false);
+    if (this.state === "quieta") await this.openPanel();
+    if (this.state !== "abierta") return;
+    for (const path of paths.slice(0, 10)) if (!this.adjuntos.includes(path)) this.adjuntos.push(path);
+    this.paintAttach();
+    this.input.focus({ preventScroll: true });
+  }
+
+  private paintAttach() {
+    const name = (path: string) => path.split(/[\\/]/).pop() ?? path;
+    const icon = (path: string) => (/\.(jpe?g|png|webp)$/i.test(path) ? "📷" : /\.(mp4|mov|mkv|3gp)$/i.test(path) ? "🎥" : /\.(mp3|ogg|opus|m4a|aac|wav)$/i.test(path) ? "🎤" : "📄");
+    this.attachBar.innerHTML = this.adjuntos.map((p, i) => `<span class="wa-chip">${icon(p)} <b>${esc(name(p))}</b><button type="button" data-quitar="${i}" aria-label="${esc(tr("Quitar"))}">×</button></span>`).join("");
+    this.attachBar.hidden = !this.adjuntos.length;
+  }
+
+  private async sendFiles(text: string, chat: Chat) {
+    const files = this.adjuntos.splice(0);
+    this.paintAttach();
+    this.input.value = "";
+    chat.borrador = "";
+    this.fit();
+    if (this.gustos.ui) this.oirUi("enviado");
+    for (const [i, path] of files.entries()) {
+      const nombre = path.split(/[\\/]/).pop() ?? path;
+      const tipo = /\.(jpe?g|png|webp)$/i.test(path) ? "foto" : /\.(mp4|mov|mkv|3gp)$/i.test(path) ? "video" : /\.(mp3|ogg|opus|m4a|aac|wav)$/i.test(path) ? "nota" : "documento";
+      const mine: Linea = { yo: true, texto: i === 0 ? text : "", hora: Date.now(), estado: "enviando", media: { tipo, nombre } };
+      chat.hilo.push(mine);
+      this.paintThread(true);
+      const line = this.thread.lastElementChild as HTMLElement;
+      try {
+        if (!chat.prueba) await call("whatsapp_enviar_archivo", { chat: chat.chat, path, texto: mine.texto });
+        this.tick(line, mine, "listo");
+      } catch (error) {
+        mine.estado = "mal";
+        mine.error = String(error);
+        line.classList.replace("enviando", "mal");
+        line.title = mine.error;
+      }
+    }
+    this.pulse();
+  }
+
   private keepDraft() {
     const chat = this.current ? this.chats.get(this.current) : null;
     if (chat) chat.borrador = this.input.value;
@@ -1009,6 +1075,7 @@ export class Burbuja {
   private async send(raw: string, chip?: HTMLElement) {
     const text = raw.trim();
     const chat = this.current ? this.chats.get(this.current) : null;
+    if (chat && this.state === "abierta" && this.adjuntos.length) return this.sendFiles(text, chat);
     if (!text || !chat || this.state !== "abierta") return;
     this.input.value = "";
     chat.borrador = "";

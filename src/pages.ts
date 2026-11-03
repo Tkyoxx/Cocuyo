@@ -467,6 +467,7 @@ class SettingsPage implements Page {
              <label class="srow"><div><b>Modo agente</b><small>Para lo que tiene varios pasos, Cocuyo piensa y usa herramientas: sus órdenes, tus scripts, la pantalla, las extensiones y los servidores MCP. Lo simple sigue siendo al instante.</small></div><input type="checkbox" class="switch" id="s-agent"></label>
              <label class="srow"><div><b>Usar el mouse y el teclado</b><small>Abre apps, mira sus botones y hace clic y escribe como tú, en cualquier resolución: «mándale a Angela por WhatsApp que llego tarde». Si mueves el mouse, suelta todo.</small></div><input type="checkbox" class="switch" id="s-agent-hands"></label>
              <label class="srow"><div><b>Pedir permiso antes de enviar</b><small>Antes de mandar, publicar, comprar o borrar algo, te muestra a dónde va y espera tu «Hazlo».</small></div><input type="checkbox" class="switch" id="s-agent-confirm"></label>
+             <label class="srow"><div><b>Contestar el permiso con la voz</b><small>Después de preguntar, Cocuyo escucha unos segundos: di «sí», «dale», «no» o «siempre hoy» sin soltar lo que estás haciendo. Se oye solo en tu PC.</small></div><input type="checkbox" class="switch" id="s-voice-confirm"></label>
              <div class="srow slim"><div><b>Cómo se le habla</b><small>Normal: Cocuyo decide solo si es una orden rápida o una tarea. Para obligarlo a pensar, empieza con «Encárgate de…».</small></div></div>
              <div class="srow slim"><div><b>Necesita</b><small id="s-agent-need">Un modelo de IA conectado en la sección IA, con formato OpenAI (Gemini viene listo).</small></div></div>
            </div>
@@ -579,7 +580,7 @@ class SettingsPage implements Page {
     for (const button of el.querySelectorAll<HTMLElement>("#s-lang button")) {
       button.addEventListener("click", () => this.save({ language: button.dataset.value as Settings["language"] }));
     }
-    const toggle = (sel: string, key: "hideOnFullscreen" | "askWhere" | "copyToClipboard" | "autostart" | "cueFullscreen" | "speakFullscreen" | "gameOverlay" | "aiOn" | "aiDictation" | "aiHear" | "padOn" | "checkUpdates" | "countMe" | "barCenter" | "barSolidMax" | "extensionsOn" | "aiAgent" | "agentHands" | "agentConfirm" | "aiLive" | "remoteOn" | "handsFree" | "whatsappNotices" | "whatsappGroups" | "statusLine" | "whatsappText" | "whatsappUiSounds" | "whatsappGaming") => {
+    const toggle = (sel: string, key: "hideOnFullscreen" | "askWhere" | "copyToClipboard" | "autostart" | "cueFullscreen" | "speakFullscreen" | "gameOverlay" | "aiOn" | "aiDictation" | "aiHear" | "padOn" | "checkUpdates" | "countMe" | "barCenter" | "barSolidMax" | "extensionsOn" | "aiAgent" | "agentHands" | "agentConfirm" | "voiceConfirm" | "aiLive" | "remoteOn" | "handsFree" | "whatsappNotices" | "whatsappGroups" | "statusLine" | "whatsappText" | "whatsappUiSounds" | "whatsappGaming") => {
       const input = q<HTMLInputElement>(sel);
       input.addEventListener("change", () => {
         const change: Partial<Settings> = {};
@@ -1051,6 +1052,7 @@ class SettingsPage implements Page {
       if (target) void this.save({ liveVoice: target.dataset.live ?? "Charon" });
     });
     toggle("#s-agent-confirm", "agentConfirm");
+    toggle("#s-voice-confirm", "voiceConfirm");
     toggle("#s-remote", "remoteOn");
     const relay = q<HTMLInputElement>("#s-remote-relay");
     relay.addEventListener("pointerdown", () => host.focus(relay));
@@ -1955,6 +1957,7 @@ class SettingsPage implements Page {
     q<HTMLInputElement>("#s-live").checked = s.aiLive;
     q("#s-live-voice").innerHTML = LIVE_VOICES.map(([voice, kind]) => `<button class="chip${voice === (s.liveVoice || "Charon") ? " on" : ""}" data-live="${voice}">${voice} · ${tr(kind)}</button>`).join("");
     q<HTMLInputElement>("#s-agent-confirm").checked = s.agentConfirm;
+    q<HTMLInputElement>("#s-voice-confirm").checked = s.voiceConfirm;
     q<HTMLInputElement>("#s-remote").checked = s.remoteOn;
     q("#s-agent-need").textContent = !s.aiOn
       ? "Primero enciende un modelo de IA en la sección IA (Gemini viene listo)."

@@ -324,12 +324,20 @@ function offerFile(file: Dropped, title: string, seconds: number) {
 
 if ("__TAURI_INTERNALS__" in window) void getCurrentWebview().onDragDropEvent(async (event) => {
   const kind = event.payload.type;
+  const at = "position" in event.payload ? { x: event.payload.position.x / devicePixelRatio, y: event.payload.position.y / devicePixelRatio } : null;
+  const toChat = !!at && burbuja.takes(at.x, at.y);
   if (kind === "enter" || kind === "over") {
-    island.dropping(true);
+    burbuja.hovering(toChat);
+    island.dropping(!toChat);
     return;
   }
+  burbuja.hovering(false);
   island.dropping(false);
   if (kind !== "drop" || !event.payload.paths.length) return;
+  if (toChat) {
+    void burbuja.attach(event.payload.paths);
+    return;
+  }
   island.gulp();
   try {
     const kept = await call<Dropped[]>("bandeja_recibir", { paths: event.payload.paths });
@@ -451,6 +459,17 @@ function setLevel(peak: number) {
   document.documentElement.style.setProperty("--lv", level.toFixed(3));
 }
 on<number>("level", setLevel);
+on<"on" | "pensando" | "nada">("oido-corto", (state) => {
+  island.setVoice(state === "on");
+  if (state === "on") {
+    caption.hide();
+    pill.show();
+    return;
+  }
+  setLevel(0);
+  if (state === "pensando") pill.think();
+  else pill.cancel();
+});
 
 on<{ who: "you" | "app"; text: string }>("live-text", (live) => {
   if (!live.text) return;

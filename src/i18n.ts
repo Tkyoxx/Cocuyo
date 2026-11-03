@@ -29,6 +29,8 @@ const EXACT: Record<string, [string, string]> = {
   "Respuestas rápidas": ["Quick replies", "Respostas rápidas"],
   "Cerrar este chat": ["Close this chat", "Fechar esta conversa"],
   "Borrar": ["Delete", "Apagar"],
+  "Contestar el permiso con la voz": ["Answer the permission by voice", "Responder a permissão com a voz"],
+  "Después de preguntar, Cocuyo escucha unos segundos: di «sí», «dale», «no» o «siempre hoy» sin soltar lo que estás haciendo. Se oye solo en tu PC.": ["After asking, Cocuyo listens for a few seconds: say “yes”, “do it”, “no” or “always today” without dropping what you're doing. It's heard only on your PC.", "Depois de perguntar, o Cocuyo escuta alguns segundos: diga «sim», «pode», «não» ou «sempre hoje» sem largar o que está fazendo. Só é ouvido no seu PC."],
   "Lo que la IA sabe de tus contactos": ["What the AI knows about your contacts", "O que a IA sabe dos seus contatos"],
   "Cuando le pides que lea un chat, la IA puede proponerte una ficha corta de esa persona. Solo se guarda si dices que sí, y aquí la borras.": ["When you ask it to read a chat, the AI can suggest a short note about that person. It's only saved if you say yes, and you delete it here.", "Quando você pede para ler uma conversa, a IA pode propor uma ficha curta dessa pessoa. Só é salva se você disser sim, e aqui você apaga."],
   "Tocarlas solo las escribe: tú envías con Enter.": ["Tapping one only types it: you send with Enter.", "Tocar só escreve: você envia com Enter."],

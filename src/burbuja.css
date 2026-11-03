@@ -231,8 +231,8 @@
 
 .wa-panel {
   position: absolute;
-  display: grid;
-  grid-template-rows: auto 1fr auto auto;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
   width: 344px;
   height: 440px;
@@ -412,6 +412,7 @@
 .wa-scroll {
   position: relative;
   display: grid;
+  flex: 1;
   min-height: 0;
 }
 .wa-thread {
@@ -656,6 +657,50 @@ button.wa-file:hover {
   margin-top: 4px;
 }
 
+.wa-attach {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.wa-attach[hidden] {
+  display: none;
+}
+.wa-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  height: 28px;
+  padding: 0 4px 0 10px;
+  border-radius: 14px;
+  background: rgb(37 211 102 / 0.14);
+  font-size: 12px;
+}
+.wa-chip b {
+  overflow: hidden;
+  max-width: 180px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.wa-chip button {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.1);
+  color: inherit;
+}
+#wa.soltando .wa-orb {
+  transform: scale(1.12);
+  transition: transform 0.25s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+#wa.soltando .wa-panel {
+  box-shadow:
+    0 26px 60px -16px rgb(0 0 0 / 0.75),
+    inset 0 0 0 2px rgb(37 211 102 / 0.6);
+}
 .wa-quick {
   display: flex;
   flex-wrap: wrap;

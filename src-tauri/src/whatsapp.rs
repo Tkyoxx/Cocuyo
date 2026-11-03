@@ -155,6 +155,64 @@ fn token() -> String {
     crate::remoto::b64(&crate::candado::random(18))
 }
 
+fn call_form(path: &str, fields: &[(&str, String)], file: (&str, &Path)) -> Result<Value, String> {
+    let (port, password) = GATEWAY.lock().unwrap().as_ref().map(|g| (g.port, g.password.clone())).ok_or("WhatsApp no está conectado.")?;
+    let mut command = Command::new("curl.exe");
+    command.args(["-s", "--max-time", "180", "-X", "POST", "-H", &format!("X-Device-Id: {DEVICE}"), "-u"]).arg(format!("cocuyo:{password}"));
+    for (key, value) in fields {
+        command.arg("--form-string").arg(format!("{key}={value}"));
+    }
+    command.arg("-F").arg(format!("{}=@{}", file.0, file.1.display()));
+    let out = command.arg(format!("http://127.0.0.1:{port}{path}")).stdin(Stdio::null()).stderr(Stdio::null()).creation_flags(CREATE_NO_WINDOW).output().map_err(|e| e.to_string())?;
+    serde_json::from_slice(&out.stdout).map_err(|_| "La pasarela de WhatsApp no respondió.".to_string())
+}
+
+pub fn file_kind(name: &str) -> (&'static str, &'static str, &'static str) {
+    let ext = Path::new(name).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    match ext.as_str() {
+        "jpg" | "jpeg" | "png" | "webp" => ("/send/image", "image", "foto"),
+        "mp4" | "mov" | "3gp" | "mkv" => ("/send/video", "video", "video"),
+        "mp3" | "ogg" | "opus" | "m4a" | "aac" | "wav" => ("/send/audio", "audio", "nota"),
+        _ => ("/send/file", "file", "documento"),
+    }
+}
+
+#[tauri::command]
+pub async fn whatsapp_enviar_archivo(app: AppHandle, chat: String, path: String, texto: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let source = PathBuf::from(&path);
+        let meta = std::fs::metadata(&source).map_err(|_| "Ese archivo ya no está.".to_string())?;
+        if !meta.is_file() || meta.len() > 64 << 20 {
+            return Err("WhatsApp no deja mandar archivos de más de 64 MB.".into());
+        }
+        let name = source.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let (endpoint, field, tipo) = file_kind(&name);
+        let ext: String = source.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_else(|| "bin".into()).chars().filter(|c| c.is_ascii_alphanumeric()).take(8).collect();
+        let outbox = dir(&app).ok_or("No encontré la carpeta de Cocuyo.")?.join("enviando");
+        std::fs::create_dir_all(&outbox).map_err(|e| e.to_string())?;
+        let temp = outbox.join(format!("envio-{}.{ext}", now_ms()));
+        std::fs::copy(&source, &temp).map_err(|e| format!("No pude leer el archivo: {e}"))?;
+        let caption = texto.trim().chars().take(1000).collect::<String>();
+        let mut fields = vec![("phone", chat.clone())];
+        if !caption.is_empty() && field != "audio" {
+            fields.push(("caption", caption.clone()));
+        }
+        let said = call_form(endpoint, &fields, (field, &temp));
+        let _ = std::fs::remove_file(&temp);
+        let said = said?;
+        if said["code"] != "SUCCESS" {
+            return Err(format!("WhatsApp no lo mandó: {}", said["message"].as_str().unwrap_or("sin explicación")));
+        }
+        let id = said["results"]["message_id"].as_str().unwrap_or("").chars().take(80).collect();
+        let media = Some(Media { tipo, ruta: None, nombre: Some(name), enlace: None });
+        keep(Message { chat: chat.clone(), name: String::new(), text: caption, at: Instant::now(), read: true, mine: true, stamp: now_ms(), media, id, tick: SENT });
+        mark_seen(&chat);
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 fn call(method: &str, path: &str, body: Option<&Value>) -> Result<Value, String> {
     let (port, password) = GATEWAY.lock().unwrap().as_ref().map(|g| (g.port, g.password.clone())).ok_or("WhatsApp no está conectado.")?;
     let mut command = Command::new("curl.exe");
@@ -930,9 +988,49 @@ pub fn send_to(app: &AppHandle, who: &str, text: &str) -> Result<String, String>
     crate::agent::send_message(app, "WhatsApp", who, text)
 }
 
+pub fn send_scheduled(chat: &str, text: &str) -> Result<(), String> {
+    for wait in [0u64, 20, 60, 180] {
+        std::thread::sleep(Duration::from_secs(wait));
+        if running() && status().0 {
+            let id = send(chat, text)?;
+            keep(Message { chat: chat.to_string(), name: String::new(), text: text.to_string(), at: Instant::now(), read: true, mine: true, stamp: now_ms(), media: None, id, tick: SENT });
+            return Ok(());
+        }
+    }
+    Err("WhatsApp no estaba conectado".into())
+}
+
+fn said_inside(spoken: &str, rest: &str) -> bool {
+    let (full, rest) = (crate::intent::normalize(spoken), crate::intent::normalize(rest));
+    full.trim().starts_with(rest.trim()) && {
+        let tail = full.trim()[rest.trim().len()..].trim();
+        tail.starts_with("en ") || tail.starts_with("dentro de")
+    }
+}
+
+fn scheduling(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
+    let (when, rest) = crate::agenda::timed(spoken)?;
+    if said_inside(spoken, &rest) {
+        return None;
+    }
+    let (chat, who, text) = crate::agent::loose_message(&rest)?;
+    if chat != "WhatsApp" {
+        return None;
+    }
+    let (jid, name) = who_is(&who)?;
+    let what = format!("Programar un WhatsApp a {name} para {}: «{text}»", crate::agenda::when_said(&when));
+    if crate::settings::load(app).agent_confirm && !crate::agent::ask_first(app, &what, "") {
+        return Some(Ok("Quedó sin programar.".into()));
+    }
+    Some(Ok(crate::agenda::add_whatsapp(app, when, &jid, &name, &text)))
+}
+
 fn sending(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
     if !running() {
         return None;
+    }
+    if let Some(done) = scheduling(app, spoken) {
+        return Some(done);
     }
     let (chat, who, text) = crate::agent::loose_message(spoken)?;
     if chat != "WhatsApp" || who_is(&who).is_none() {
@@ -1014,6 +1112,13 @@ mod tests {
 
     fn message(name: &str, text: &str, media: Option<Media>) -> Message {
         Message { chat: name.into(), name: name.into(), text: text.into(), at: Instant::now(), read: false, mine: false, stamp: now_ms(), media, id: String::new(), tick: 0 }
+    }
+
+    #[test]
+    fn a_time_inside_the_message_is_not_a_schedule() {
+        assert!(said_inside("dile a Pedro que llego en 10 minutos", "dile a Pedro que llego"));
+        assert!(!said_inside("mándale a Angela que buenos días mañana a las 7", "mándale a Angela que buenos días"));
+        assert!(!said_inside("mañana a las 7 mándale a Angela que buenos días", "mándale a Angela que buenos días"));
     }
 
     #[test]

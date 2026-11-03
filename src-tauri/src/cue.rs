@@ -258,6 +258,21 @@ pub fn answer(text: &str) {
     });
 }
 
+pub fn answer_then(text: &str, after: impl FnOnce() + Send + 'static) {
+    let quiet = text.trim().is_empty() || HELD.load(Ordering::Relaxed);
+    if !quiet {
+        ANSWERED.store(true, Ordering::Relaxed);
+    }
+    let text = text.to_string();
+    std::thread::spawn(move || {
+        if !quiet {
+            let _ = say(&text);
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+        after();
+    });
+}
+
 static ANSWERED: AtomicBool = AtomicBool::new(false);
 
 pub fn speak(text: &str) {

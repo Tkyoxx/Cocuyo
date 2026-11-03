@@ -67,6 +67,16 @@ pub fn mic_list() -> Vec<Mic> {
     mics
 }
 
+static OPEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn is_open() -> bool {
+    OPEN.load(Ordering::Relaxed)
+}
+
+pub fn level() -> f32 {
+    f32::from_bits(LEVEL.load(Ordering::Relaxed))
+}
+
 pub fn tap() -> mpsc::Receiver<(u32, Vec<f32>)> {
     let (tx, rx) = mpsc::channel();
     *TAP.lock().unwrap() = Some(tx);
@@ -186,14 +196,17 @@ pub fn spawn(app: AppHandle) {
                         buffer.lock().unwrap().clear();
                         LEVEL.store(0, Ordering::Relaxed);
                         open_stream = Some(open(buffer.clone()));
+                        OPEN.store(matches!(open_stream, Some(Ok(_))), Ordering::Relaxed);
                     }
                     Command::Discard => {
                         open_stream = None;
+                        OPEN.store(false, Ordering::Relaxed);
                         buffer.lock().unwrap().clear();
                         LEVEL.store(0, Ordering::Relaxed);
                         let _ = app.emit_to(overlay::LABEL, "level", 0f32);
                     }
                     Command::Stop(reply) => {
+                        OPEN.store(false, Ordering::Relaxed);
                         let result = match open_stream.take() {
                             Some(Ok((stream, rate))) => {
                                 drop(stream);

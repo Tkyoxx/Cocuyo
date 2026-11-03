@@ -290,6 +290,7 @@ pub fn run() {
             whatsapp::whatsapp_abrir,
             whatsapp::whatsapp_personas,
             whatsapp::whatsapp_persona_borrar,
+            whatsapp::whatsapp_enviar_archivo,
             bandeja::bandeja_preguntar,
             bandeja::bandeja_cerrar,
             bandeja::anotar_abrir,

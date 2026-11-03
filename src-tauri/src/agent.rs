@@ -62,17 +62,80 @@ pub fn answered_always(call: u64) {
     answered_permission(call, true);
 }
 
-pub fn answered_by_voice(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
-    let call = ASKING.lock().unwrap().last().map(|(id, _)| *id)?;
+#[derive(Debug, PartialEq)]
+pub enum Verdict {
+    Yes,
+    Always,
+    No,
+}
+
+pub fn verdict(spoken: &str) -> Option<Verdict> {
     let said = crate::intent::normalize(spoken);
-    let said = said.trim_matches(|c: char| !c.is_alphanumeric());
-    let yes = SAY_YES.contains(&said);
-    if !yes && !SAY_NO.contains(&said) {
+    let said = said.trim_matches(|c: char| !c.is_alphanumeric()).trim();
+    if SAY_YES.contains(&said) {
+        return Some(Verdict::Yes);
+    }
+    if SAY_NO.contains(&said) {
+        return Some(Verdict::No);
+    }
+    let words: Vec<&str> = said.split_whitespace().take(4).collect();
+    if words.is_empty() || said.split_whitespace().count() > 6 {
         return None;
     }
-    answered_permission(call, yes);
+    if words.contains(&"siempre") || said.contains("always") {
+        return Some(Verdict::Always);
+    }
+    const NO_LEAD: [&str; 9] = ["no", "cancela", "cancelalo", "nel", "nop", "nada", "espera", "deja", "para"];
+    const YES_LEAD: [&str; 22] = [
+        "si", "dale", "hazlo", "claro", "listo", "envialo", "mandalo", "ok", "okay", "vale", "va", "adelante", "hagale", "obvio", "porfa", "yes", "sure", "sim", "pode", "manda", "envia", "hagalo",
+    ];
+    if NO_LEAD.contains(&words[0]) || said.starts_with("mejor no") {
+        return Some(Verdict::No);
+    }
+    if YES_LEAD.contains(&words[0]) || said.starts_with("de una") || said.starts_with("por favor") {
+        return Some(Verdict::Yes);
+    }
+    None
+}
+
+fn settle(app: &AppHandle, call: u64, answer: Verdict) -> String {
+    match answer {
+        Verdict::Always => answered_always(call),
+        Verdict::Yes => answered_permission(call, true),
+        Verdict::No => answered_permission(call, false),
+    }
     let _ = app.emit_to(crate::overlay::LABEL, "script-card-drop", 900_000 + call);
-    Some(Ok(if yes { "Hecho, sigo.".into() } else { "Listo, no lo hago.".into() }))
+    match answer {
+        Verdict::No => "Listo, no lo hago.".into(),
+        Verdict::Always => "Hecho. Por hoy no te vuelvo a preguntar esto.".into(),
+        Verdict::Yes => "Hecho, sigo.".into(),
+    }
+}
+
+pub fn answered_by_voice(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
+    let call = ASKING.lock().unwrap().last().map(|(id, _)| *id)?;
+    let answer = verdict(spoken)?;
+    Some(Ok(settle(app, call, answer)))
+}
+
+fn listen_for_answer(app: &AppHandle, call: u64) {
+    if !crate::settings::load(app).voice_confirm {
+        return;
+    }
+    let Some(said) = crate::voice::hear_short(app, Duration::from_millis(4500)) else { return };
+    if !ASKING.lock().unwrap().iter().any(|(id, _)| *id == call) {
+        return;
+    }
+    match verdict(&said) {
+        Some(answer) => {
+            let reply = settle(app, call, answer);
+            let _ = app.emit_to(crate::overlay::LABEL, "heard", json!({ "chord": "command", "text": said, "reply": reply, "error": null, "live": false }));
+        }
+        None => {
+            let _ = app.emit_to(crate::overlay::LABEL, "oido-corto", "nada");
+            let _ = app.emit_to(crate::overlay::LABEL, "note", format!("Te oí «{said}». Di «sí» o «no», o toca el botón."));
+        }
+    }
 }
 
 fn ask_extension(app: &AppHandle, name: &str, args: &Value) -> Result<String, String> {
@@ -112,7 +175,8 @@ fn permission_for(app: &AppHandle, what: &str, key: &str) -> bool {
         "botones": buttons, "filas": [], "segundos": 60
     });
     let _ = app.emit_to(crate::overlay::LABEL, "script-card", card);
-    crate::cue::answer(&format!("{what}. ¿Lo hago?"));
+    let ear = app.clone();
+    crate::cue::answer_then(&format!("{what}. ¿Lo hago?"), move || listen_for_answer(&ear, call));
     let yes = wait.recv_timeout(Duration::from_secs(60)).unwrap_or(false);
     ASKING.lock().unwrap().retain(|(id, _)| *id != call);
     ASKED_FOR.lock().unwrap().retain(|(id, _)| *id != call);
@@ -897,6 +961,20 @@ mod tests {
         for light in ["abre whatsapp", "pon bad bunny", "sube el volumen", "qué clima hace", "recuérdame en 10 minutos sacar la pizza", "anota comprar pan", "abre discord"] {
             assert!(!needs_steps(light), "{light}");
         }
+    }
+
+    #[test]
+    fn hears_yes_and_no_said_naturally() {
+        assert_eq!(verdict("sí"), Some(Verdict::Yes));
+        assert_eq!(verdict("Sí, hazlo"), Some(Verdict::Yes));
+        assert_eq!(verdict("dale pues"), Some(Verdict::Yes));
+        assert_eq!(verdict("de una"), Some(Verdict::Yes));
+        assert_eq!(verdict("no, mejor no"), Some(Verdict::No));
+        assert_eq!(verdict("cancela eso"), Some(Verdict::No));
+        assert_eq!(verdict("siempre hoy"), Some(Verdict::Always));
+        assert_eq!(verdict("sí, siempre"), Some(Verdict::Always));
+        assert_eq!(verdict("pon música de Bad Bunny"), None);
+        assert_eq!(verdict("Enviar a Angela por WhatsApp: hola. ¿Lo hago?"), None);
     }
 
     #[test]

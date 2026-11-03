@@ -323,6 +323,48 @@ pub fn warm_engine(app: &AppHandle, chord: Chord) {
     }
 }
 
+static HEARING: AtomicBool = AtomicBool::new(false);
+
+pub fn hear_short(app: &AppHandle, most: Duration) -> Option<String> {
+    let dir = dir(app).ok().filter(|dir| installed_in(dir))?;
+    if mic::is_open() || PRACTICE.load(Ordering::Relaxed) || HEARING.swap(true, Ordering::Relaxed) {
+        return None;
+    }
+    mic::start();
+    std::thread::spawn(move || crate::motor::warm(&dir.join("motor").join(ENGINE_EXE), &dir.join(MODEL_FILE), threads()));
+    crate::cue::play(crate::cue::Cue::Listen);
+    let _ = app.emit_to(overlay::LABEL, "oido-corto", "on");
+    let begin = std::time::Instant::now();
+    let (mut floor, mut spoke, mut last) = (0f32, None::<std::time::Instant>, begin);
+    while mic::is_open() {
+        std::thread::sleep(Duration::from_millis(30));
+        let level = mic::level();
+        if begin.elapsed() < Duration::from_millis(280) {
+            floor = floor.max(level);
+            continue;
+        }
+        if level > (floor * 2.5).max(0.035) {
+            spoke.get_or_insert_with(std::time::Instant::now);
+            last = std::time::Instant::now();
+        }
+        match spoke {
+            Some(first) if last.elapsed() > Duration::from_millis(650) || first.elapsed() > Duration::from_secs(4) => break,
+            None if begin.elapsed() > most => break,
+            _ => {}
+        }
+    }
+    let recording = mic::stop();
+    HEARING.store(false, Ordering::Relaxed);
+    let heard = spoke.and(recording.ok()).and_then(|recording| {
+        let _ = app.emit_to(overlay::LABEL, "oido-corto", "pensando");
+        transcribe(app, recording).ok().flatten()
+    });
+    if heard.is_none() {
+        let _ = app.emit_to(overlay::LABEL, "oido-corto", "nada");
+    }
+    heard
+}
+
 pub fn transcribe_file(app: &AppHandle, wav: &Path) -> Result<String, String> {
     let dir = dir(app)?;
     if !installed_in(&dir) {

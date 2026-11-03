@@ -174,6 +174,7 @@ export interface Settings {
   aiAgent: boolean;
   agentHands: boolean;
   agentConfirm: boolean;
+  voiceConfirm: boolean;
   aiLive: boolean;
   liveVoice: string;
   liveModel: string;
@@ -322,6 +323,7 @@ const DEFAULTS: Settings = {
   aiAgent: true,
   agentHands: true,
   agentConfirm: true,
+  voiceConfirm: true,
   aiLive: true,
   liveVoice: "Charon",
   liveModel: "",

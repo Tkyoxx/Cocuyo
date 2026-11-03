@@ -33,6 +33,8 @@ pub struct Entry {
     what: String,
     #[serde(default)]
     done: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    whatsapp: Option<(String, String)>,
 }
 
 #[derive(Clone, Copy)]
@@ -429,10 +431,28 @@ fn add(app: &AppHandle, when: When, act: bool, what: String) -> String {
     let reply = if act { format!("Programado {said}: «{what}».") } else { format!("Te aviso {said}: {what}") };
     let mut book = BOOK.lock().unwrap();
     let id = book.iter().map(|entry| entry.id).max().unwrap_or(0) + 1;
-    book.push(Entry { id, when, act, what, done: 0 });
+    book.push(Entry { id, when, act, what, done: 0, whatsapp: None });
     save(app, &book);
     CHANGED.notify_all();
     reply
+}
+
+pub fn timed(spoken: &str) -> Option<(When, String)> {
+    parse(spoken, &Now::read()).filter(|(when, act, _)| *act && !matches!(when, When::Startup)).map(|(when, _, what)| (when, what))
+}
+
+pub fn when_said(when: &When) -> String {
+    describe(when, &Now::read())
+}
+
+pub fn add_whatsapp(app: &AppHandle, when: When, chat: &str, name: &str, text: &str) -> String {
+    let said = describe(&when, &Now::read());
+    let mut book = BOOK.lock().unwrap();
+    let id = book.iter().map(|entry| entry.id).max().unwrap_or(0) + 1;
+    book.push(Entry { id, when, act: true, what: format!("WhatsApp a {name}: «{text}»"), done: 0, whatsapp: Some((chat.to_string(), text.to_string())) });
+    save(app, &book);
+    CHANGED.notify_all();
+    format!("Listo, {said} le mando a {name}: «{text}».")
 }
 
 pub fn soon(spoken: &str) -> bool {
@@ -514,7 +534,7 @@ pub fn for_phone(spoken: &str) -> Option<ForPhone> {
         return None;
     }
     let said = describe(&when, &now);
-    let at = next_due(&Entry { id: 0, when, act: false, what: String::new(), done: 0 }, &now)?;
+    let at = next_due(&Entry { id: 0, when, act: false, what: String::new(), done: 0, whatsapp: None }, &now)?;
     let what = what.strip_prefix("para ").or_else(|| what.strip_prefix("for ")).unwrap_or(&what).to_string();
     let what = if what.starts_with("Ya es la hora") || what.starts_with("Se cumplió") { String::new() } else { what };
     Some(ForPhone { at, what, alarm, said })
@@ -569,7 +589,12 @@ fn next_due(entry: &Entry, now: &Now) -> Option<i64> {
 fn fire(app: &AppHandle, entry: &Entry, late: bool) {
     let (app, entry) = (app.clone(), entry.clone());
     std::thread::spawn(move || {
-        let text = if entry.act {
+        let text = if let Some((chat, said)) = &entry.whatsapp {
+            match crate::whatsapp::send_scheduled(chat, said) {
+                Ok(()) => format!("Enviado: {}", entry.what),
+                Err(why) => format!("No pude mandar el WhatsApp programado ({why}): {}", entry.what),
+            }
+        } else if entry.act {
             match crate::voice::run_order(&app, &entry.what) {
                 Ok(done) if done.is_empty() => format!("Hecho: {}.", entry.what),
                 Ok(done) => done,
@@ -732,7 +757,7 @@ mod tests {
     #[test]
     fn a_routine_comes_due_once_a_day_on_its_days() {
         let now = tuesday_3pm();
-        let mut entry = Entry { id: 1, when: When::Daily { minute: 15 * 60, days: EVERY_DAY }, act: true, what: String::new(), done: 0 };
+        let mut entry = Entry { id: 1, when: When::Daily { minute: 15 * 60, days: EVERY_DAY }, act: true, what: String::new(), done: 0, whatsapp: None };
         assert_eq!(next_due(&entry, &now), Some(now.unix));
         entry.done = now.unix;
         assert_eq!(next_due(&entry, &now), Some(now.unix + DAY));
