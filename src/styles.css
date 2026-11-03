@@ -1692,8 +1692,9 @@ button.solid:active {
   }
 }
 
-.escondida *,
-.escondida *::before,
-.escondida *::after {
+.escondida #island,
+.escondida #island *,
+.escondida #island *::before,
+.escondida #island *::after {
   animation-play-state: paused !important;
 }
