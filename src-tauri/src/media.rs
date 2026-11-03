@@ -46,8 +46,42 @@ pub struct NowPlaying {
     art: Option<String>,
 }
 
+pub fn play_titled(fragment: &str, wait: Duration) -> bool {
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+    }
+    let wanted = crate::intent::normalize(fragment);
+    let until = std::time::Instant::now() + wait;
+    while std::time::Instant::now() < until {
+        std::thread::sleep(Duration::from_millis(800));
+        let Some(manager) = Manager::RequestAsync().ok().and_then(|op| op.join().ok()) else { continue };
+        let Ok(sessions) = manager.GetSessions() else { continue };
+        for session in sessions {
+            let title = session.TryGetMediaPropertiesAsync().ok().and_then(|op| op.join().ok()).and_then(|p| p.Title().ok()).map(|t| crate::intent::normalize(&t.to_string())).unwrap_or_default();
+            if title.trim().is_empty() || !(title.contains(wanted.trim()) || wanted.contains(title.trim()) || similarity(&title, &wanted) >= 0.6) {
+                continue;
+            }
+            let playing = session.GetPlaybackInfo().ok().and_then(|info| info.PlaybackStatus().ok()) == Some(Status::Playing);
+            if !playing {
+                std::thread::sleep(Duration::from_millis(1200));
+                let still = session.GetPlaybackInfo().ok().and_then(|info| info.PlaybackStatus().ok()) == Some(Status::Playing);
+                if !still {
+                    let _ = session.TryPlayAsync().ok().and_then(|op| op.join().ok());
+                }
+            }
+            return true;
+        }
+    }
+    false
+}
+
 fn pick_session(manager: &Manager) -> Option<Session> {
     if let Ok(sessions) = manager.GetSessions() {
+        for session in &sessions {
+            if session.GetPlaybackInfo().ok().and_then(|info| info.PlaybackStatus().ok()) == Some(Status::Playing) {
+                return Some(session);
+            }
+        }
         for session in sessions {
             let app = session.SourceAppUserModelId().map(|s| s.to_string()).unwrap_or_default();
             if app.to_lowercase().contains("spotify") {

@@ -154,6 +154,8 @@ export interface Settings {
   dictationInto: string;
   handsFree: boolean;
   statusLine: boolean;
+  morningSummary: boolean;
+  musicService: string;
   whatsappNotices: boolean;
   whatsappGroups: boolean;
   whatsappText: boolean;
@@ -303,6 +305,8 @@ const DEFAULTS: Settings = {
   dictationInto: "",
   handsFree: true,
   statusLine: false,
+  morningSummary: true,
+  musicService: "",
   whatsappNotices: true,
   whatsappGroups: false,
   whatsappText: true,

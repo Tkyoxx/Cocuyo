@@ -332,9 +332,12 @@ fn toolbox(app: &AppHandle) -> (Vec<Value>, HashMap<String, Doer>) {
         doers.insert("cocuyo_whatsapp_leer".to_string(), Doer::WhatsappRead);
         tools.push(function(
             "cocuyo_whatsapp_chat",
-            "Trae los últimos 20 mensajes del chat de WhatsApp con una persona, y lo que ya se sabe de ella, para entender la conversación antes de \
-             responderle, resumirla o aconsejar qué decir. La persona aprueba que lo leas.",
-            object(json!({ "persona": { "type": "string", "description": "El nombre como lo dijo la persona" } }), &["persona"]),
+            "Trae los últimos mensajes del chat de WhatsApp con una persona (20 si no dices cuántos, hasta 50), y lo que ya se sabe de ella, para \
+             entender la conversación antes de responderle, resumirla o aconsejar qué decir. La persona aprueba que lo leas.",
+            object(
+                json!({ "persona": { "type": "string", "description": "El nombre como lo dijo la persona" }, "cuantos": { "type": "integer", "description": "Cuántos mensajes, de 5 a 50" } }),
+                &["persona"],
+            ),
         ));
         doers.insert("cocuyo_whatsapp_chat".to_string(), Doer::WhatsappChat);
         tools.push(function(
@@ -531,7 +534,7 @@ fn act(app: &AppHandle, doer: &Doer, args: &Value) -> Result<Done, String> {
         Doer::Screen => crate::capture::screen_text().map(Done::from),
         Doer::Remember => crate::ai::memorize(app, &text(args, "dato")).map(|()| String::from("Guardado.").into()),
         Doer::WhatsappRead => crate::whatsapp::read_out(app).map(Done::from),
-        Doer::WhatsappChat => crate::whatsapp::chat_for_ai(app, &text(args, "persona")).map(Done::from),
+        Doer::WhatsappChat => crate::whatsapp::chat_for_ai(app, &text(args, "persona"), args["cuantos"].as_u64().unwrap_or(20) as usize).map(Done::from),
         Doer::WhatsappPerson => crate::whatsapp::save_person(app, &text(args, "persona"), &text(args, "ficha")).map(Done::from),
         Doer::WhatsappSend => crate::whatsapp::send_to(app, &text(args, "para"), &text(args, "texto")).map(Done::from),
         Doer::Window => crate::pc::open(app, &text(args, "app")).map(Done::from),

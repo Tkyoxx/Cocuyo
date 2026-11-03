@@ -6,6 +6,7 @@ import { PAGES, settingsPage, type Host, type Page } from "./pages";
 import { Spring } from "./spring";
 
 const PIN = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6l-1 6 3 3H7l3-3-1-6zM12 13v7"/></svg>`;
+const CLIP = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16.5 6.5 8.4 14.6a1.9 1.9 0 0 0 2.7 2.7l8.1-8.1a3.8 3.8 0 0 0-5.4-5.4l-8.3 8.3a5.7 5.7 0 0 0 8 8l7.3-7.3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const PEN = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4"/></svg>`;
 
 export class Menu {
@@ -16,6 +17,8 @@ export class Menu {
   private pin = document.createElement("button");
   private meter = document.createElement("button");
   private pen = document.createElement("button");
+  private clip = document.createElement("button");
+  onAttach: () => void = () => {};
   private askBar = document.createElement("form");
   private askInput = document.createElement("input");
   private name = "";
@@ -77,7 +80,12 @@ export class Menu {
     this.pen.setAttribute("aria-label", "Escríbele a Cocuyo");
     this.pen.title = "Escríbele a Cocuyo";
     this.pen.addEventListener("click", () => this.toggleAsk());
-    this.extra.append(this.pen, this.pin);
+    this.clip.className = "menu-pin";
+    this.clip.innerHTML = CLIP;
+    this.clip.setAttribute("aria-label", "Pregúntale por un archivo");
+    this.clip.title = "Pregúntale por un archivo";
+    this.clip.addEventListener("click", () => this.onAttach());
+    this.extra.append(this.clip, this.pen, this.pin);
     this.root.append(this.extra);
     this.askBar.className = "ask-bar";
     this.askBar.hidden = true;

@@ -272,6 +272,7 @@ class SettingsPage implements Page {
                <div class="segmented" id="s-dock"><span class="thumb"></span><button data-value="auto">Automática</button><button data-value="top">Arriba</button><button data-value="right">Derecha</button></div>
              </div>
              <label class="srow"><div><b>La rayita de estado</b><small>Una línea de color bajo la isla que cambia según lo que hace Cocuyo: pensando, esperando tu permiso, algo falló o listo.</small></div><input type="checkbox" class="switch" id="s-status-line"></label>
+             <label class="srow"><div><b>Resumen del día</b><small>La primera vez que prendes el PC cada día: el clima, lo que tienes hoy y quién te escribió, en una tarjeta.</small></div><input type="checkbox" class="switch" id="s-morning"></label>
              <div class="srow stack"><div><b>Su color</b><small>El de los botones prendidos, el saludo y los detalles de la isla.</small></div><div class="srow chips flat swatches" id="s-accent"><button class="swatch" data-accent="" style="--c:#f2b84b" aria-label="Ámbar" title="Ámbar"></button><button class="swatch" data-accent="#34d399" style="--c:#34d399" aria-label="Verde" title="Verde"></button><button class="swatch" data-accent="#5cb8ff" style="--c:#5cb8ff" aria-label="Azul" title="Azul"></button><button class="swatch" data-accent="#a78bfa" style="--c:#a78bfa" aria-label="Violeta" title="Violeta"></button><button class="swatch" data-accent="#f472b6" style="--c:#f472b6" aria-label="Rosa" title="Rosa"></button><button class="swatch" data-accent="#f4505e" style="--c:#f4505e" aria-label="Rojo" title="Rojo"></button></div></div>
              <div class="srow slim"><div><b>Tus sonidos</b><small>Pon un .wav con el nombre de un aviso en esta carpeta y Cocuyo suena con el tuyo.</small></div><button class="ghost" id="s-sounds">Abrir carpeta</button></div>
              <div class="srow slim"><div><b>Diagnóstico</b><small>Copia la versión, tu Windows y los últimos errores, sin tus claves, para pegarlo en un issue.</small></div><button class="ghost" id="s-diag">Copiar</button></div>
@@ -421,6 +422,9 @@ class SettingsPage implements Page {
         section(
           "musica",
           `<div class="card">
+             <div class="srow stack"><div><b>Tu música</b><small>Con «pon…» Cocuyo busca y pone a sonar la canción. Automático usa Spotify si lo conectaste y si no, YouTube Music, que no pide clave ni cuenta extra: abre la canción en tu YouTube Music y le da play.</small></div><div class="srow chips flat" id="s-music"><button class="chip" data-v="">Automático</button><button class="chip" data-v="spotify">Spotify</button><button class="chip" data-v="youtube">YouTube Music</button></div></div>
+           </div>
+           <div class="card">
              <div class="srow"><div><b>Spotify</b><small id="s-sp"></small></div><button class="ghost" id="s-sp-go" hidden>Desconectar</button></div>
              <div class="dc-steps" id="s-sp-steps">
                <div class="srow slim" data-sp-setup><div><b>1. Crea tu app de Spotify</b><small>Es gratis y solo la usas tú. En el portal entra con tu cuenta de Spotify, acepta los términos si te los pide y pulsa «Create app». De nombre ponle Cocuyo y de descripción lo que quieras.</small></div><button class="ghost" id="s-sp-portal">Abrir el portal</button></div>
@@ -580,7 +584,7 @@ class SettingsPage implements Page {
     for (const button of el.querySelectorAll<HTMLElement>("#s-lang button")) {
       button.addEventListener("click", () => this.save({ language: button.dataset.value as Settings["language"] }));
     }
-    const toggle = (sel: string, key: "hideOnFullscreen" | "askWhere" | "copyToClipboard" | "autostart" | "cueFullscreen" | "speakFullscreen" | "gameOverlay" | "aiOn" | "aiDictation" | "aiHear" | "padOn" | "checkUpdates" | "countMe" | "barCenter" | "barSolidMax" | "extensionsOn" | "aiAgent" | "agentHands" | "agentConfirm" | "voiceConfirm" | "aiLive" | "remoteOn" | "handsFree" | "whatsappNotices" | "whatsappGroups" | "statusLine" | "whatsappText" | "whatsappUiSounds" | "whatsappGaming") => {
+    const toggle = (sel: string, key: "hideOnFullscreen" | "askWhere" | "copyToClipboard" | "autostart" | "cueFullscreen" | "speakFullscreen" | "gameOverlay" | "aiOn" | "aiDictation" | "aiHear" | "padOn" | "checkUpdates" | "countMe" | "barCenter" | "barSolidMax" | "extensionsOn" | "aiAgent" | "agentHands" | "agentConfirm" | "voiceConfirm" | "aiLive" | "remoteOn" | "handsFree" | "whatsappNotices" | "whatsappGroups" | "statusLine" | "morningSummary" | "whatsappText" | "whatsappUiSounds" | "whatsappGaming") => {
       const input = q<HTMLInputElement>(sel);
       input.addEventListener("change", () => {
         const change: Partial<Settings> = {};
@@ -710,6 +714,7 @@ class SettingsPage implements Page {
     }
     toggle("#s-hands", "handsFree");
     toggle("#s-status-line", "statusLine");
+    toggle("#s-morning", "morningSummary");
     toggle("#s-wa-notices", "whatsappNotices");
     toggle("#s-wa-groups", "whatsappGroups");
     toggle("#s-wa-text", "whatsappText");
@@ -738,6 +743,10 @@ class SettingsPage implements Page {
       burbuja({ oir: this.settings?.whatsappSound || "kalimba" });
     });
     q("#s-wa-go").addEventListener("click", () => void this.whatsappButton());
+    q("#s-music").addEventListener("click", (e) => {
+      const chip = (e.target as HTMLElement).closest<HTMLElement>("[data-v]");
+      if (chip) void this.save({ musicService: chip.dataset.v ?? "" });
+    });
     q("#s-wa-people").addEventListener("click", async (e) => {
       const forget = (e.target as HTMLElement).closest<HTMLElement>("[data-forget]");
       if (!forget) return;
@@ -2014,6 +2023,7 @@ class SettingsPage implements Page {
     q<HTMLInputElement>("#s-ai-polish").checked = s.aiDictation;
     q<HTMLInputElement>("#s-hands").checked = s.handsFree;
     q<HTMLInputElement>("#s-status-line").checked = s.statusLine;
+    q<HTMLInputElement>("#s-morning").checked = s.morningSummary;
     q<HTMLInputElement>("#s-wa-notices").checked = s.whatsappNotices;
     q<HTMLInputElement>("#s-wa-groups").checked = s.whatsappGroups;
     q<HTMLInputElement>("#s-wa-text").checked = s.whatsappText;
@@ -2025,7 +2035,7 @@ class SettingsPage implements Page {
       ? s.whatsappReplies.map((r) => `<button class="chip" data-reply="${esc(r)}">${esc(r)}</button>`).join("")
       : `<small class="empty-line">${tr("Ninguna todavía.")}</small>`;
     q("#s-wa-replies").classList.toggle("off", s.whatsappQuick === "nunca");
-    for (const [box, value] of [["#s-wa-stay", String(s.whatsappStay)], ["#s-wa-motion", s.whatsappMotion], ["#s-wa-sound", s.whatsappSound], ["#s-wa-quick", s.whatsappQuick]] as const) {
+    for (const [box, value] of [["#s-wa-stay", String(s.whatsappStay)], ["#s-wa-motion", s.whatsappMotion], ["#s-wa-sound", s.whatsappSound], ["#s-wa-quick", s.whatsappQuick], ["#s-music", s.musicService]] as const) {
       for (const chip of this.el.querySelectorAll<HTMLElement>(`${box} [data-v]`)) chip.classList.toggle("on", chip.dataset.v === value);
     }
     for (const swatch of this.el.querySelectorAll<HTMLElement>("#s-accent [data-accent]")) swatch.classList.toggle("on", swatch.dataset.accent === s.accent);

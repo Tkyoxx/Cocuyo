@@ -38,6 +38,17 @@ pub struct Weather {
 
 static LAST: Mutex<Option<(Instant, String, Weather)>> = Mutex::new(None);
 
+impl Weather {
+    pub fn place(&self) -> String {
+        self.place.clone()
+    }
+
+    pub fn short(&self) -> String {
+        let rain = if self.rain >= 30 { format!(" · lluvia {} %", self.rain) } else { String::new() };
+        format!("{} {:.0}° (máx {:.0}°){rain}", sky(self.code), self.temp, self.max)
+    }
+}
+
 fn get(url: &str) -> Option<Value> {
     let output = Command::new("curl.exe").args(["--silent", "--max-time", "8", url]).creation_flags(CREATE_NO_WINDOW).output().ok()?;
     serde_json::from_slice(&output.stdout).ok()

@@ -16,7 +16,7 @@ export class Caption {
 
   stream(who: "you" | "app", text: string, ms: number) {
     const before = this.shown;
-    if (!this.visible || before.who !== who || !text.startsWith(before.text)) return this.say(who, text, ms);
+    if (!this.visible || before.who !== who || !text.startsWith(before.text) || this.isTyping) return this.say(who, text, ms);
     clearTimeout(this.timer);
     const fresh = text.slice(before.text.length);
     const spans = fresh.split(/(?<=\s)/).filter(Boolean).map((word, i) => {
@@ -33,6 +33,7 @@ export class Caption {
   }
 
   typing() {
+    if (this.visible && this.shown.who === "app" && this.shown.text) return;
     clearTimeout(this.timer);
     this.shown = { who: "app", text: "" };
     this.el.dataset.who = "app";

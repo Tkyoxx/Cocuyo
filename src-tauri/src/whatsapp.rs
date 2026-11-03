@@ -21,7 +21,7 @@ const ZIP_SHA256: &str = "5a64e9db06fb0b5174e27b4c03c1563b0212bead674136eca06b98
 const ZIP_EXE: &str = "windows-amd64.exe";
 const EXE: &str = "gowa.exe";
 const DEVICE: &str = "cocuyo";
-const KEEP: usize = 30;
+const KEEP: usize = 150;
 const REPLY_WINDOW: Duration = Duration::from_secs(30 * 60);
 const MEDIA_DAYS: u64 = 3;
 
@@ -679,10 +679,83 @@ pub async fn whatsapp_responder(chat: String, texto: String) -> Result<(), Strin
 }
 
 #[tauri::command]
-pub fn whatsapp_hilo(chat: String) -> Vec<Line> {
-    INBOX.lock().unwrap().iter_mut().filter(|m| m.chat == chat).for_each(|m| m.read = true);
-    mark_seen(&chat);
-    thread(&chat)
+pub async fn whatsapp_hilo(chat: String) -> Vec<Line> {
+    tauri::async_runtime::spawn_blocking(move || {
+        INBOX.lock().unwrap().iter_mut().filter(|m| m.chat == chat).for_each(|m| m.read = true);
+        mark_seen(&chat);
+        let mine = thread(&chat);
+        let older = if running() { stored(&chat, 30) } else { Vec::new() };
+        merge(older, mine, 30)
+    })
+    .await
+    .unwrap_or_default()
+}
+
+pub fn unix_ms(stamp: &str) -> Option<u64> {
+    let (date, rest) = stamp.split_once('T')?;
+    let mut parts = date.split('-').map(|n| n.parse::<i64>().ok());
+    let (y, m, d) = (parts.next()??, parts.next()??, parts.next()??);
+    let clock: String = rest.chars().take(8).collect();
+    let mut hms = clock.split(':').map(|n| n.parse::<i64>().ok());
+    let (h, min, s) = (hms.next()??, hms.next()??, hms.next()??);
+    let tail = &rest[8.min(rest.len())..];
+    let tail = tail.trim_start_matches(|c: char| c == '.' || c.is_ascii_digit());
+    let offset = match tail.chars().next() {
+        Some(sign @ ('+' | '-')) => {
+            let mut zone = tail[1..].split(':').map(|n| n.parse::<i64>().ok());
+            let minutes = zone.next()?? * 60 + zone.next().flatten().unwrap_or(0);
+            if sign == '+' { minutes } else { -minutes }
+        }
+        _ => 0,
+    };
+    let (yy, mm) = if m <= 2 { (y - 1, m + 9) } else { (y, m - 3) };
+    let era = yy.div_euclid(400);
+    let yoe = yy - era * 400;
+    let doy = (153 * mm + 2) / 5 + d - 1;
+    let days = era * 146_097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719_468;
+    let secs = days * 86_400 + h * 3600 + min * 60 + s - offset * 60;
+    u64::try_from(secs).ok().map(|s| s * 1000)
+}
+
+fn stored(chat: &str, most: usize) -> Vec<(String, Line)> {
+    let said = call("GET", &format!("/chat/{chat}/messages?limit={most}"), None).unwrap_or_default();
+    said["results"]["data"]
+        .as_array()
+        .map(|all| {
+            all.iter()
+                .filter_map(|m| {
+                    let yo = m["is_from_me"].as_bool().unwrap_or(false);
+                    let texto = m["content"].as_str().map(str::trim).unwrap_or("").chars().take(4000).collect::<String>();
+                    let kind = m["media_type"].as_str().unwrap_or("");
+                    let media = match kind {
+                        "" | "call" => None,
+                        "image" => Some("foto"),
+                        "sticker" => Some("sticker"),
+                        "video" => Some("video"),
+                        "audio" | "ptt" => Some("nota"),
+                        "location" | "live_location" => Some("ubicacion"),
+                        "contact" | "contacts" => Some("contacto"),
+                        _ => Some("documento"),
+                    }
+                    .map(|tipo| Media { tipo, ruta: None, nombre: m["filename"].as_str().filter(|n| !n.is_empty()).map(str::to_string), enlace: None });
+                    if texto.is_empty() && media.is_none() {
+                        return None;
+                    }
+                    let hora = m["timestamp"].as_str().and_then(unix_ms).unwrap_or(0);
+                    Some((m["id"].as_str().unwrap_or("").to_string(), Line { yo, texto, hora, media, estado: yo.then_some("listo") }))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn merge(older: Vec<(String, Line)>, fresh: Vec<Line>, most: usize) -> Vec<Line> {
+    let mut all: Vec<Line> = older.into_iter().map(|(_, line)| line).filter(|old| !fresh.iter().any(|new| new.yo == old.yo && new.texto == old.texto && new.hora.abs_diff(old.hora) < 120_000)).collect();
+    all.extend(fresh);
+    all.sort_by_key(|line| line.hora);
+    let extra = all.len().saturating_sub(most);
+    all.drain(..extra);
+    all
 }
 
 #[tauri::command]
@@ -822,6 +895,17 @@ pub fn summary(inbox: &mut [Message]) -> String {
     format!("{head} {}.{more}", parts.join(". ").trim_end_matches('.'))
 }
 
+pub fn unread_people() -> Vec<(String, usize)> {
+    let mut people: Vec<(String, usize)> = Vec::new();
+    for message in INBOX.lock().unwrap().iter().filter(|m| !m.read && !m.mine) {
+        match people.iter_mut().find(|(name, _)| *name == message.name) {
+            Some((_, n)) => *n += 1,
+            None => people.push((message.name.clone(), 1)),
+        }
+    }
+    people
+}
+
 pub fn connected() -> bool {
     running()
 }
@@ -909,43 +993,30 @@ pub fn who_is(who: &str) -> Option<(String, String)> {
     best_match(who, &listed).or_else(|| contact(who))
 }
 
-fn history(chat: &str, name: &str) -> Vec<String> {
-    let said = call("GET", &format!("/chat/{chat}/messages?limit=20"), None).unwrap_or_default();
-    let mut lines: Vec<(String, String)> = said["results"]["data"]
-        .as_array()
-        .map(|all| {
-            all.iter()
-                .filter_map(|m| {
-                    let text = m["content"].as_str().map(str::trim).filter(|t| !t.is_empty()).map(|t| t.chars().take(600).collect::<String>());
-                    let text = text.or_else(|| m["media_type"].as_str().filter(|t| !t.is_empty() && *t != "call").map(|t| format!("[{t}]")))?;
-                    let who = if m["is_from_me"].as_bool().unwrap_or(false) { "Yo".to_string() } else { m["sender_display_name"].as_str().filter(|n| !n.is_empty()).unwrap_or(name).to_string() };
-                    Some((m["timestamp"].as_str().unwrap_or("").to_string(), format!("{who}: {text}")))
-                })
-                .collect()
+fn history(chat: &str, name: &str, most: usize) -> Vec<String> {
+    merge(stored(chat, most), thread(chat), most)
+        .into_iter()
+        .map(|line| {
+            let said = match (&line.media, line.texto.is_empty()) {
+                (Some(media), true) => format!("[{}]", label(media)),
+                (Some(media), false) => format!("[{}] {}", label(media), line.texto.chars().take(600).collect::<String>()),
+                _ => line.texto.chars().take(600).collect(),
+            };
+            format!("{}: {said}", if line.yo { "Yo" } else { name })
         })
-        .unwrap_or_default();
-    if lines.is_empty() {
-        return INBOX
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|m| m.chat == chat)
-            .map(|m| format!("{}: {}", if m.mine { "Yo" } else { m.name.as_str() }, if m.text.is_empty() { m.media.as_ref().map(label).unwrap_or_default() } else { m.text.clone() }))
-            .collect();
-    }
-    lines.sort_by(|a, b| a.0.cmp(&b.0));
-    lines.into_iter().map(|(_, line)| line).collect()
+        .collect()
 }
 
-pub fn chat_for_ai(app: &AppHandle, who: &str) -> Result<String, String> {
+pub fn chat_for_ai(app: &AppHandle, who: &str, most: usize) -> Result<String, String> {
     if !running() || !status().0 {
         return Err("WhatsApp no está conectado a Cocuyo.".into());
     }
+    let most = most.clamp(5, 50);
     let (chat, name) = who_is(who).ok_or_else(|| format!("No encontré a «{who}» en tus chats de WhatsApp."))?;
-    if !crate::agent::ask_first(app, &format!("Dejar que la IA lea tus últimos 20 mensajes con {name} para tener contexto"), &format!("leer chat {name}")) {
+    if !crate::agent::ask_first(app, &format!("Dejar que la IA lea tus últimos {most} mensajes con {name} para tener contexto"), &format!("leer chat {name}")) {
         return Ok(format!("La persona no quiso que leyeras el chat con {name}."));
     }
-    let lines = history(&chat, &name);
+    let lines = history(&chat, &name, most);
     let card = people(app).get(&chat).and_then(|v| v["contexto"].as_str().map(str::to_string));
     let mut out = format!("Chat de WhatsApp con {name}.");
     if let Some(card) = card {
@@ -1112,6 +1183,24 @@ mod tests {
 
     fn message(name: &str, text: &str, media: Option<Media>) -> Message {
         Message { chat: name.into(), name: name.into(), text: text.into(), at: Instant::now(), read: false, mine: false, stamp: now_ms(), media, id: String::new(), tick: 0 }
+    }
+
+    #[test]
+    fn whatsapp_times_turn_into_milliseconds() {
+        assert_eq!(unix_ms("1970-01-01T00:00:01Z"), Some(1000));
+        assert_eq!(unix_ms("2023-10-15T10:30:00Z"), Some(1_697_365_800_000));
+        assert_eq!(unix_ms("2023-10-15T05:30:00-05:00"), Some(1_697_365_800_000));
+        assert_eq!(unix_ms("2023-10-15T10:30:00.123456Z"), Some(1_697_365_800_000));
+        assert_eq!(unix_ms("basura"), None);
+    }
+
+    #[test]
+    fn stored_history_and_fresh_lines_merge_without_twins() {
+        let line = |yo: bool, texto: &str, hora: u64| Line { yo, texto: texto.into(), hora, media: None, estado: None };
+        let older = vec![("a".to_string(), line(false, "hola", 1_000)), ("b".to_string(), line(true, "qué más", 2_000)), ("c".to_string(), line(false, "bien", 3_000))];
+        let fresh = vec![line(false, "bien", 3_500), line(false, "¿vienes?", 9_000)];
+        let all = merge(older, fresh, 3);
+        assert_eq!(all.iter().map(|l| l.texto.as_str()).collect::<Vec<_>>(), vec!["qué más", "bien", "¿vienes?"]);
     }
 
     #[test]

@@ -2,6 +2,29 @@
 
 Cada versión con lo que trae. La más nueva arriba.
 
+## 0.4.4
+
+**Dile «sí» sin soltar nada** (Ajustes → Agente)
+- Cuando Cocuyo pide permiso («¿Lo hago?»), después de preguntar escucha unos segundos: «sí», «dale», «hazlo», «no», «cancela» o «siempre hoy». Lo oye solo tu PC, con el reconocimiento local.
+
+**WhatsApp a tu manera**
+- «Escríbele a Angela que ya voy» sale por la conexión directa aunque no digas «WhatsApp» y aunque las manos del agente estén apagadas; busca a la persona en tus chats recientes, en los de WhatsApp y en tus contactos. Antes a veces abría la app.
+- «Mañana a las 7 mándale a Angela que buenos días» queda programado: lo confirmas al programarlo y a la hora sale solo. Si la hora es parte del mensaje («dile a Pedro que llego en 10 minutos»), se manda de una.
+- Suelta fotos, videos, audios o documentos en la burbuja: quedan encima de la casilla y con Enter salen, con lo que escribas como pie.
+- Al abrir un chat en la burbuja ves la conversación de verdad (los últimos 30 mensajes), no solo lo que llegó desde que abriste Cocuyo, y lo nuevo se suma sin borrar lo anterior.
+- La IA puede leer hasta 50 mensajes de un chat si se lo pides.
+
+**YouTube Music** (Ajustes → Música)
+- Si no usas Spotify, «pon…» busca la canción en YouTube Music, la abre en tu YouTube Music y le da play. Gratis, sin claves ni cuentas extra. En Automático usa Spotify si lo conectaste y si no, YouTube Music.
+- Pausa, siguiente y anterior controlan lo que esté sonando de verdad, no siempre Spotify.
+
+**Tu día en una tarjeta** (Ajustes → Isla)
+- La primera vez que prendes el PC cada día: el clima, lo que tienes hoy en la agenda y quién te escribió. Espera si estás jugando a pantalla completa.
+
+**Lo que se arregló**
+- Un clip 📎 junto al lápiz del menú para elegir un documento o una imagen y preguntarle por él. Antes solo se podía soltándolo encima de la isla, y casi nadie lo encontraba.
+- Los tres puntitos de «pensando» se quedaban al lado de la respuesta cuando Cocuyo contestaba en vivo, y la isla seguía pensando. Ahora la respuesta los reemplaza.
+
 ## 0.4.3
 
 **Las letras salen también jugando**

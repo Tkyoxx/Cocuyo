@@ -124,6 +124,13 @@ function mediaHtml(media: Media) {
   return `<${tag} class="wa-file"><b>${MEDIA_ICON[media.tipo]}</b><span>${label}</span></${target ? "button" : "span"}>`;
 }
 
+function join(before: Linea[], fresh: Linea[]) {
+  if (!fresh.length) return before;
+  const from = fresh[0].hora;
+  const older = before.filter((l) => l.hora < from && !fresh.some((n) => n.yo === l.yo && n.texto === l.texto && Math.abs(n.hora - l.hora) < 120_000));
+  return [...older, ...fresh].slice(-40);
+}
+
 function seconds(total: number) {
   if (!Number.isFinite(total)) return "0:00";
   const s = Math.max(0, Math.round(total));
@@ -297,8 +304,9 @@ export class Burbuja {
     on<{ chat: string; hilo: Linea[] }>("whatsapp-hilo", ({ chat, hilo }) => {
       const known = this.chats.get(chat);
       if (!known) return;
-      const same = known.hilo.length === hilo.length && hilo.every((l, i) => l.texto === known.hilo[i].texto && l.yo === known.hilo[i].yo);
-      known.hilo = hilo;
+      const joined = join(known.hilo, hilo);
+      const same = known.hilo.length === joined.length && joined.every((l, i) => l.texto === known.hilo[i].texto && l.yo === known.hilo[i].yo);
+      known.hilo = joined;
       if (this.state !== "abierta" || this.current !== chat) return;
       if (same) this.paintTicks();
       else this.paintThread(false);
@@ -841,7 +849,7 @@ export class Burbuja {
     const chat: Chat = known ?? { chat: llegada.chat, nombre: llegada.nombre, avatar: llegada.avatar, hilo: [], nuevos: 0, prueba: !!llegada.prueba, borrador: "" };
     chat.nombre = llegada.nombre;
     chat.avatar = llegada.avatar ?? chat.avatar;
-    chat.hilo = llegada.hilo.length ? llegada.hilo : [...chat.hilo, { yo: false, texto: llegada.texto, hora: llegada.hora }];
+    chat.hilo = llegada.hilo.length ? join(chat.hilo, llegada.hilo) : [...chat.hilo, { yo: false, texto: llegada.texto, hora: llegada.hora }];
     const reading = this.state === "abierta" && this.current === llegada.chat;
     chat.nuevos = reading ? 0 : chat.nuevos + 1;
     this.chats.delete(llegada.chat);

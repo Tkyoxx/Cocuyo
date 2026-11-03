@@ -61,8 +61,9 @@ const cards = new Cards();
 const burbuja = new Burbuja();
 burbuja.onFocus = (on) => void call("set_focusable", { on });
 window.addEventListener("cocuyo-burbuja", (e) => {
-  const what = (e as CustomEvent<{ probar?: boolean; oir?: string; hilo?: Linea[] }>).detail;
+  const what = (e as CustomEvent<{ probar?: boolean; oir?: string; hilo?: Linea[]; adjuntar?: string[] }>).detail;
   if (what.probar) burbuja.probar();
+  if (what.adjuntar?.length) void burbuja.attach(what.adjuntar);
   if (what.hilo?.length) burbuja.probarHilo(what.hilo);
   if (what.oir) burbuja.oir(what.oir);
 });
@@ -171,6 +172,18 @@ function reply(text: string, ms?: number) {
   caption.say("app", `${first}…`, 3600);
   cards.show({ script: "Cocuyo", titulo: "Cocuyo", texto: text, md: true, segundos: 90, botones: [{ texto: "Copiar", copiar: text }] });
 }
+
+menu.onAttach = async () => {
+  try {
+    const file = await call<Dropped | null>("bandeja_elegir");
+    if (!file) return;
+    closeMenu();
+    if (SE_PREGUNTA.includes(file.kind)) await preguntas.start(file);
+    else offerFile(file, file.name, 30);
+  } catch (error) {
+    caption.say("app", String(error), 5200);
+  }
+};
 
 menu.onAsk = async (text) => {
   caption.say("you", text, 1600);
@@ -473,8 +486,11 @@ on<"on" | "pensando" | "nada">("oido-corto", (state) => {
 
 on<{ who: "you" | "app"; text: string }>("live-text", (live) => {
   if (!live.text) return;
-  if (live.who === "app") clearTimeout(typingTimer);
-  if (live.who === "app") pill.done();
+  if (live.who === "app") {
+    clearTimeout(typingTimer);
+    pill.done();
+    if (island.state === "piensa") island.setState(null);
+  }
   caption.stream(live.who, live.text, readingTime(live.text) + 1500);
 });
 

@@ -44,6 +44,7 @@ mod pc;
 mod placement;
 mod player;
 mod remoto;
+mod resumen;
 mod ruido;
 mod scripts;
 mod settings;
@@ -56,6 +57,7 @@ mod tts;
 mod update;
 mod voice;
 mod whatsapp;
+mod ytmusic;
 mod weather;
 
 use tauri::Manager;
@@ -280,6 +282,7 @@ pub fn run() {
             bandeja::bandeja_recibir,
             bandeja::bandeja_texto,
             bandeja::bandeja_abrir,
+            bandeja::bandeja_elegir,
             update::update_choice,
             whatsapp::whatsapp_estado,
             whatsapp::whatsapp_conectar,
@@ -442,6 +445,7 @@ pub fn run() {
             }
             agenda::start(app.handle().clone(), std::env::args().any(|arg| arg == "--inicio"));
             whatsapp::resume(app.handle());
+            resumen::start(app.handle().clone());
             update::watch(app.handle().clone());
             update::count_install(app.handle().clone());
             std::env::remove_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS");

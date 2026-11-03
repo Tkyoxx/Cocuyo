@@ -467,6 +467,12 @@ fn start(path: &Path) {
 }
 
 #[tauri::command]
+pub async fn bandeja_elegir(app: AppHandle) -> Result<Option<Dropped>, String> {
+    let Some(path) = tauri::async_runtime::spawn_blocking(crate::dialogs::pick_document).await.map_err(|e| e.to_string())? else { return Ok(None) };
+    bandeja_recibir(app, vec![path.display().to_string()]).map(|kept| kept.into_iter().next())
+}
+
+#[tauri::command]
 pub fn bandeja_abrir(app: AppHandle, path: String) -> Result<(), String> {
     let path = owned(&app, &path)?;
     if kind_of(&path) == "otro" {

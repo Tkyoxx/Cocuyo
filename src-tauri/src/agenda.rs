@@ -437,6 +437,19 @@ fn add(app: &AppHandle, when: When, act: bool, what: String) -> String {
     reply
 }
 
+pub fn today() -> Vec<(String, String)> {
+    let now = Now::read();
+    let tomorrow = now.midnight() + DAY;
+    let mut due: Vec<(i64, String)> = BOOK
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|entry| next_due(entry, &now).filter(|at| *at >= now.unix && *at < tomorrow).map(|at| (at, entry.what.clone())))
+        .collect();
+    due.sort_by_key(|(at, _)| *at);
+    due.into_iter().map(|(at, what)| (clock((at - now.midnight()) / 60), what)).collect()
+}
+
 pub fn timed(spoken: &str) -> Option<(When, String)> {
     parse(spoken, &Now::read()).filter(|(when, act, _)| *act && !matches!(when, When::Startup)).map(|(when, _, what)| (when, what))
 }

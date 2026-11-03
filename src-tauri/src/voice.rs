@@ -757,6 +757,9 @@ fn first_things(app: &AppHandle, spoken: &str) -> Option<Result<String, String>>
     if let Some(done) = crate::whatsapp::spoken(app, spoken) {
         return Some(done);
     }
+    if let Some(done) = crate::ytmusic::spoken(app, spoken) {
+        return Some(done);
+    }
     if let Some(done) = crate::buscar::spoken(app, spoken) {
         return Some(done);
     }
@@ -1159,6 +1162,7 @@ fn act(app: &AppHandle, spoken: &str) -> Result<String, String> {
         Intent::OpenUrl(url) => apps::open(&url).map(|()| "Abriendo la página.".into()),
         Intent::YouTube(q) => apps::open(&format!("https://www.youtube.com/results?search_query={}", url_encode(&q)))
             .map(|()| format!("Buscando «{q}» en YouTube.")),
+        Intent::Spotify(q) | Intent::Mood(q) | Intent::Playlist(q) if crate::ytmusic::wanted(app) => crate::ytmusic::play(app, &q),
         Intent::Spotify(q) => match crate::media::play(app, &q) {
             Played::NoSession => apps::open(&format!("spotify:search:{}", url_encode(&q).replace('+', "%20")))
                 .map(|()| format!("Buscando «{q}» en Spotify. Conecta Spotify en Ajustes para que la ponga a sonar directamente.")),

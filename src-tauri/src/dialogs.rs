@@ -43,6 +43,22 @@ pub fn pick_folder() -> Option<PathBuf> {
     })
 }
 
+pub fn pick_document() -> Option<PathBuf> {
+    on_sta(|| unsafe {
+        let dialog: IFileOpenDialog =
+            CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).ok()?;
+        let name = windows::core::HSTRING::from(crate::i18n::tr("Documentos e imágenes"));
+        let all = windows::core::HSTRING::from(crate::i18n::tr("Todos los archivos"));
+        let types = [
+            COMDLG_FILTERSPEC { pszName: windows::core::PCWSTR(name.as_ptr()), pszSpec: w!("*.pdf;*.docx;*.xlsx;*.pptx;*.odt;*.odp;*.txt;*.md;*.csv;*.json;*.png;*.jpg;*.jpeg;*.webp") },
+            COMDLG_FILTERSPEC { pszName: windows::core::PCWSTR(all.as_ptr()), pszSpec: w!("*.*") },
+        ];
+        dialog.SetFileTypes(&types).ok()?;
+        dialog.Show(None).ok()?;
+        path_of(dialog.GetResult().ok()?)
+    })
+}
+
 pub fn pick_program() -> Option<PathBuf> {
     on_sta(|| unsafe {
         let dialog: IFileOpenDialog =
