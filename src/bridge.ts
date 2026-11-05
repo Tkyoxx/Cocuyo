@@ -218,6 +218,18 @@ export interface Settings {
   recMonitor: string;
   discordServer: string;
   recShowCocuyo: boolean;
+  cleanMic: boolean;
+  cleanMicIn: string;
+  cleanMicOut: string;
+  cleanMicMode: string;
+  cleanMicAmount: number;
+  cleanMicBetween: boolean;
+  cleanMicGate: number;
+  cleanMicGain: number;
+  cleanMicLevel: boolean;
+  cleanMicLight: boolean;
+  cleanMicWhen: string;
+  cleanMicGames: string[];
 }
 
 export interface Hotkey {
@@ -369,6 +381,18 @@ const DEFAULTS: Settings = {
   recMonitor: "",
   discordServer: "",
   recShowCocuyo: true,
+  cleanMic: false,
+  cleanMicIn: "",
+  cleanMicOut: "",
+  cleanMicMode: "llamada",
+  cleanMicAmount: 100,
+  cleanMicBetween: false,
+  cleanMicGate: 0,
+  cleanMicGain: 0,
+  cleanMicLevel: false,
+  cleanMicLight: false,
+  cleanMicWhen: "siempre",
+  cleanMicGames: [],
 };
 
 export function onKey(handler: (vk: number) => void) {

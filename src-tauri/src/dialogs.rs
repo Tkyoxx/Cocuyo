@@ -71,6 +71,18 @@ pub fn pick_program() -> Option<PathBuf> {
     })
 }
 
+pub fn pick_exe() -> Option<PathBuf> {
+    on_sta(|| unsafe {
+        let dialog: IFileOpenDialog =
+            CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER).ok()?;
+        let name = windows::core::HSTRING::from(crate::i18n::tr("Programas y accesos directos"));
+        let types = [COMDLG_FILTERSPEC { pszName: windows::core::PCWSTR(name.as_ptr()), pszSpec: w!("*.exe") }];
+        dialog.SetFileTypes(&types).ok()?;
+        dialog.Show(None).ok()?;
+        path_of(dialog.GetResult().ok()?)
+    })
+}
+
 pub fn save_png(suggested: String) -> Option<PathBuf> {
     on_sta(move || unsafe {
         let dialog: IFileSaveDialog =

@@ -115,6 +115,18 @@ pub struct Settings {
     pub rec_replay_secs: u32,
     pub rec_monitor: String,
     pub rec_show_cocuyo: bool,
+    pub clean_mic: bool,
+    pub clean_mic_in: String,
+    pub clean_mic_out: String,
+    pub clean_mic_mode: String,
+    pub clean_mic_amount: u32,
+    pub clean_mic_between: bool,
+    pub clean_mic_gate: u32,
+    pub clean_mic_gain: i32,
+    pub clean_mic_level: bool,
+    pub clean_mic_light: bool,
+    pub clean_mic_when: String,
+    pub clean_mic_games: Vec<String>,
 }
 
 const AI_URL: &str = "https://generativelanguage.googleapis.com/v1beta/openai";
@@ -221,6 +233,18 @@ impl Default for Settings {
             rec_replay_secs: 30,
             rec_monitor: String::new(),
             rec_show_cocuyo: true,
+            clean_mic: false,
+            clean_mic_in: String::new(),
+            clean_mic_out: String::new(),
+            clean_mic_mode: "llamada".into(),
+            clean_mic_amount: 100,
+            clean_mic_between: false,
+            clean_mic_gate: 0,
+            clean_mic_gain: 0,
+            clean_mic_level: false,
+            clean_mic_light: !crate::profundo::fast(),
+            clean_mic_when: "siempre".into(),
+            clean_mic_games: Vec::new(),
         }
     }
 }
@@ -298,6 +322,7 @@ pub fn apply(app: &AppHandle) {
     });
     crate::remoto::sync(app);
     crate::grabadora::configure(app);
+    crate::cable::sync(app);
 }
 
 pub fn capture_dir(app: &AppHandle, settings: &Settings) -> Option<PathBuf> {

@@ -146,6 +146,7 @@ fn decide_now() {
         }
     }
     drop(state);
+    crate::cable::foreground(foreground);
     crate::live::set_covered(app, desktop_covered());
 }
 

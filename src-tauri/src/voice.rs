@@ -772,6 +772,9 @@ fn first_things(app: &AppHandle, spoken: &str) -> Option<Result<String, String>>
     if let Some(done) = crate::ocr::spoken(spoken).or_else(|| crate::system::slow_spoken(spoken)).or_else(|| about_selection(app, spoken)).or_else(|| edit_selection(app, spoken)) {
         return Some(done);
     }
+    if let Some(done) = crate::cable::spoken(app, spoken) {
+        return Some(done);
+    }
     if let Some(done) = crate::system::mic_spoken(spoken) {
         return Some(done);
     }

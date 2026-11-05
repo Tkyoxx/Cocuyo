@@ -1,6 +1,10 @@
 // lo que cocuyo responde, en ingles y portugues
 
 const REPLIES: &[(&str, &str, &str)] = &[
+    ("Listo: le quito el ruido a tu micrófono. En la app de la llamada elige «CABLE Output».", "Done: I'm removing the noise from your microphone. In the call app pick “CABLE Output”.", "Pronto: tiro o ruído do seu microfone. No app da chamada escolha «CABLE Output»."),
+    ("Listo: le quito todo el ruido a tu micrófono, a tope.", "Done: I'm removing all the noise from your microphone, all out.", "Pronto: tiro todo o ruído do seu microfone, no máximo."),
+    ("Listo: le quito el ruido a tu micrófono y dejo un poco de ambiente.", "Done: I'm removing the noise from your microphone and keeping a bit of the room.", "Pronto: tiro o ruído do seu microfone e deixo um pouco do ambiente."),
+    ("Listo, tu micrófono sale tal cual.", "Done, your microphone goes out as it is.", "Pronto, seu microfone sai como está."),
     ("No pude bajar la pasarela de WhatsApp. ¿Hay internet?", "I couldn't download the WhatsApp gateway. Is there internet?", "Não consegui baixar a ponte do WhatsApp. Tem internet?"),
     ("La pasarela de WhatsApp llegó distinta a la publicada; no la instalé.", "The WhatsApp gateway didn't match the published one; I didn't install it.", "A ponte do WhatsApp chegou diferente da publicada; não instalei."),
     ("El zip de la pasarela no trae el programa.", "The gateway zip doesn't contain the program.", "O zip da ponte não traz o programa."),

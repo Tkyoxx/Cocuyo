@@ -117,7 +117,7 @@ unsafe fn title_of(hwnd: HWND) -> String {
     String::from_utf16_lossy(&buffer[..len])
 }
 
-unsafe fn exe_of(hwnd: HWND) -> String {
+pub(crate) unsafe fn exe_of(hwnd: HWND) -> String {
     let mut pid = 0;
     GetWindowThreadProcessId(hwnd, Some(&mut pid));
     let Ok(process) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else { return String::new() };
@@ -132,7 +132,7 @@ unsafe fn exe_of(hwnd: HWND) -> String {
     path.rsplit('\\').next().unwrap_or("").to_string()
 }
 
-unsafe fn app_windows() -> Vec<HWND> {
+pub(crate) unsafe fn app_windows() -> Vec<HWND> {
     unsafe extern "system" fn each(hwnd: HWND, found: LPARAM) -> BOOL {
         let found = &mut *(found.0 as *mut Vec<HWND>);
         let mut rect = RECT::default();

@@ -18,6 +18,12 @@ Estas piezas no vienen dentro de `Cocuyo.exe`: se bajan la primera vez que las e
 | Kokoro 82M | Voces locales | Apache-2.0 | https://huggingface.co/hexgrad/Kokoro-82M |
 | espeak-ng (datos, dentro de los paquetes de voz) | Convertir texto en sonidos | GPL-3.0 | https://github.com/espeak-ng/espeak-ng |
 
+## Lo que se instala solo si lo pides
+
+| Qué | Para qué | Licencia | De dónde |
+|---|---|---|---|
+| VB-CABLE (Driver Pack 45), de V. Burel / VB-Audio | El cable virtual por donde tu voz limpia llega a las otras apps. No viene dentro de Cocuyo: **Instalar VB-Cable** baja su paquete tal cual de la página de VB-Audio, comprueba su huella SHA-256 y abre su instalador, con su propia licencia | VB-CABLE is a donationware, all participations are welcome | https://www.vb-cable.com |
+
 ## Servicios que puedes conectar
 
 El clima viene de [Open-Meteo](https://open-meteo.com) (datos CC-BY-4.0) y la ciudad, la primera vez, de [ipwho.is](https://ipwho.is).
@@ -29,6 +35,12 @@ Gemini, Groq, OpenAI, DeepSeek, Anthropic, Spotify y los servidores MCP que conf
 | Paquete | Licencia | De dónde |
 |---|---|---|
 | @tauri-apps/api | Apache-2.0 OR MIT | https://github.com/tauri-apps/tauri |
+
+## Lo que va dentro de Cocuyo.exe (modelos)
+
+| Qué | Para qué | Licencia | De dónde |
+|---|---|---|---|
+| DeepFilterNet3 (sus pesos, pasados a media precisión en `src-tauri/modelos/dfn3.bin`) | El micrófono limpio. La red está reescrita a mano en `src-tauri/src/profundo.rs`; no se usa su código ni ONNX | MIT OR Apache-2.0, © Hendrik Schröter. Aviso completo en [`src-tauri/modelos/LICENCIA-DeepFilterNet.txt`](src-tauri/modelos/LICENCIA-DeepFilterNet.txt) | https://github.com/Rikorose/DeepFilterNet |
 
 ## Lo que va dentro de Cocuyo.exe (Rust)
 

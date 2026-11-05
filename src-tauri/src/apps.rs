@@ -56,9 +56,9 @@ const KNOWN: [(&str, &[&str]); 24] = [
     ("mortal kombat 11", &["mk11", "mortal kombat"]),
 ];
 
-const NOT_THE_GAME: [&str; 22] = [
+pub(crate) const NOT_THE_GAME: [&str; 25] = [
     "unins", "setup", "install", "redist", "vc_redist", "vcredist", "dxsetup", "directx", "crash", "report", "helper", "prereq", "easyanticheat",
-    "battleye", "be_service", "eac", "updater", "launcherpatcher", "dotnet", "ue4prereq", "cefprocess", "webhelper",
+    "battleye", "be_service", "eac", "updater", "launcherpatcher", "dotnet", "ue4prereq", "cefprocess", "webhelper", "rapidcrc", "ffmpeg", "ffprobe",
 ];
 
 fn roman(word: &str) -> Option<&'static str> {
@@ -234,6 +234,120 @@ fn scan_steam() -> Vec<App> {
         }
     }
     found
+}
+
+const NOT_GAMES: [&str; 18] = ["steam", "steamwebhelper", "steamservice", "epicgameslauncher", "epicwebhelper", "galaxyclient", "riotclientservices", "riotclientux", "battle.net", "upc", "ubisoftconnect", "eadesktop", "origin", "wallpaper32", "wallpaper64", "wallpaperui", "unityhub", "unrealeditor"];
+const GAME_PIECES: [&str; 19] = [
+    "UnityPlayer.dll", "GameAssembly.dll", "steam_api.dll", "steam_api64.dll", "steam_appid.txt", "EOSSDK-Win64-Shipping.dll", "Galaxy.dll", "Galaxy64.dll", "binkw32.dll", "binkw64.dll", "bink2w32.dll", "bink2w64.dll", "fmod.dll", "fmodex.dll", "fmodex64.dll", "fmodstudio.dll", "PhysX3_x64.dll", "PhysXLoader.dll", "Engine\\Binaries",
+];
+const GAME_FOLDERS: [&str; 8] = ["\\steamapps\\common\\", "\\epic games\\", "\\gog games\\", "\\riot games\\", "\\games\\", "\\juegos\\", "\\roblox\\versions\\", "minecraft"];
+
+pub fn looks_like_a_game(path: &Path) -> bool {
+    let stem = path.file_stem().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default();
+    if stem.is_empty() || NOT_GAMES.contains(&stem.as_str()) {
+        return false;
+    }
+    if stem.ends_with("-shipping") {
+        return true;
+    }
+    let lower = path.to_string_lossy().to_lowercase();
+    if GAME_FOLDERS.iter().any(|folder| lower.contains(folder)) {
+        return true;
+    }
+    path.ancestors().skip(1).take(2).any(|dir| GAME_PIECES.iter().any(|piece| dir.join(piece).exists()))
+}
+
+fn epic_manifest(text: &str) -> Option<(String, String)> {
+    let item: serde_json::Value = serde_json::from_str(text).ok()?;
+    let name = item.get("DisplayName")?.as_str()?;
+    let place = item.get("InstallLocation")?.as_str()?;
+    let launch = item.get("LaunchExecutable")?.as_str()?;
+    (!launch.is_empty()).then(|| (name.to_string(), PathBuf::from(place).join(launch).display().to_string()))
+}
+
+fn scan_epic() -> Vec<(String, String)> {
+    let Ok(data) = std::env::var("PROGRAMDATA") else { return Vec::new() };
+    let Ok(entries) = std::fs::read_dir(PathBuf::from(data).join("Epic\\EpicGamesLauncher\\Data\\Manifests")) else { return Vec::new() };
+    entries.flatten().filter(|entry| entry.path().extension().is_some_and(|e| e.eq_ignore_ascii_case("item"))).filter_map(|entry| epic_manifest(&std::fs::read_to_string(entry.path()).ok()?)).collect()
+}
+
+fn fixed_drives() -> Vec<PathBuf> {
+    use windows::core::HSTRING;
+    use windows::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives};
+    let mask = unsafe { GetLogicalDrives() };
+    (0..26u8).filter(|i| mask & (1 << i) != 0).map(|i| format!("{}:\\", (b'A' + i) as char)).filter(|root| unsafe { GetDriveTypeW(&HSTRING::from(root.as_str())) } == 3).map(PathBuf::from).collect()
+}
+
+fn scan_folders(known: &mut Vec<(String, String)>) {
+    let mut places: Vec<PathBuf> = steam_libraries().into_iter().map(|library| library.join("steamapps").join("common")).collect();
+    for drive in fixed_drives() {
+        for folder in ["Games", "Juegos", "GOG Games", "Epic Games", "Riot Games", "SteamLibrary\\steamapps\\common", "Program Files\\Epic Games", "Program Files (x86)\\GOG Galaxy\\Games"] {
+            places.push(drive.join(folder));
+        }
+    }
+    let mut seen = std::collections::HashSet::new();
+    for place in places.into_iter().filter(|place| seen.insert(place.to_string_lossy().to_lowercase())) {
+        let Ok(entries) = std::fs::read_dir(place) else { continue };
+        for entry in entries.flatten() {
+            let dir = entry.path();
+            if !dir.is_dir() {
+                continue;
+            }
+            let lower = dir.to_string_lossy().to_lowercase();
+            if known.iter().any(|(_, exe)| exe.to_lowercase().starts_with(&lower)) {
+                continue;
+            }
+            let mut exes = Vec::new();
+            game_exes(&dir, 3, &mut exes);
+            let plain = |text: String| text.to_lowercase().chars().filter(char::is_ascii_alphanumeric).collect::<String>();
+            let folder = dir.file_name().map(|name| plain(name.to_string_lossy().to_string())).unwrap_or_default();
+            let best = exes.into_iter().max_by_key(|(size, exe)| {
+                let stem = exe.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+                let unity = exe.with_file_name(format!("{stem}_Data")).is_dir();
+                let named = !folder.is_empty() && plain(stem.clone()) == folder;
+                (unity || named || stem.to_lowercase().ends_with("-shipping"), *size)
+            });
+            if let (Some((_, best)), Some(name)) = (best, dir.file_name()) {
+                known.push((name.to_string_lossy().to_string(), best.display().to_string()));
+            }
+        }
+    }
+}
+
+pub fn installed_games() -> Vec<(String, String)> {
+    let mut found: Vec<(String, String)> = scan_steam().into_iter().filter(|app| !app.icon.is_empty()).map(|app| (app.name, app.icon)).collect();
+    found.extend(scan_epic());
+    scan_folders(&mut found);
+    found.retain(|(_, exe)| Path::new(exe).file_stem().is_some_and(|stem| !NOT_GAMES.contains(&stem.to_string_lossy().to_lowercase().as_str())));
+    found
+}
+
+#[cfg(test)]
+mod juegos {
+    use super::*;
+
+    #[test]
+    fn reads_an_epic_manifest() {
+        let text = r#"{"DisplayName":"Rocket League","InstallLocation":"C:\\\\Program Files\\\\Epic Games\\\\rocketleague","LaunchExecutable":"Binaries/Win64/RocketLeague.exe"}"#;
+        let (name, exe) = epic_manifest(text).unwrap();
+        assert_eq!(name, "Rocket League");
+        assert!(exe.ends_with("RocketLeague.exe"), "{exe}");
+        assert!(epic_manifest("{}").is_none());
+    }
+
+    #[test]
+    fn knows_a_game_by_what_it_carries() {
+        let dir = std::env::temp_dir().join("cocuyo-prueba-juego");
+        std::fs::create_dir_all(dir.join("Win64")).unwrap();
+        std::fs::write(dir.join("steam_api64.dll"), b"").unwrap();
+        assert!(looks_like_a_game(&dir.join("cualquiera.exe")), "al lado de la pieza");
+        assert!(looks_like_a_game(&dir.join("Win64").join("cualquiera.exe")), "una carpeta adentro");
+        assert!(!looks_like_a_game(&dir.join("Steam.exe")), "los lanzadores no");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(looks_like_a_game(Path::new("X:\\cualquier\\Mio-Win64-Shipping.exe")));
+        assert!(looks_like_a_game(Path::new("D:\\Juegos\\Algo\\algo.exe")));
+        assert!(!looks_like_a_game(Path::new("C:\\Programas\\Discord\\Discord.exe")));
+    }
 }
 
 fn scan_desktop() -> Vec<App> {

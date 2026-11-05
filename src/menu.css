@@ -2798,3 +2798,193 @@ img.shop-art {
 .dp.me {
   cursor: default;
 }
+
+.lm-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  align-items: center;
+  padding: 0 14px 10px;
+  color: var(--dim);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.lm-status[hidden] {
+  display: none;
+}
+.lm-status > i {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dim);
+  transition:
+    transform 0.25s var(--pop),
+    background 0.2s var(--ui);
+}
+.lm-status > span {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.lm-status > span small {
+  display: block;
+  margin-top: 2px;
+  color: var(--dim);
+  font-size: 11px;
+}
+.lm-status.on {
+  color: rgb(200 240 215);
+}
+.lm-status.on > i {
+  background: #5fe39a;
+  box-shadow: 0 0 8px rgb(95 227 154 / 0.6);
+}
+.lm-status.talk > i {
+  transform: scale(1.45);
+}
+.lm-status.warn {
+  color: #ffb3a6;
+}
+.lm-status.warn > span {
+  flex-basis: calc(100% - 15px);
+}
+.lm-status.warn > i {
+  background: #ff8f7a;
+}
+.lm-meters {
+  display: grid;
+  gap: 6px;
+  padding: 0 14px 12px;
+}
+.lm-meters[hidden] {
+  display: none;
+}
+.lm-meter {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+.lm-meter b {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--dim);
+}
+.lm-meter i {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--tile);
+}
+.lm-meter s {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: rgb(255 255 255 / 0.45);
+  transform: scaleX(0);
+  transform-origin: 0 50%;
+  transition: transform 0.12s linear;
+}
+.lm-meter.clean s {
+  background: var(--accent);
+}
+.lm-player {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 168px;
+  gap: 10px;
+  align-items: center;
+  padding: 0 14px 8px;
+}
+.lm-player[hidden] {
+  display: none;
+}
+.lm-play {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  transition: transform 0.3s var(--pop);
+}
+.lm-play:active {
+  transform: scale(0.9);
+}
+.lm-play svg {
+  width: 16px;
+  height: 16px;
+  fill: var(--accent-ink);
+}
+.lm-wave {
+  position: relative;
+  height: 44px;
+  cursor: pointer;
+}
+.lm-wave canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.lm-head {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--ink);
+  opacity: 0;
+  transition: opacity 0.2s var(--ui);
+  pointer-events: none;
+}
+.lm-head.on {
+  opacity: 0.9;
+}
+.lm-facts {
+  display: block;
+  padding: 0 14px 12px;
+  color: var(--dim);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.lm-facts[hidden] {
+  display: none;
+}
+.lm-games {
+  flex-wrap: wrap;
+  align-content: flex-start;
+  max-height: 168px;
+  overflow-y: auto;
+  padding: 0 14px 10px !important;
+}
+.lm-pick[hidden] {
+  display: none;
+}
+.lm-filter {
+  display: block;
+  width: calc(100% - 28px);
+  margin: 0 14px 6px !important;
+}
+.lm-group {
+  flex: 0 0 100%;
+  margin-top: 4px;
+  color: var(--dim);
+  font-size: 11px;
+}
+.lm-group:empty {
+  margin: 0;
+}
+.lm-now {
+  display: block;
+  margin-top: 6px;
+  color: var(--dim);
+  font-size: 11px;
+}
+.lm-now[hidden] {
+  display: none;
+}
+.lm-games[hidden] {
+  display: none;
+}

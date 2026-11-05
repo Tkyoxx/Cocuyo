@@ -1,6 +1,12 @@
 // lo que trae cada version, para contarlo una vez despues de actualizar. la compilacion falla si falta la de la version
 
 export const NOVEDADES: Record<string, [string, string][]> = {
+  "0.4.6": [
+    ["Tu micrófono sin ruido", "Para Discord, Zoom, WhatsApp y tus juegos: el teclado, el ventilador, el perro y la calle se quedan afuera. Todo dentro de tu PC, en Ajustes → Micrófono."],
+    ["Grábate y compara", "Te grabas 5 segundos y cambias entre «Sin limpiar» y «Limpio» mientras suena. Si mueves un ajuste, se vuelve a limpiar solo."],
+    ["Se prende con tus juegos", "Siempre, solo jugando o con los juegos que marques. Y mientras nadie te escuche, ni abre el micrófono."],
+    ["La burbuja con muchos chats", "Con varios chats de WhatsApp quedan 3 fotos y un «+N» que despliega la lista."],
+  ],
   "0.4.5": [
     ["Dile «sí» sin soltar nada", "Cuando Cocuyo pide permiso, escucha unos segundos: «sí», «dale», «no» o «siempre hoy»."],
     ["WhatsApp a tu manera", "«Escríbele a Angela que ya voy» sale directo, «mañana a las 7 mándale buenos días» queda programado y los archivos se sueltan en la burbuja."],

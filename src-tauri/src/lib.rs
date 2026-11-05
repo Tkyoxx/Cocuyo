@@ -6,6 +6,7 @@ mod amf;
 mod apps;
 mod avisos;
 mod bandeja;
+mod cable;
 mod buscar;
 mod candado;
 mod capture;
@@ -37,6 +38,7 @@ mod notes;
 mod nvenc;
 mod ocr;
 mod oido;
+mod profundo;
 mod overlay;
 mod pad;
 mod palabras;
@@ -279,6 +281,14 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
         .invoke_handler(tauri::generate_handler![
+            cable::limpio_estado,
+            cable::limpio_aparatos,
+            cable::limpio_juegos,
+            cable::limpio_grabar,
+            cable::limpio_reprocesar,
+            cable::limpio_audio,
+            cable::limpio_instalar_cable,
+            cable::limpio_buscar_programa,
             palabras::dictation_apps,
             bandeja::bandeja_recibir,
             bandeja::bandeja_texto,
@@ -466,6 +476,7 @@ pub fn run() {
                 mcp::shutdown();
                 talk::forget();
                 remoto::shutdown();
+                cable::shutdown();
             }
         });
 }

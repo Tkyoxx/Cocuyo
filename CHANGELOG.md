@@ -2,6 +2,19 @@
 
 Cada versión con lo que trae. La más nueva arriba.
 
+## 0.4.6
+
+**Tu micrófono sin ruido** (Ajustes → Micrófono)
+- Para Discord, Zoom, WhatsApp y tus juegos: el teclado, el ventilador, el perro, la calle, la licuadora se quedan afuera. Es DeepFilterNet3 reescrito a mano en Rust y va dentro de Cocuyo: sin cuenta, sin internet y sin la gráfica.
+- Tu voz limpia sale por el cable virtual [VB-Cable](https://www.vb-cable.com) y en la otra app eliges «CABLE Output». Si no lo tienes, **Instalar VB-Cable** baja su paquete oficial de la página de VB-Audio, comprueba que sea el que revisé y abre su instalador. VB-Cable es de VB-Audio y es donationware: gratis, y si te sirve puedes apoyarlos.
+- Mientras ninguna app te escuche no abre el micrófono ni gasta nada.
+- Modos Natural, Llamada, A tope y A tu gusto. Grábate 5 segundos y cambia entre «Sin limpiar» y «Limpio» mientras suena.
+- Cuándo limpiar: siempre, solo jugando o con lo que marques de una lista con lo abierto ahora, lo que ha usado tu micrófono (Discord, TeamSpeak, OBS…), tus juegos y tus programas. Para saber qué es un juego mira las tiendas (Steam, Epic, GOG), las piezas que trae el programa (Unity, Unreal, `steam_api`…), las carpetas de juegos, los conocidos y lo que corra a pantalla completa, sin contar navegadores ni videos. Y por voz: «quítale el ruido a mi micrófono».
+- Gasta cerca de 7 % de un núcleo en Exacta y 5 % en Ligera en un i3 de 7.ª generación, y nada con el micrófono silenciado. En procesadores sin AVX2 (Pentium, Celeron, Atom) usa su propio camino en SSE2 y arranca en Ligera. Si aun así no llega a tiempo, baja solo a Ligera y, si tampoco, deja pasar tu voz sin limpiar y te avisa; nunca te corta la llamada.
+
+**La burbuja con muchos chats**
+- Con varios chats de WhatsApp quedan 3 fotos y un «+N» que despliega la lista.
+
 ## 0.4.5
 
 **Dile «sí» sin soltar nada** (Ajustes → Agente)

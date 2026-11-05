@@ -343,6 +343,18 @@ Conecta tu propia app de Discord una vez (Ajustes → Juegos te lleva paso a pas
 
 Y en la isla aparece la pestaña **Discord**: micrófono, ensordecer, salir del canal, supresión de ruido, eco y pulsar para hablar, tus dos volúmenes, y la gente del canal (clic para silenciar a alguien solo para ti, rueda del mouse para su volumen). Cocuyo nunca escribe ni lee mensajes.
 
+## Micrófono limpio
+
+En **Ajustes → Micrófono**, Cocuyo le quita el ruido a tu micrófono para Discord, Zoom, WhatsApp y tus juegos: el teclado, el ventilador, el perro, la calle, la licuadora. Como Krisp, pero dentro de tu PC, sin cuenta y sin internet.
+
+- **Cómo llega a las otras apps:** Cocuyo lee tu micrófono de verdad, lo limpia y lo manda al cable virtual gratis [VB-Cable](https://vb-audio.com/Cable/). En la app de la llamada eliges **«CABLE Output»** como micrófono. Windows no deja crear un micrófono nuevo sin un driver firmado, por eso el cable. Si no lo tienes, **Instalar VB-Cable** baja su paquete oficial de la página de VB-Audio, comprueba que sea el que revisamos y abre su instalador; no viene dentro de Cocuyo. VB-Cable es de VB-Audio ([vb-cable.com](https://www.vb-cable.com)) y es donationware: gratis, y si te sirve puedes apoyarlos.
+- **Solo trabaja cuando alguien te escucha:** mientras ninguna app use «CABLE Output», Cocuyo ni abre tu micrófono. Lo sabe por los avisos de sesiones de audio de Windows, sin revisar cada tanto.
+- **Modos:** Natural (deja un poco de ambiente), Llamada (la recomendada), A tope (para lugares muy ruidosos) y A tu gusto: cuánto ruido quitar, limpiar entre palabras, silencio cuando callas, volumen de tu voz y voz pareja.
+- **Escucha la diferencia:** te grabas 5 segundos y cambias entre «Sin limpiar» y «Limpio» mientras suena. Si mueves un ajuste, se vuelve a limpiar solo.
+- **Cuándo:** siempre, solo jugando o solo con las apps y juegos que marques de la lista (lo abierto ahora, lo que ha usado tu micrófono según Windows, tus juegos, tus programas o cualquier `.exe` que busques). Para saber qué es un juego mira Steam, Epic y GOG, las piezas que trae el programa (Unity, Unreal, `steam_api`, Bink…), las carpetas de juegos, los conocidos y lo que corra a pantalla completa, sin contar videos ni el navegador. Mira solo cuando cambias de ventana, sin revisar cada tanto. Fuera de eso tu voz pasa igual, sin limpiar.
+- **El motor:** [DeepFilterNet3](https://github.com/Rikorose/DeepFilterNet), reescrito a mano en Rust ([`profundo.rs`](src-tauri/src/profundo.rs)) con instrucciones AVX2 y otro camino en SSE2 para procesadores viejos (Pentium, Celeron, Atom). Si aun así tu PC no llega a tiempo, baja solo a Ligera y, si tampoco, deja pasar tu voz sin limpiar y te avisa; nunca te corta la llamada. No usa la gráfica: corre igual con o sin gráfica dedicada, de cualquier marca, y no le roba al juego. En un i3-7100, ya dentro de la app, gasta cerca de 7 % de un núcleo en **Exacta** (suena igual que el modelo original) y 5 % en **Ligera**; con el micrófono silenciado, nada. Medido con DNSMOS sobre 12 grabaciones con ruido real: 2,97 contra 2,24 de RNNoise y 1,69 sin limpiar.
+- Por voz: «quítale el ruido a mi micrófono», «micrófono limpio a tope», «apaga el micrófono limpio».
+
 ## En los juegos
 
 - Con un juego a pantalla completa **exclusiva**, Cocuyo no muestra ninguna ventana: Windows mandaría el juego al escritorio. Ahí avisa con un tono al empezar a escucharte y otro al terminar, y dice la respuesta en voz alta.
@@ -402,7 +414,7 @@ npm run tauri dev
 ## Cómo está hecho
 
 - `src/` — interfaz: isla, menú y sus páginas, lazo, selección, subtítulos, guía y un motor de resortes propio.
-- `src-tauri/` — núcleo en Rust: atajos, micrófono, voz, órdenes, capturas, apps, estado del equipo, bandeja, el reproductor de fondos animados (`player.rs`), el conector de modelos de IA (`ai.rs`) y los scripts por voz (`scripts.rs`).
+- `src-tauri/` — núcleo en Rust: atajos, micrófono, voz, órdenes, capturas, apps, estado del equipo, bandeja, el reproductor de fondos animados (`player.rs`), el conector de modelos de IA (`ai.rs`), los scripts por voz (`scripts.rs`) y el micrófono limpio (`profundo.rs` y `cable.rs`).
 - `src-tauri/installer/` — el aspecto del instalador clásico: `dark.nsh` (colores y animación), `make-art.py` (dibuja las imágenes) y `make-template.py` (aplica los cambios de Cocuyo a la plantilla de Tauri; se vuelve a ejecutar al actualizar Tauri).
 - `overlay/` — la librería que pinta el aviso dentro de los juegos.
 - `barra/` — la librería que le quita el fondo a la barra de Windows 11.
@@ -410,6 +422,8 @@ npm run tauri dev
 - `sdk/` — la guía para hacer scripts, temas y extensiones, las librerías de PowerShell, Python y Node, y los tipos de la API.
 - `vitrina/` — la misma interfaz en un navegador con datos inventados y una barra de Windows 10 de mentira; `grabar.mjs` graba ahí las imágenes de este README.
 - `.github/` — el formulario para subir scripts, el bot que los publica y el que compila cada versión.
+
+El micrófono limpio usa los pesos de DeepFilterNet3, a media precisión dentro del exe (`src-tauri/modelos/`, con el script que los convierte).
 
 La voz usa [whisper.cpp](https://github.com/ggml-org/whisper.cpp) con el modelo Parakeet TDT 0.6b v3. Los dos se descargan de sus repositorios oficiales y se comprueban con SHA-256 antes de usarse.
 

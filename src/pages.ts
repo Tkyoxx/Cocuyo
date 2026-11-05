@@ -3,6 +3,7 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { PERMISOS, type ExtensionInfo, type Permiso } from "./extensiones";
 import { locale, tr } from "./i18n";
+import { Limpio, limpioHtml } from "./limpio";
 import { qrSvg } from "./qr";
 import { call, captureKeysAvailable, currentCaptureDir, getSettings, on, pickCaptureDir, setChordsPaused, setKeyEcho, setSettings, type Settings, type SpotifyStatus, type VoiceProgress, type VoiceStatus } from "./bridge";
 import { countKeys, keyLabel, keysOf } from "./keys";
@@ -156,6 +157,7 @@ const SECTIONS: [string, string][] = [
   ["isla", "Isla"],
   ["barra", "Barra"],
   ["voz", "Voz"],
+  ["microfono", "Micrófono"],
   ["juegos", "Juegos"],
   ["capturas", "Capturas"],
   ["musica", "Música"],
@@ -212,6 +214,8 @@ class SettingsPage implements Page {
     }
     for (const node of this.el.querySelectorAll<HTMLElement>("[data-sec]")) node.classList.toggle("on", node.dataset.sec === section);
     if (section === "capturas") void this.paintRec();
+    if (section === "microfono") this.limpio.show();
+    else this.limpio.hide();
     const measure = () => {
       for (const node of this.el.querySelectorAll<HTMLElement>(".ssec.on")) node.classList.toggle("long", node.scrollHeight > node.clientHeight + 4);
       this.navEdges();
@@ -234,6 +238,7 @@ class SettingsPage implements Page {
   private spotify: SpotifyStatus | null = null;
   private section = SECTIONS[0][0];
   private recording: { key: KeysKey; held: number; best: number } | null = null;
+  private limpio = new Limpio();
 
   html() {
     const section = (id: string, cards: string, wide = false) =>
@@ -352,6 +357,7 @@ class SettingsPage implements Page {
            </div>
            </div>`,
         ) +
+        section("microfono", limpioHtml()) +
         section(
           "juegos",
           `<div class="scol">
@@ -570,6 +576,7 @@ class SettingsPage implements Page {
     this.el = el;
     this.host = host;
     const q = <T extends HTMLElement>(sel: string) => el.querySelector<T>(sel)!;
+    this.limpio.mount(q('.ssec[data-sec="microfono"]'), (change) => this.save(change));
 
     for (const button of el.querySelectorAll<HTMLElement>("#s-nav button")) {
       button.addEventListener("click", () => this.open(button.dataset.sec!));
@@ -1318,6 +1325,7 @@ class SettingsPage implements Page {
   }
 
   hide() {
+    this.limpio.hide();
     window.clearInterval(this.remoteTick);
     this.stopRecording();
     this.closeModels();
@@ -1932,6 +1940,7 @@ class SettingsPage implements Page {
     const s = this.settings;
     if (!s) return;
     const q = <T extends HTMLElement>(sel: string) => this.el.querySelector<T>(sel)!;
+    this.limpio.paint(s);
 
     const dock = q("#s-dock");
     [...dock.querySelectorAll<HTMLElement>("button")].forEach((button, i) => {
