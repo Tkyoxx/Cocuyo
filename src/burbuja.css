@@ -313,6 +313,7 @@
 }
 .wa-tabs {
   display: flex;
+  flex: none;
   gap: 4px;
 }
 .wa-tabs button {
@@ -394,7 +395,104 @@
   border-radius: 50%;
   background: var(--green);
 }
+.wa-tabs .wa-more-btn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.09);
+  color: rgb(230 236 233 / 0.9);
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  opacity: 0.85;
+}
+.wa-tabs .wa-more-btn[aria-expanded="true"] {
+  background: rgb(37 211 102 / 0.22);
+  color: #fff;
+  opacity: 1;
+}
+.wa-more {
+  position: absolute;
+  top: 58px;
+  right: 14px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 232px;
+  max-height: 284px;
+  padding: 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  border-radius: 18px;
+  background: #171b1d;
+  box-shadow:
+    0 18px 40px -12px rgb(0 0 0 / 0.8),
+    inset 0 0 0 1px rgb(255 255 255 / 0.08);
+  transform-origin: calc(100% - 52px) -8px;
+}
+.wa-more[hidden] {
+  display: none;
+}
+.wa-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: rgb(236 240 238);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.wa-row:hover,
+.wa-row:focus-visible {
+  background: rgb(255 255 255 / 0.06);
+  outline: none;
+}
+.wa-row .wa-av {
+  flex: none;
+}
+.wa-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.wa-row-n {
+  flex: none;
+  min-width: 18px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--green);
+  color: #06210f;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.wa-row .wa-x {
+  position: static;
+  flex: none;
+  box-shadow: 0 3px 8px -1px rgb(255 50 70 / 0.55);
+}
+.wa-row:hover .wa-x,
+.wa-row:focus-visible .wa-x {
+  opacity: 1;
+  transform: none;
+}
 .wa-close {
+  flex: none;
   width: 30px;
   height: 30px;
   padding: 0;

@@ -48,6 +48,7 @@ interface Curve {
 }
 
 const ORB = 60;
+const TABS = 4;
 const EDGE = 26;
 const REST = 26;
 const GLYPH = `<svg viewBox="0 0 32 32" aria-hidden="true"><path class="ring" d="M16 4.2C9.5 4.2 4.2 9.4 4.2 15.9c0 2.2.6 4.2 1.6 6L4.1 27.9l6.2-1.6c1.7.9 3.6 1.4 5.7 1.4 6.5 0 11.8-5.3 11.8-11.8S22.5 4.2 16 4.2z"/><path class="phone" d="M11.7 10.2c-.3-.6-.6-.6-.9-.6h-.7c-.3 0-.7.1-1 .5-.4.4-1.3 1.3-1.3 3.1s1.3 3.6 1.5 3.8c.2.3 2.6 4.1 6.4 5.6 3.2 1.2 3.8 1 4.5.9.7-.1 2.2-.9 2.5-1.8.3-.9.3-1.6.2-1.8-.1-.2-.3-.3-.7-.5l-2.6-1.2c-.3-.1-.6-.2-.8.2-.3.4-.9 1.2-1.2 1.4-.2.3-.4.3-.8.1-.4-.2-1.6-.6-3-1.9-1.1-1-1.9-2.2-2.1-2.6-.2-.4 0-.6.2-.8l.6-.7c.2-.2.3-.4.4-.6.1-.3.1-.5 0-.7l-1.2-2.4z"/></svg>`;
@@ -227,6 +228,8 @@ export class Burbuja {
   private openedAt = 0;
   private reclaimed = false;
   private tabs!: HTMLElement;
+  private more!: HTMLElement;
+  private moreOpen = false;
   private sparks!: HTMLElement;
 
   private chats = new Map<string, Chat>();
@@ -253,6 +256,7 @@ export class Burbuja {
       <div class="wa-peek"><div class="wa-peek-in"><b class="wa-who"></b><div class="wa-peek-body"><img class="wa-peek-pic" alt="" hidden><p class="wa-said"></p></div></div></div>
       <section class="wa-panel" aria-label="WhatsApp">
         <header class="wa-head"><span class="wa-hface"></span><div class="wa-htext"><b class="wa-hname"></b><small class="wa-hsub">WhatsApp</small></div><div class="wa-tabs"></div><button class="wa-close" aria-label="${tr("Cerrar")}">×</button></header>
+        <div class="wa-more" hidden></div>
         <div class="wa-scroll"><div class="wa-thread"></div><div class="wa-rail off"><span class="wa-thumb"><b></b></span></div></div>
         <div class="wa-quick" hidden></div>
         <div class="wa-attach" hidden></div>
@@ -286,6 +290,7 @@ export class Burbuja {
     });
     this.bolt = q(".wa-bolt");
     this.tabs = q(".wa-tabs");
+    this.more = q(".wa-more");
     this.sparks = q(".wa-sparks");
     this.place(...this.home());
     this.wire();
@@ -490,7 +495,10 @@ export class Burbuja {
     this.input.addEventListener("pointerdown", () => this.onFocus(true));
     this.input.addEventListener("input", () => this.fit());
     this.input.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && this.moreOpen) {
+        e.stopPropagation();
+        this.showMore(false);
+      } else if (e.key === "Escape") {
         e.stopPropagation();
         void this.close();
       } else if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
@@ -553,7 +561,9 @@ export class Burbuja {
     document.addEventListener(
       "pointerdown",
       (e) => {
-        if (this.state === "abierta" && !this.root.contains(e.target as Node)) void this.close();
+        const target = e.target as HTMLElement;
+        if (this.moreOpen && !this.more.contains(target) && !target.closest?.(".wa-more-btn")) this.showMore(false);
+        if (this.state === "abierta" && !this.root.contains(target)) void this.close();
       },
       true,
     );
@@ -570,22 +580,36 @@ export class Burbuja {
         if (this.state === "abierta" && !document.hasFocus()) void this.close();
       }, 150);
     });
-    this.tabs.addEventListener("click", (e) => {
+    const pick = (e: MouseEvent) => {
       const tab = (e.target as HTMLElement).closest<HTMLElement>("[data-chat]");
       if (!tab) return;
       if ((e.target as HTMLElement).closest(".wa-x")) {
         void this.closeChat(tab.dataset.chat!);
         return;
       }
+      this.showMore(false);
       if (tab.dataset.chat === this.current) return;
       this.keepDraft();
       this.current = tab.dataset.chat!;
       void this.switchTo();
+      this.input.focus({ preventScroll: true });
+    };
+    this.tabs.addEventListener("click", (e) => {
+      if ((e.target as HTMLElement).closest(".wa-more-btn")) this.showMore(!this.moreOpen);
+      else pick(e);
     });
-    this.tabs.addEventListener("auxclick", (e) => {
-      const tab = (e.target as HTMLElement).closest<HTMLElement>("[data-chat]");
-      if (tab && e.button === 1) void this.closeChat(tab.dataset.chat!);
+    this.more.addEventListener("click", pick);
+    this.more.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      this.showMore(false);
+      this.input.focus({ preventScroll: true });
     });
+    for (const strip of [this.tabs, this.more])
+      strip.addEventListener("auxclick", (e) => {
+        const tab = (e.target as HTMLElement).closest<HTMLElement>("[data-chat]");
+        if (tab && e.button === 1) void this.closeChat(tab.dataset.chat!);
+      });
     this.root.addEventListener("click", (e) => e.stopPropagation());
   }
 
@@ -791,10 +815,44 @@ export class Burbuja {
       head.innerHTML = `${face(chat, 38)}<span class="wa-x" title="${esc(tr("Cerrar este chat"))}">${CROSS}</span>`;
             this.root.querySelector(".wa-hname")!.textContent = chat.nombre;
     }
-    const others = [...this.chats.values()].filter((c) => c.chat !== this.current);
-    this.tabs.innerHTML = others
-      .map((c) => `<button type="button" data-chat="${esc(c.chat)}" title="${esc(c.nombre)}">${face(c, 26)}${c.nuevos ? `<i class="wa-dot"></i>` : ""}<span class="wa-x" title="${esc(tr("Cerrar este chat"))}">${CROSS}</span></button>`)
+    const others = [...this.chats.values()].filter((c) => c.chat !== this.current).reverse();
+    const room = others.length > TABS ? TABS - 1 : others.length;
+    const hidden = others.slice(room);
+    const closer = `<span class="wa-x" title="${esc(tr("Cerrar este chat"))}">${CROSS}</span>`;
+    this.tabs.innerHTML =
+      others
+        .slice(0, room)
+        .map((c) => `<button type="button" data-chat="${esc(c.chat)}" title="${esc(c.nombre)}">${face(c, 26)}${c.nuevos ? `<i class="wa-dot"></i>` : ""}${closer}</button>`)
+        .join("") +
+      (hidden.length
+        ? `<button type="button" class="wa-more-btn" aria-expanded="${this.moreOpen}" title="${esc(hidden.map((c) => c.nombre).join(", "))}">+${hidden.length}${hidden.some((c) => c.nuevos) ? `<i class="wa-dot"></i>` : ""}</button>`
+        : "");
+    this.more.innerHTML = hidden
+      .map(
+        (c) =>
+          `<button type="button" class="wa-row" data-chat="${esc(c.chat)}">${face(c, 28)}<span class="wa-row-name">${esc(c.nombre)}</span>${c.nuevos ? `<b class="wa-row-n">${c.nuevos > 9 ? "9+" : c.nuevos}</b>` : ""}${closer}</button>`,
+      )
       .join("");
+    if (!hidden.length) this.showMore(false);
+  }
+
+  private showMore(on: boolean) {
+    if (this.moreOpen === on || (on && !this.more.childElementCount)) return;
+    this.moreOpen = on;
+    this.more.hidden = !on;
+    this.tabs.querySelector(".wa-more-btn")?.setAttribute("aria-expanded", String(on));
+    if (!on) {
+      this.more.getAnimations({ subtree: true }).forEach((a) => a.cancel());
+      return;
+    }
+    if (this.gustos.suave) {
+      void this.anim(this.more, [{ opacity: 0 }, { opacity: 1 }], { duration: 140, easing: "ease-out" });
+      return;
+    }
+    void this.anim(this.more, [{ opacity: 0, transform: "translateY(-6px) scale(.96)" }, { opacity: 1, transform: "none" }], POP);
+    [...this.more.children].forEach(
+      (row, i) => void this.anim(row, [{ opacity: 0, transform: "translateX(8px)" }, { opacity: 1, transform: "none" }], { duration: 220, delay: 40 + i * 28, easing: EASE_OUT, fill: "backwards" }),
+    );
   }
 
   private poof(el: HTMLElement) {
@@ -816,7 +874,8 @@ export class Burbuja {
     if (!chat || this.state !== "abierta") return;
     if (this.gustos.ui) this.oirUi("descartar");
     const current = id === this.current;
-    const el = current ? this.root.querySelector<HTMLElement>(".wa-hface") : this.tabs.querySelector<HTMLElement>(`[data-chat="${CSS.escape(id)}"]`);
+    const where = `[data-chat="${CSS.escape(id)}"]`;
+    const el = current ? this.root.querySelector<HTMLElement>(".wa-hface") : this.root.querySelector<HTMLElement>(`.wa-tabs ${where}, .wa-more ${where}`);
     if (el && !this.gustos.suave) {
       this.poof(el);
       const avatar = el.querySelector<HTMLElement>(".wa-av") ?? el;
@@ -1147,6 +1206,7 @@ export class Burbuja {
     clearTimeout(this.blurCheck);
     this.keepDraft();
     this.stopNote();
+    this.showMore(false);
     if (this.gustos.rapidas === "boton") this.showQuick(false, false);
     this.onFocus(false);
     this.input.blur();
