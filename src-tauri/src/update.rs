@@ -262,7 +262,7 @@ fn idle_for() -> Duration {
 }
 
 fn busy() -> bool {
-    placement::fullscreen() || crate::grabadora::recording()
+    placement::fullscreen() || crate::grabadora::recording() || crate::cable::heard()
 }
 
 pub fn watch(app: AppHandle) {

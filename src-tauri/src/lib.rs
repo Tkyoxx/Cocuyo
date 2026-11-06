@@ -27,6 +27,7 @@ mod install;
 mod investiga;
 mod intent;
 mod live;
+mod llave;
 mod mcp;
 mod minutes;
 mod motor;
@@ -299,6 +300,10 @@ pub fn run() {
             whatsapp::whatsapp_estado,
             whatsapp::whatsapp_conectar,
             whatsapp::whatsapp_qr,
+            whatsapp::whatsapp_llave_firmar,
+            whatsapp::whatsapp_llave_confirmar,
+            whatsapp::whatsapp_llave_cancelar,
+            whatsapp::whatsapp_abrir_web,
             whatsapp::whatsapp_desconectar,
             whatsapp::whatsapp_responder,
             whatsapp::whatsapp_hilo,

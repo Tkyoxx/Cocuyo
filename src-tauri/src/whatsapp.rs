@@ -24,6 +24,11 @@ const DEVICE: &str = "cocuyo";
 const KEEP: usize = 150;
 const REPLY_WINDOW: Duration = Duration::from_secs(30 * 60);
 const MEDIA_DAYS: u64 = 3;
+const QR_WINDOW: Duration = Duration::from_secs(160);
+const SIGN_LEAST: u64 = 85;
+const SIGN_MARGIN: u64 = 45;
+const MAX_TRIES: usize = 3;
+const TRIES_WINDOW: Duration = Duration::from_secs(30 * 60);
 
 struct Gateway {
     child: Child,
@@ -32,7 +37,7 @@ struct Gateway {
     _job: Job,
 }
 
-struct Job(windows::Win32::Foundation::HANDLE);
+pub(crate) struct Job(windows::Win32::Foundation::HANDLE);
 
 unsafe impl Send for Job {}
 
@@ -101,6 +106,9 @@ static HOOK: Mutex<u16> = Mutex::new(0);
 static INBOX: Mutex<Vec<Message>> = Mutex::new(Vec::new());
 static STARTING: Mutex<()> = Mutex::new(());
 static AVATARS: Mutex<Vec<(String, Option<String>)>> = Mutex::new(Vec::new());
+static QR_AT: Mutex<Option<Instant>> = Mutex::new(None);
+static FAILED: Mutex<&'static str> = Mutex::new("");
+static TRIES: Mutex<Vec<(Instant, String)>> = Mutex::new(Vec::new());
 
 fn dir(app: &AppHandle) -> Option<PathBuf> {
     Some(app.path().app_local_data_dir().ok()?.join("whatsapp"))
@@ -124,17 +132,17 @@ fn install(app: &AppHandle) -> Result<(), String> {
     let bytes = std::fs::read(&zip).unwrap_or_default();
     let _ = std::fs::remove_file(&zip);
     if !got.success() || bytes.is_empty() {
-        return Err("No pude bajar la pasarela de WhatsApp. ¿Hay internet?".into());
+        return Err(crate::i18n::tr("No pude bajar la pasarela de WhatsApp. Revisa tu internet y toca Conectar otra vez."));
     }
     let hash: String = crate::candado::sha256(&bytes).iter().map(|b| format!("{b:02x}")).collect();
     if hash != ZIP_SHA256 {
-        return Err("La pasarela de WhatsApp llegó distinta a la publicada; no la instalé.".into());
+        return Err(crate::i18n::tr("La pasarela de WhatsApp llegó distinta a la publicada y no la instalé. Prueba en otra red."));
     }
     let exe = crate::bandeja::zip_files(&bytes, |name| name == ZIP_EXE, 128 << 20).into_iter().next().ok_or("El zip de la pasarela no trae el programa.")?;
     std::fs::write(dir.join(EXE), exe.1).map_err(|e| e.to_string())
 }
 
-fn job_for(child: &Child) -> Option<Job> {
+pub(crate) fn job_for(child: &Child) -> Option<Job> {
     use windows::Win32::System::JobObjects::*;
     let job = unsafe { CreateJobObjectW(None, None) }.ok()?;
     let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
@@ -156,7 +164,7 @@ fn token() -> String {
 }
 
 fn call_form(path: &str, fields: &[(&str, String)], file: (&str, &Path)) -> Result<Value, String> {
-    let (port, password) = GATEWAY.lock().unwrap().as_ref().map(|g| (g.port, g.password.clone())).ok_or("WhatsApp no está conectado.")?;
+    let (port, password) = GATEWAY.lock().unwrap().as_ref().map(|g| (g.port, g.password.clone())).ok_or_else(|| crate::i18n::tr("WhatsApp no está conectado."))?;
     let mut command = Command::new("curl.exe");
     command.args(["-s", "--max-time", "180", "-X", "POST", "-H", &format!("X-Device-Id: {DEVICE}"), "-u"]).arg(format!("cocuyo:{password}"));
     for (key, value) in fields {
@@ -164,7 +172,7 @@ fn call_form(path: &str, fields: &[(&str, String)], file: (&str, &Path)) -> Resu
     }
     command.arg("-F").arg(format!("{}=@{}", file.0, file.1.display()));
     let out = command.arg(format!("http://127.0.0.1:{port}{path}")).stdin(Stdio::null()).stderr(Stdio::null()).creation_flags(CREATE_NO_WINDOW).output().map_err(|e| e.to_string())?;
-    serde_json::from_slice(&out.stdout).map_err(|_| "La pasarela de WhatsApp no respondió.".to_string())
+    serde_json::from_slice(&out.stdout).map_err(|_| crate::i18n::tr("La pasarela de WhatsApp no respondió."))
 }
 
 pub fn file_kind(name: &str) -> (&'static str, &'static str, &'static str) {
@@ -214,7 +222,7 @@ pub async fn whatsapp_enviar_archivo(app: AppHandle, chat: String, path: String,
 }
 
 fn call(method: &str, path: &str, body: Option<&Value>) -> Result<Value, String> {
-    let (port, password) = GATEWAY.lock().unwrap().as_ref().map(|g| (g.port, g.password.clone())).ok_or("WhatsApp no está conectado.")?;
+    let (port, password) = GATEWAY.lock().unwrap().as_ref().map(|g| (g.port, g.password.clone())).ok_or_else(|| crate::i18n::tr("WhatsApp no está conectado."))?;
     let mut command = Command::new("curl.exe");
     command
         .args(["-s", "--max-time", "25", "-X", method, "-H", &format!("X-Device-Id: {DEVICE}"), "-u"])
@@ -231,7 +239,7 @@ fn call(method: &str, path: &str, body: Option<&Value>) -> Result<Value, String>
         input.write_all(body.to_string().as_bytes()).map_err(|e| e.to_string())?;
     }
     let out = child.wait_with_output().map_err(|e| e.to_string())?;
-    serde_json::from_slice(&out.stdout).map_err(|_| "La pasarela de WhatsApp no respondió.".to_string())
+    serde_json::from_slice(&out.stdout).map_err(|_| crate::i18n::tr("La pasarela de WhatsApp no respondió."))
 }
 
 fn running() -> bool {
@@ -248,10 +256,11 @@ pub fn start(app: &AppHandle) -> Result<(), String> {
     }
     let dir = dir(app).ok_or("No encontré la carpeta de Cocuyo.")?;
     let hook = listen(app)?;
-    let port = free_port().ok_or("No encontré un puerto libre.")?;
+    let port = free_port().ok_or_else(|| crate::i18n::tr("No encontré un puerto libre."))?;
     let (password, secret) = (token(), token());
     *SECRET.lock().unwrap() = secret.clone();
     let groups = crate::settings::load(app).whatsapp_groups;
+    let (output, writer) = std::io::pipe().map_err(|e| e.to_string())?;
     let child = Command::new(dir.join(EXE))
         .args(["rest", "--os=Cocuyo"])
         .current_dir(&dir)
@@ -264,12 +273,16 @@ pub fn start(app: &AppHandle) -> Result<(), String> {
         .env("WHATSAPP_AUTO_DOWNLOAD_MEDIA", "true")
         .env("WHATSAPP_WEBHOOK_IGNORE_JIDS", if groups { "status@broadcast" } else { "@g.us,status@broadcast" })
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(writer.try_clone().map_err(|e| e.to_string())?)
+        .stderr(writer)
         .creation_flags(CREATE_NO_WINDOW)
         .spawn()
-        .map_err(|e| format!("La pasarela de WhatsApp no arrancó: {e}"))?;
-    let job = job_for(&child).ok_or("No pude atar la pasarela de WhatsApp a Cocuyo.")?;
+        .map_err(|why| {
+            crate::errores::note("whatsapp", &format!("gowa no arranco: {why}"));
+            crate::i18n::tr("Windows no dejó abrir la pasarela de WhatsApp. Mira si tu antivirus bloqueó gowa.exe y toca Conectar otra vez.")
+        })?;
+    watch_output(output);
+    let job = job_for(&child).ok_or_else(|| crate::i18n::tr("No pude atar la pasarela de WhatsApp a Cocuyo."))?;
     let media = dir.join("statics").join("media");
     let _ = std::fs::create_dir_all(&media);
     let _ = app.asset_protocol_scope().allow_directory(&media, true);
@@ -279,7 +292,7 @@ pub fn start(app: &AppHandle) -> Result<(), String> {
     while call("GET", "/devices", None).is_err() {
         if since.elapsed() > Duration::from_secs(15) || !running() {
             GATEWAY.lock().unwrap().take();
-            return Err("La pasarela de WhatsApp no respondió al arrancar.".into());
+            return Err(crate::i18n::tr("La pasarela de WhatsApp abrió pero no respondió. Toca Conectar otra vez; si se repite, reinicia Cocuyo."));
         }
         std::thread::sleep(Duration::from_millis(250));
     }
@@ -289,6 +302,92 @@ pub fn start(app: &AppHandle) -> Result<(), String> {
 
 pub fn stop() {
     GATEWAY.lock().unwrap().take();
+    *QR_AT.lock().unwrap() = None;
+    *FAILED.lock().unwrap() = "";
+}
+
+fn fail_of(line: &str) -> Option<&'static str> {
+    if line.contains("[PASSKEY]") && line.contains("pairing error") {
+        return Some("rechazo");
+    }
+    if line.contains("[PASSKEY]") && line.contains("failed to send") {
+        return Some("envio");
+    }
+    if line.contains("Client outdated (405)") {
+        return Some("vieja");
+    }
+    if line.contains("Temporary ban connect failure") {
+        return Some("cortada");
+    }
+    if !line.contains("error when get qrCode") {
+        return None;
+    }
+    [("qrCode timeout", "vencio"), ("qrCode err-client-outdated", "vieja"), ("qrCode err-unexpected-state", "cortada"), ("qrCode err-scanned-without-multidevice", "multi"), ("qrCode error", "rechazo")]
+        .iter()
+        .find(|(said, _)| line.contains(said))
+        .map(|(_, kind)| *kind)
+}
+
+fn without_numbers(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut digits = String::new();
+    for c in line.chars().chain(std::iter::once(' ')) {
+        if c.is_ascii_digit() {
+            digits.push(c);
+            continue;
+        }
+        out.push_str(if digits.len() >= 7 { "…" } else { &digits });
+        digits.clear();
+        out.push(c);
+    }
+    out.pop();
+    out
+}
+
+fn watch_output(output: std::io::PipeReader) {
+    std::thread::spawn(move || {
+        for line in std::io::BufRead::split(std::io::BufReader::new(output), b'\n') {
+            let Ok(line) = line else { return };
+            let line = String::from_utf8_lossy(&line);
+            if let Some(kind) = fail_of(&line) {
+                *FAILED.lock().unwrap() = kind;
+                crate::errores::note("whatsapp", &without_numbers(&line));
+            }
+        }
+    });
+}
+
+fn qr_left() -> u64 {
+    QR_AT.lock().unwrap().map_or(0, |at| QR_WINDOW.saturating_sub(at.elapsed()).as_secs())
+}
+
+fn pause_left() -> Option<u64> {
+    let mut tries = TRIES.lock().unwrap();
+    tries.retain(|(at, _)| at.elapsed() < TRIES_WINDOW);
+    if tries.len() < MAX_TRIES {
+        return None;
+    }
+    Some(TRIES_WINDOW.saturating_sub(tries[0].0.elapsed()).as_secs() / 60 + 1)
+}
+
+fn count_try(challenge: &str) {
+    let mut tries = TRIES.lock().unwrap();
+    if tries.last().is_none_or(|(_, last)| last != challenge) {
+        tries.push((Instant::now(), challenge.to_string()));
+    }
+}
+
+fn online() -> bool {
+    Command::new("curl.exe").args(["-s", "-o", "NUL", "--max-time", "6", "https://web.whatsapp.com/"]).stdin(Stdio::null()).stderr(Stdio::null()).creation_flags(CREATE_NO_WINDOW).status().is_ok_and(|status| status.success())
+}
+
+fn no_code() -> String {
+    crate::i18n::tr(if online() { "WhatsApp no dio el código. Espera un minuto y vuelve a pedirlo." } else { "No hay internet o tu red bloquea WhatsApp. Revisa la conexión y vuelve a pedirlo." })
+}
+
+fn saved_session() -> bool {
+    let Ok(said) = call("GET", "/devices", None) else { return true };
+    said["results"].as_array().is_some_and(|list| list.iter().any(|device| device["id"] == DEVICE && device["jid"].as_str().is_some_and(|jid| !jid.is_empty())))
 }
 
 fn status() -> (bool, String) {
@@ -304,25 +403,136 @@ pub struct State {
     corriendo: bool,
     conectado: bool,
     numero: String,
+    llave: String,
+    codigo: String,
+    segundos: u64,
+    fallo: String,
+    sesion: bool,
+}
+
+fn key_state() -> (&'static str, String) {
+    let said = call("GET", "/app/passkey", None).unwrap_or_default();
+    let results = &said["results"];
+    match results["status"].as_str() {
+        Some("awaiting_response") => ("firmar", String::new()),
+        Some("awaiting_confirmation") if results["skip_handoff_ux"] == true => ("terminando", String::new()),
+        Some("awaiting_confirmation") => ("confirmar", results["code"].as_str().unwrap_or("").to_string()),
+        _ => ("", String::new()),
+    }
 }
 
 #[tauri::command]
-pub fn whatsapp_estado(app: AppHandle) -> State {
-    let corriendo = running();
-    let (conectado, numero) = if corriendo { status() } else { (false, String::new()) };
-    State { instalado: installed(&app), corriendo, conectado, numero }
+pub async fn whatsapp_estado(app: AppHandle) -> State {
+    tauri::async_runtime::spawn_blocking(move || {
+        let corriendo = running();
+        let (conectado, numero) = if corriendo { status() } else { (false, String::new()) };
+        if conectado {
+            TRIES.lock().unwrap().clear();
+            remember(&app, true);
+        }
+        let linking = corriendo && !conectado;
+        let (llave, codigo) = if linking { key_state() } else { ("", String::new()) };
+        let segundos = qr_left();
+        let fallo = match *FAILED.lock().unwrap() {
+            _ if !linking => "",
+            "vencio" if segundos > 5 => "caida",
+            kind => kind,
+        };
+        let sesion = linking && llave.is_empty() && segundos == 0 && saved_session();
+        State { instalado: installed(&app), corriendo, conectado, numero, llave: llave.to_string(), codigo, segundos, fallo: fallo.to_string(), sesion }
+    })
+    .await
+    .unwrap_or(State { instalado: false, corriendo: false, conectado: false, numero: String::new(), llave: String::new(), codigo: String::new(), segundos: 0, fallo: String::new(), sesion: false })
+}
+
+fn checked(said: Value) -> Result<(), String> {
+    if said["code"] == "SUCCESS" {
+        return Ok(());
+    }
+    let why = said["message"].as_str().unwrap_or("");
+    crate::errores::note("whatsapp", &format!("llave rechazada: {}", without_numbers(why)));
+    Err(crate::i18n::tr(if why.contains("not connected") || why.contains("no pending") {
+        "Se venció la conexión con WhatsApp antes de mandar la firma."
+    } else {
+        "WhatsApp no aceptó la firma. Revisa que la llave sea de esta cuenta y que tengas internet."
+    }))
+}
+
+#[tauri::command]
+pub async fn whatsapp_llave_firmar() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let said = call("GET", "/app/passkey", None)?;
+        let options = &said["results"]["challenge"];
+        if said["results"]["status"] != "awaiting_response" || !options.is_object() {
+            return Err(crate::i18n::tr("WhatsApp ya no está pidiendo la llave."));
+        }
+        let left = qr_left();
+        if left < SIGN_LEAST {
+            return Err(crate::i18n::tr("Se acabó el tiempo de este código."));
+        }
+        let challenge = options["challenge"].as_str().unwrap_or("");
+        count_try(challenge);
+        let assertion = crate::llave::sign(options, Duration::from_secs(left - SIGN_MARGIN))?;
+        let now = call("GET", "/app/passkey", None)?;
+        if now["results"]["challenge"]["challenge"].as_str() != Some(challenge) {
+            return Err(crate::i18n::tr("WhatsApp ya no está pidiendo la llave."));
+        }
+        checked(call("POST", "/app/passkey/response", Some(&assertion))?)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn whatsapp_llave_confirmar() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(|| checked(call("POST", "/app/passkey/confirm", None)?)).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub fn whatsapp_llave_cancelar() {
+    crate::llave::cancel();
+}
+
+#[tauri::command]
+pub fn whatsapp_abrir_web() -> Result<(), String> {
+    const PAGE: &str = "https://web.whatsapp.com";
+    match crate::llave::browser() {
+        Some(browser) => Command::new(browser).arg(PAGE).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().map(|_| ()).map_err(|e| e.to_string()),
+        None => crate::apps::open(PAGE),
+    }
 }
 
 fn qr_image() -> Result<String, String> {
-    let said = call("GET", "/app/login", None)?;
-    let link = said["results"]["qr_link"].as_str().ok_or_else(|| said["message"].as_str().unwrap_or("WhatsApp no dio el código QR.").to_string())?;
+    if let Some(minutes) = pause_left() {
+        return Err(crate::i18n::tr(&format!("Ya van {MAX_TRIES} intentos con la llave. Para un rato y vuelve en {minutes} min: si insistes, WhatsApp puede bloquear la vinculación.")));
+    }
+    crate::llave::cancel();
+    *FAILED.lock().unwrap() = "";
+    *QR_AT.lock().unwrap() = None;
+    let said = call("GET", "/app/login", None).map_err(|_| no_code())?;
+    let Some(link) = said["results"]["qr_link"].as_str() else {
+        let why = said["message"].as_str().unwrap_or("");
+        if why.contains("already logged in") {
+            return Ok(String::new());
+        }
+        crate::errores::note("whatsapp", &format!("sin codigo: {}", without_numbers(why)));
+        if why.contains("session have been saved") {
+            return Err(crate::i18n::tr("Tu sesión está guardada y está conectando. Si tarda, revisa tu internet; si sigue igual, toca Desconectar y vincúlalo otra vez."));
+        }
+        return Err(match *FAILED.lock().unwrap() {
+            "vieja" => crate::i18n::tr("WhatsApp dice que esta pasarela ya está vieja. Actualiza Cocuyo y vuelve a intentarlo."),
+            "cortada" => crate::i18n::tr("WhatsApp cortó la conexión mientras vinculabas. Puede ser un bloqueo temporal: espera un rato antes de probar otra vez."),
+            _ => no_code(),
+        });
+    };
     if !link.starts_with("http://127.0.0.1:") {
-        return Err("El código QR vino de un lugar raro.".into());
+        return Err(crate::i18n::tr("El código QR vino de un lugar raro."));
     }
     let out = Command::new("curl.exe").args(["-s", "--max-time", "15", link]).creation_flags(CREATE_NO_WINDOW).output().map_err(|e| e.to_string())?;
     if !out.stdout.starts_with(&[0x89, b'P', b'N', b'G']) {
-        return Err("No pude traer el código QR.".into());
+        return Err(crate::i18n::tr("No pude traer el código QR."));
     }
+    *QR_AT.lock().unwrap() = Some(Instant::now());
     Ok(format!("data:image/png;base64,{}", crate::ai::base64(&out.stdout)))
 }
 
@@ -330,9 +540,16 @@ fn qr_image() -> Result<String, String> {
 pub async fn whatsapp_conectar(app: AppHandle) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         start(&app)?;
-        remember(&app, true);
-        if status().0 {
-            return Ok(String::new());
+        if saved_session() {
+            let since = Instant::now();
+            while since.elapsed() < Duration::from_secs(8) {
+                if status().0 {
+                    remember(&app, true);
+                    return Ok(String::new());
+                }
+                std::thread::sleep(Duration::from_millis(300));
+            }
+            return Err(crate::i18n::tr("Tu sesión está guardada y está conectando. Si tarda, revisa tu internet; si sigue igual, toca Desconectar y vincúlalo otra vez."));
         }
         qr_image()
     })
@@ -348,6 +565,7 @@ pub async fn whatsapp_qr() -> Result<String, String> {
 #[tauri::command]
 pub async fn whatsapp_desconectar(app: AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        crate::llave::cancel();
         if running() {
             let _ = call("GET", "/app/logout", None);
         }
@@ -362,7 +580,9 @@ pub async fn whatsapp_desconectar(app: AppHandle) -> Result<(), String> {
 
 fn remember(app: &AppHandle, on: bool) {
     if let Some(mark) = dir(app).map(|dir| dir.join("conectado")) {
-        let _ = if on { std::fs::write(mark, b"") } else { std::fs::remove_file(mark) };
+        if on != mark.is_file() {
+            let _ = if on { std::fs::write(mark, b"") } else { std::fs::remove_file(mark) };
+        }
     }
 }
 
@@ -1139,6 +1359,29 @@ pub fn spoken(app: &AppHandle, spoken: &str) -> Option<Result<String, String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_what_gowa_says_went_wrong() {
+        assert_eq!(fail_of(r#"time="x" level=error msg="[LOGIN][cocuyo] error when get qrCode timeout <nil>""#), Some("vencio"));
+        assert_eq!(fail_of(r#"msg="[LOGIN][cocuyo] error when get qrCode err-client-outdated <nil>""#), Some("vieja"));
+        assert_eq!(fail_of(r#"msg="[LOGIN][cocuyo] error when get qrCode err-unexpected-state <nil>""#), Some("cortada"));
+        assert_eq!(fail_of(r#"msg="[LOGIN][cocuyo] error when get qrCode err-scanned-without-multidevice <nil>""#), Some("multi"));
+        assert_eq!(fail_of(r#"msg="[LOGIN][cocuyo] error when get qrCode error bad signature""#), Some("rechazo"));
+        assert_eq!(fail_of(r#"msg="[PASSKEY][cocuyo] pairing error (continuation=true): nope""#), Some("rechazo"));
+        assert_eq!(fail_of(r#"msg="[PASSKEY][cocuyo] failed to send passkey response: deadline""#), Some("envio"));
+        assert_eq!(fail_of(r#"[Client ERROR] Client outdated (405) connect failure (client version: 2.3000.1)"#), Some("vieja"));
+        assert_eq!(fail_of(r#"[Client WARN] Temporary ban connect failure: <failure reason="402"/>"#), Some("cortada"));
+        assert_eq!(fail_of(r#"msg="[LOGIN][cocuyo] error when get qrCode success <nil>""#), None);
+        assert_eq!(fail_of(r#"msg="[LOGIN][cocuyo] passkey pairing event: passkey-request""#), None);
+        assert_eq!(fail_of("cualquier otra cosa"), None);
+    }
+
+    #[test]
+    fn numbers_stay_out_of_the_log() {
+        assert_eq!(without_numbers("error 428 de 573001234567@s.whatsapp.net"), "error 428 de …@s.whatsapp.net");
+        assert_eq!(without_numbers("nada raro"), "nada raro");
+        assert_eq!(without_numbers("573001234567"), "…");
+    }
 
     #[test]
     fn only_signed_notices_count() {

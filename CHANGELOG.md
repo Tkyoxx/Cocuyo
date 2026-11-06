@@ -2,6 +2,28 @@
 
 Cada versión con lo que trae. La más nueva arriba.
 
+## 0.4.7
+
+**WhatsApp con llave de acceso** (Ajustes → WhatsApp)
+- A algunas cuentas WhatsApp ya les pide llave de acceso para vincular, y con el QR solo no alcanzaba. Ahora, si la pide, Cocuyo abre Chrome o Edge aparte, con un perfil de usar y botar, en la página real de WhatsApp Web: eliges «Usar un teléfono o una tablet», escaneas con el celular, confirmas con tu huella y tocas la notificación de WhatsApp que te llega. La firma va directo a la pasarela y no se guarda en ninguna parte; al terminar se cierra la ventana y se borra el perfil.
+- En cada paso dice qué pasó y qué sigue: sin internet, la pasarela no arranca o el antivirus la bloqueó, se acabó el tiempo, WhatsApp no aceptó la firma, la pasarela quedó vieja o un bloqueo temporal. Y muestra cuánto tiempo te queda.
+- Después de 3 intentos en 30 minutos para y te explica por qué: si insistes, WhatsApp puede bloquear la vinculación.
+- «¿Prefieres lo oficial?» queda a la vista: instalar WhatsApp Web desde Chrome con el botón «Instalar» de la barra.
+- Ojo: WhatsApp no permite oficialmente conectar apps que no son suyas. Lo usas bajo tu cuenta y riesgo.
+
+**El apartado de Micrófono responde al instante**
+- Lo que tocas se ve de una, sin esperar a que se guarde ni salir y volver a entrar.
+- Si lo cambias por voz («apaga el ruido del micrófono») con Ajustes abierto, se ve ahí mismo y el siguiente clic ya no lo deshace.
+- Conectas o quitas un micrófono o el cable y la lista se actualiza sola: Cocuyo escucha el aviso de Windows en vez de revisar cada 30 o 120 segundos. Si se te desconecta el micrófono en plena llamada pasa al siguiente de una, y cuando vuelve el tuyo regresa a él.
+- Dice qué micrófono está limpiando de verdad y avisa si el que elegiste no está conectado.
+- Ya no dice «Limpia» cuando no está limpiando, ni «una app te escucha» cuando ya colgaste, ni deja los medidores pegados si el micrófono deja de mandar sonido.
+- «Jugando» ve los juegos minimizados o abiertos como administrador, y lo que pasó por pantalla completa deja de contar como juego cuando sales de ella.
+- Si bajó a Ligera porque el procesador no daba, volver a elegir Exacta lo intenta otra vez.
+- El buscador de «Los que elijas» ya recibe lo que escribes, y mientras busca tus programas lo dice.
+
+**Por dentro**
+- El actualizador ya no reinicia Cocuyo solo mientras una app te escucha por el micrófono limpio: espera a que cuelgues.
+
 ## 0.4.6
 
 **Tu micrófono sin ruido** (Ajustes → Micrófono)

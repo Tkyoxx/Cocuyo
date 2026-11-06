@@ -56,6 +56,13 @@ const installer = new Installer();
 const menu = new Menu();
 const addDiscord = () => menu.addPage(discordPage);
 window.addEventListener("cocuyo-discord", addDiscord);
+window.addEventListener("cocuyo-ver-whatsapp", () => {
+  if (guide.open || installer.open || preguntas.open || anotador.open || menu.typing || placeNow === "hidden") return;
+  settingsPage.goTo("whatsapp");
+  menu.show("ajustes");
+  cards.behind = true;
+  emit("menu", true);
+});
 void call<{ conectado: boolean }>("discord_estado", undefined, { conectado: false }).then((state) => state.conectado && addDiscord());
 const cards = new Cards();
 const burbuja = new Burbuja();

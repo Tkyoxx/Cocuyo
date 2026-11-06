@@ -5,9 +5,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
 use std::sync::mpsc::{channel, Receiver};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Once};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -15,7 +15,7 @@ use cpal::traits::{DeviceTrait, HostTrait};
 use serde::Serialize;
 use tauri::AppHandle;
 use windows::core::{implement, w, Interface, HSTRING};
-use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, WAIT_OBJECT_0};
+use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, PROPERTYKEY, WAIT_OBJECT_0};
 use windows::Win32::Media::Audio::*;
 use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL, COINIT_MULTITHREADED};
 use windows::Win32::System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS};
@@ -159,22 +159,29 @@ struct Guard {
     frames: u32,
     skip: u32,
     strikes: u32,
-    lowered: bool,
+    lowered: Option<Instant>,
     raw_until: Option<Instant>,
     wait: Duration,
 }
 
 impl Guard {
     fn new() -> Guard {
-        Guard { spent: Duration::ZERO, frames: 0, skip: 10, strikes: 0, lowered: false, raw_until: None, wait: FIRST_WAIT }
+        Guard { spent: Duration::ZERO, frames: 0, skip: 10, strikes: 0, lowered: None, raw_until: None, wait: FIRST_WAIT }
     }
 
     fn restart(&mut self) {
         (self.spent, self.frames, self.skip, self.strikes) = (Duration::ZERO, 0, 10, 0);
+        if self.lowered.is_some_and(|at| at.elapsed() > LONGEST_WAIT) {
+            self.lowered = None;
+        }
+    }
+
+    fn is_lowered(&self) -> bool {
+        self.lowered.is_some()
     }
 
     fn shape(&self, tune: &Tune) -> Tune {
-        Tune { light: tune.light || self.lowered, ..tune.clone() }
+        Tune { light: tune.light || self.is_lowered(), ..tune.clone() }
     }
 
     fn raw(&mut self, now: Instant) -> bool {
@@ -220,7 +227,7 @@ impl Guard {
             self.wait = (self.wait * 2).min(LONGEST_WAIT);
             Some(Pace::Raw)
         } else {
-            self.lowered = true;
+            self.lowered = Some(now);
             Some(Pace::Lighten)
         }
     }
@@ -270,7 +277,7 @@ fn list(inputs: bool) -> Vec<Aparato> {
         .collect()
 }
 
-fn pick_output(wanted: &str, outputs: &[Aparato]) -> Option<Aparato> {
+fn pick_output(wanted: &str, outputs: &[Aparato], inputs: &[Aparato]) -> Option<Aparato> {
     if let Some(found) = outputs.iter().find(|o| !wanted.is_empty() && o.id == wanted) {
         return Some(found.clone());
     }
@@ -279,7 +286,7 @@ fn pick_output(wanted: &str, outputs: &[Aparato]) -> Option<Aparato> {
         .iter()
         .find(|o| lower(o).contains("cable input"))
         .or_else(|| outputs.iter().find(|o| o.cable && lower(o).contains("input")))
-        .or_else(|| outputs.iter().find(|o| o.cable))
+        .or_else(|| outputs.iter().find(|o| o.cable && pair(o, inputs).is_some()))
         .cloned()
 }
 
@@ -299,12 +306,17 @@ fn pair(output: &Aparato, inputs: &[Aparato]) -> Option<Aparato> {
 }
 
 fn pick_input(wanted: &str, mic: &str, inputs: &[Aparato]) -> Option<Aparato> {
+    picked_input(wanted, mic, inputs).map(|(found, _)| found)
+}
+
+fn picked_input(wanted: &str, mic: &str, inputs: &[Aparato]) -> Option<(Aparato, &'static str)> {
     let real = |id: &str| inputs.iter().find(|i| !id.is_empty() && i.id == id && !i.cable);
     real(wanted)
-        .or_else(|| real(mic))
-        .or_else(|| inputs.iter().find(|i| i.windows && !i.cable))
-        .or_else(|| inputs.iter().find(|i| !i.cable))
-        .cloned()
+        .map(|i| (i, "elegido"))
+        .or_else(|| real(mic).map(|i| (i, "cocuyo")))
+        .or_else(|| inputs.iter().find(|i| i.windows && !i.cable).map(|i| (i, "windows")))
+        .or_else(|| inputs.iter().find(|i| !i.cable).map(|i| (i, "otro")))
+        .map(|(i, from)| (i.clone(), from))
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -322,6 +334,7 @@ pub struct Estado {
     cable: String,
     elige: String,
     entrada: String,
+    origen: String,
     escuchan: Vec<String>,
     limpiando: bool,
     cpu: f32,
@@ -332,6 +345,7 @@ pub struct Estado {
     error: String,
     bajo: bool,
     ahora: Vec<String>,
+    aparatos: u32,
 }
 
 static WANT: Mutex<Option<Want>> = Mutex::new(None);
@@ -347,6 +361,10 @@ static KINDS: Mutex<Option<HashMap<String, bool>>> = Mutex::new(None);
 static NAMES: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
 static EVERYTHING: Mutex<Option<(Instant, Vec<Juego>)>> = Mutex::new(None);
 static SCANNING: AtomicBool = AtomicBool::new(false);
+static DEVICES: AtomicU32 = AtomicU32::new(0);
+static LISTENING: Once = Once::new();
+static LOOSE: Mutex<Vec<String>> = Mutex::new(Vec::new());
+static SCREEN_ONLY: Mutex<Vec<String>> = Mutex::new(Vec::new());
 const BROWSERS: [&str; 12] = ["chrome", "msedge", "firefox", "opera", "brave", "vivaldi", "vlc", "mpc-hc64", "mpc-be64", "potplayermini64", "netflix", "wmplayer"];
 const NOT_APPS: [&str; 8] = ["cocuyo", "explorer", "searchapp", "shellexperiencehost", "startmenuexperiencehost", "applicationframehost", "lockapp", "textinputhost"];
 const NOT_VOICE: [&str; 14] = ["amdrsserv", "audiodg", "ffmpeg", "msedgewebview2", "nvcontainer", "nvsphelper64", "python", "pythonw", "rundll32", "speechuxwiz", "steam", "steamwebhelper", "wallpaper32", "wallpaper64"];
@@ -403,6 +421,9 @@ impl Drop for Worker {
 
 pub fn sync(app: &AppHandle) {
     let s = crate::settings::load(app);
+    if s.clean_mic {
+        listen_devices();
+    }
     *WHEN.lock().unwrap_or_else(|e| e.into_inner()) = (s.clean_mic_when.clone(), s.clean_mic_games.iter().map(|g| plain_exe(g)).collect());
     if s.clean_mic && s.clean_mic_when != "siempre" {
         let _ = std::thread::Builder::new().name("microfono-juegos".into()).spawn(scan_running);
@@ -433,6 +454,10 @@ pub fn sync(app: &AppHandle) {
         })
         .ok();
     *worker = Some(Worker { stop, thread });
+}
+
+pub fn heard() -> bool {
+    STATUS.lock().unwrap_or_else(|e| e.into_inner()).as_ref().is_some_and(|st| !st.escuchan.is_empty() && matches!(st.estado.as_str(), "limpiando" | "pasando" | "no_da" | "sin_senal"))
 }
 
 pub fn shutdown() {
@@ -494,8 +519,11 @@ fn watch(exe: &str, pid: u32, game: bool) {
         entry.1 |= game;
         return;
     }
-    let Ok(process) = (unsafe { OpenProcess(PROCESS_SYNCHRONIZE, false, pid) }) else { return };
     watched.push((exe.to_string(), game));
+    let Ok(process) = (unsafe { OpenProcess(PROCESS_SYNCHRONIZE, false, pid) }) else {
+        LOOSE.lock().unwrap_or_else(|e| e.into_inner()).push(exe.to_string());
+        return;
+    };
     let (exe, first) = (exe.to_string(), process.0 as isize);
     let _ = std::thread::Builder::new().name("microfono-juego".into()).stack_size(64 * 1024).spawn(move || unsafe {
         let mut handle = HANDLE(first as _);
@@ -509,8 +537,25 @@ fn watch(exe: &str, pid: u32, game: bool) {
             }
         }
         WATCHED.lock().unwrap_or_else(|e| e.into_inner()).retain(|(name, _)| *name != exe);
+        SCREEN_ONLY.lock().unwrap_or_else(|e| e.into_inner()).retain(|name| *name != exe);
         decide_active();
     });
+}
+
+fn prune_loose() {
+    let mut loose = LOOSE.lock().unwrap_or_else(|e| e.into_inner());
+    if loose.is_empty() {
+        return;
+    }
+    let running: HashSet<String> = processes().into_iter().map(|(exe, _)| exe).collect();
+    let gone: Vec<String> = loose.iter().filter(|exe| !running.contains(*exe)).cloned().collect();
+    if gone.is_empty() {
+        return;
+    }
+    loose.retain(|exe| running.contains(exe));
+    drop(loose);
+    WATCHED.lock().unwrap_or_else(|e| e.into_inner()).retain(|(name, _)| !gone.contains(name));
+    SCREEN_ONLY.lock().unwrap_or_else(|e| e.into_inner()).retain(|name| !gone.contains(name));
 }
 
 fn installed() -> Vec<(String, String)> {
@@ -667,6 +712,7 @@ fn open_apps() -> Vec<(String, u32, String)> {
 
 fn scan_running() {
     let (when, games) = WHEN.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    prune_loose();
     match when.as_str() {
         "elegidos" => {
             for (exe, pid) in processes() {
@@ -676,6 +722,12 @@ fn scan_running() {
             }
         }
         "jugando" => {
+            let known = installed();
+            for (exe, pid) in processes() {
+                if KNOWN_GAMES.iter().any(|(game, _)| *game == exe) || known.iter().any(|(game, _)| *game == exe) {
+                    watch(&exe, pid, true);
+                }
+            }
             for (exe, pid, path) in open_apps() {
                 if is_game(&exe, &path) {
                     watch(&exe, pid, true);
@@ -720,13 +772,36 @@ pub fn foreground(hwnd: HWND) {
         recent.truncate(10);
     }
     let (when, games) = WHEN.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    prune_loose();
     match when.as_str() {
         "elegidos" if games.contains(&exe) => watch(&exe, pid, false),
-        "jugando" if crate::placement::fullscreen() && !BROWSERS.contains(&exe.as_str()) => watch(&exe, pid, true),
+        "jugando" if crate::placement::fullscreen() && !BROWSERS.contains(&exe.as_str()) => {
+            let known = WATCHED.lock().unwrap_or_else(|e| e.into_inner()).iter().any(|(name, game)| *name == exe && *game);
+            if !known {
+                let mut screen = SCREEN_ONLY.lock().unwrap_or_else(|e| e.into_inner());
+                if !screen.contains(&exe) {
+                    screen.push(exe.clone());
+                }
+            }
+            watch(&exe, pid, true);
+        }
         "jugando" => {
             let _ = std::thread::Builder::new().name("microfono-mira".into()).spawn(move || {
-                if is_game(&exe, &path) {
+                let game = is_game(&exe, &path);
+                let was_screen = {
+                    let mut screen = SCREEN_ONLY.lock().unwrap_or_else(|e| e.into_inner());
+                    let had = screen.contains(&exe);
+                    screen.retain(|name| *name != exe);
+                    had
+                };
+                if game {
                     watch(&exe, pid, true);
+                } else if was_screen {
+                    for entry in WATCHED.lock().unwrap_or_else(|e| e.into_inner()).iter_mut().filter(|(name, _)| *name == exe) {
+                        entry.1 = false;
+                    }
+                }
+                if game || was_screen {
                     decide_active();
                 }
             });
@@ -779,6 +854,51 @@ impl IAudioSessionEvents_Impl for Changed_Impl {
         }
         Ok(())
     }
+}
+
+#[implement(IMMNotificationClient)]
+struct Moved;
+
+impl Moved_Impl {
+    fn ring(&self) -> windows_core::Result<()> {
+        DEVICES.fetch_add(1, Ordering::Relaxed);
+        wake();
+        Ok(())
+    }
+}
+
+impl IMMNotificationClient_Impl for Moved_Impl {
+    fn OnDeviceStateChanged(&self, _: &windows_core::PCWSTR, _: DEVICE_STATE) -> windows_core::Result<()> {
+        self.ring()
+    }
+    fn OnDeviceAdded(&self, _: &windows_core::PCWSTR) -> windows_core::Result<()> {
+        self.ring()
+    }
+    fn OnDeviceRemoved(&self, _: &windows_core::PCWSTR) -> windows_core::Result<()> {
+        self.ring()
+    }
+    fn OnDefaultDeviceChanged(&self, _: EDataFlow, _: ERole, _: &windows_core::PCWSTR) -> windows_core::Result<()> {
+        self.ring()
+    }
+    fn OnPropertyValueChanged(&self, _: &windows_core::PCWSTR, _: &PROPERTYKEY) -> windows_core::Result<()> {
+        Ok(())
+    }
+}
+
+fn listen_devices() {
+    LISTENING.call_once(|| {
+        let _ = std::thread::Builder::new().name("microfono-aparatos".into()).stack_size(256 * 1024).spawn(|| unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+            let Ok(devices) = CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL) else { return };
+            let client: IMMNotificationClient = Moved.into();
+            if devices.RegisterEndpointNotificationCallback(&client).is_err() {
+                return;
+            }
+            loop {
+                std::thread::park();
+            }
+        });
+    });
 }
 
 struct Ears {
@@ -977,35 +1097,47 @@ unsafe fn run(stop: &AtomicBool) {
     WAKE.store(wake_event.0 as isize, Ordering::Relaxed);
     let mut ears: Option<(String, Ears)> = None;
     let mut guard = Guard::new();
+    let mut light_was: Option<bool> = None;
+    let mut moved = DEVICES.load(Ordering::Relaxed);
     while !stop.load(Ordering::Relaxed) {
         let Some(want) = WANT.lock().unwrap_or_else(|e| e.into_inner()).clone() else { break };
-        let (inputs, outputs) = (list(true), list(false));
-        let output = pick_output(&want.output, &outputs);
-        let input = pick_input(&want.input, &want.mic, &inputs);
-        let Some(output) = output else {
-            ears = None;
-            status(|st| *st = Estado { prendido: true, estado: "sin_cable".into(), entrada: input.map(|i| i.nombre).unwrap_or_default(), ..Default::default() });
-            WaitForMultipleObjects(&[wake_event], false, 30_000);
-            continue;
-        };
-        let Some(input) = input else {
-            status(|st| *st = Estado { prendido: true, estado: "sin_micro".into(), cable: output.nombre.clone(), ..Default::default() });
-            WaitForMultipleObjects(&[wake_event], false, 30_000);
-            continue;
-        };
-        let listen = pair(&output, &inputs);
-        let elige = listen.as_ref().map(|l| l.nombre.clone()).unwrap_or_else(|| "CABLE Output".into());
-        if let Some(listen) = &listen {
-            if ears.as_ref().map(|(id, _)| id != &listen.id).unwrap_or(true) {
-                ears = Ears::open(&devices, &listen.id, sessions).map(|e| (listen.id.clone(), e));
-            }
-        } else {
+        if light_was.is_some_and(|was| was != want.tune.light) {
+            guard = Guard::new();
+        }
+        light_was = Some(want.tune.light);
+        let now_moved = DEVICES.load(Ordering::Relaxed);
+        if now_moved != moved {
+            moved = now_moved;
             ears = None;
         }
-        let heard = ears.as_ref().map(|(_, e)| e.listeners());
-        if heard.as_ref().is_some_and(|h| h.is_empty()) {
-            status(|st| *st = Estado { prendido: true, estado: "esperando".into(), cable: output.nombre.clone(), elige: elige.clone(), entrada: input.nombre.clone(), ..Default::default() });
-            let woke = WaitForMultipleObjects(&[wake_event, sessions], false, 120_000);
+        let (inputs, outputs) = (list(true), list(false));
+        let output = pick_output(&want.output, &outputs, &inputs);
+        let input = picked_input(&want.input, &want.mic, &inputs);
+        let (entrada, origen) = input.as_ref().map(|(i, from)| (i.nombre.clone(), from.to_string())).unwrap_or_default();
+        let listen = output.as_ref().and_then(|o| pair(o, &inputs));
+        let (Some(output), Some(listen)) = (output, listen) else {
+            ears = None;
+            status(|st| *st = Estado { prendido: true, estado: "sin_cable".into(), entrada, origen, ..Default::default() });
+            WaitForMultipleObjects(&[wake_event], false, INFINITE);
+            continue;
+        };
+        let Some((input, _)) = input else {
+            status(|st| *st = Estado { prendido: true, estado: "sin_micro".into(), cable: output.nombre.clone(), ..Default::default() });
+            WaitForMultipleObjects(&[wake_event], false, INFINITE);
+            continue;
+        };
+        let elige = listen.nombre.clone();
+        if ears.as_ref().map(|(id, _)| id != &listen.id).unwrap_or(true) {
+            ears = Ears::open(&devices, &listen.id, sessions).map(|e| (listen.id.clone(), e));
+        }
+        let Some(heard) = ears.as_ref().map(|(_, e)| e.listeners()) else {
+            status(|st| *st = Estado { prendido: true, estado: "error".into(), cable: output.nombre.clone(), elige: elige.clone(), entrada: entrada.clone(), origen: origen.clone(), error: crate::i18n::tr("No pude ver qué apps usan el cable virtual. Toca Reintentar."), ..Default::default() });
+            WaitForMultipleObjects(&[wake_event], false, 5_000);
+            continue;
+        };
+        if heard.is_empty() {
+            status(|st| *st = Estado { prendido: true, estado: "esperando".into(), cable: output.nombre.clone(), elige: elige.clone(), entrada: entrada.clone(), origen: origen.clone(), bajo: guard.is_lowered() && !want.tune.light, ..Default::default() });
+            let woke = WaitForMultipleObjects(&[wake_event, sessions], false, INFINITE);
             if woke.0 == WAIT_OBJECT_0.0 + 1 {
                 if let Some((_, e)) = ears.as_mut() {
                     e.rewatch();
@@ -1014,7 +1146,7 @@ unsafe fn run(stop: &AtomicBool) {
             continue;
         }
         scan_running();
-        let ended = stream(&devices, stop, &want, &input, &output, &elige, ears.as_mut().map(|(_, e)| e), wake_event, sessions, &mut guard);
+        let ended = stream(&devices, stop, &want, &input, &output, &elige, &origen, ears.as_mut().map(|(_, e)| e), wake_event, sessions, &mut guard);
         if let Err(problem) = ended {
             status(|st| {
                 st.estado = "error".into();
@@ -1031,7 +1163,7 @@ unsafe fn run(stop: &AtomicBool) {
 }
 
 #[allow(clippy::too_many_arguments)]
-unsafe fn stream(devices: &IMMDeviceEnumerator, stop: &AtomicBool, want: &Want, input: &Aparato, output: &Aparato, elige: &str, mut ears: Option<&mut Ears>, wake_event: HANDLE, sessions: HANDLE, guard: &mut Guard) -> Result<(), String> {
+unsafe fn stream(devices: &IMMDeviceEnumerator, stop: &AtomicBool, want: &Want, input: &Aparato, output: &Aparato, elige: &str, origen: &str, mut ears: Option<&mut Ears>, wake_event: HANDLE, sessions: HANDLE, guard: &mut Guard) -> Result<(), String> {
     let mic = open_stream(devices, &input.id, 20).map_err(|e| format!("No pude abrir {}: {}", input.nombre, e.message()))?;
     let out = open_stream(devices, &output.id, 40).map_err(|e| format!("No pude abrir {}: {}", output.nombre, e.message()))?;
     let capture: IAudioCaptureClient = mic.client.GetService().map_err(|e| e.message())?;
@@ -1056,11 +1188,26 @@ unsafe fn stream(devices: &IMMDeviceEnumerator, stop: &AtomicBool, want: &Want, 
     let mut active = ACTIVE.load(Ordering::Relaxed);
     let mut clean = active && !guard.raw(Instant::now());
     let mut fade = 0usize;
+    let mut moved = DEVICES.load(Ordering::Relaxed);
+    let mut looked = Instant::now();
     loop {
         if stop.load(Ordering::Relaxed) {
             return Ok(());
         }
         let woke = WaitForMultipleObjects(&[mic.event, out.event, wake_event, sessions], false, 200).0.wrapping_sub(WAIT_OBJECT_0.0);
+        if woke == 2 && DEVICES.load(Ordering::Relaxed) != moved {
+            moved = DEVICES.load(Ordering::Relaxed);
+            let (inputs, outputs) = (list(true), list(false));
+            let still_in = pick_input(&want.input, &want.mic, &inputs).is_some_and(|now| now.id == input.id);
+            let still_out = pick_output(&want.output, &outputs, &inputs).is_some_and(|now| now.id == output.id);
+            if !still_in || !still_out {
+                return Ok(());
+            }
+        }
+        if !active && looked.elapsed() > Duration::from_secs(5) {
+            looked = Instant::now();
+            let _ = std::thread::Builder::new().name("microfono-juegos".into()).spawn(scan_running);
+        }
         if woke == 2 {
             let now = WANT.lock().unwrap_or_else(|e| e.into_inner()).clone();
             match now {
@@ -1161,14 +1308,33 @@ unsafe fn stream(devices: &IMMDeviceEnumerator, stop: &AtomicBool, want: &Want, 
                 render.ReleaseBuffer(count as u32, 0).map_err(|e| e.message())?;
             }
         }
+        if frames == 0 && reported.elapsed() > Duration::from_secs(2) {
+            let snapshot = Estado {
+                prendido: true,
+                estado: if heard.is_empty() { "esperando".into() } else { "sin_senal".into() },
+                cable: output.nombre.clone(),
+                elige: elige.to_string(),
+                entrada: input.nombre.clone(),
+                origen: origen.to_string(),
+                escuchan: heard.clone(),
+                entra: -120.0,
+                sale: -120.0,
+                ..Default::default()
+            };
+            status(|st| *st = snapshot);
+            reported = Instant::now();
+            (queued, buffered, turns) = (0, 0, 0);
+        }
         if reported.elapsed() > Duration::from_millis(250) && frames > 0 {
             let seconds = frames as f32 * HOP as f32 / RATE as f32;
             let samples = (frames as usize * HOP) as f32;
             let snapshot = Estado {
                 prendido: true,
-                estado: if !active {
+                estado: if heard.is_empty() {
+                    "esperando".into()
+                } else if !active {
                     "pasando".into()
-                } else if clean {
+                } else if clean || guard.raw_until.is_none() {
                     "limpiando".into()
                 } else {
                     "no_da".into()
@@ -1176,6 +1342,7 @@ unsafe fn stream(devices: &IMMDeviceEnumerator, stop: &AtomicBool, want: &Want, 
                 cable: output.nombre.clone(),
                 elige: elige.to_string(),
                 entrada: input.nombre.clone(),
+                origen: origen.to_string(),
                 escuchan: heard.clone(),
                 limpiando: clean,
                 cpu: spent.as_secs_f32() / seconds * 100.0,
@@ -1184,8 +1351,9 @@ unsafe fn stream(devices: &IMMDeviceEnumerator, stop: &AtomicBool, want: &Want, 
                 sale: db((energy_out / samples).sqrt()),
                 latencia: ((if clean { DELAY } else { 0 } + HOP + (queued + buffered) / turns.max(1)) as f32 / RATE as f32 * 1000.0) as u32,
                 error: String::new(),
-                bajo: guard.lowered && !tune.light,
+                bajo: guard.is_lowered() && !tune.light,
                 ahora: Vec::new(),
+                aparatos: 0,
             };
             status(|st| *st = snapshot);
             reported = Instant::now();
@@ -1328,6 +1496,7 @@ pub fn limpio_estado() -> Estado {
     let mut estado = STATUS.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap_or_else(|| Estado { estado: "apagado".into(), ..Default::default() });
     let known = INSTALLED.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap_or_default();
     estado.ahora = triggered_now().into_iter().map(|exe| known.iter().find(|(name, _)| *name == exe).map(|(_, nombre)| nombre.clone()).unwrap_or_else(|| name_of(&exe, None))).collect();
+    estado.aparatos = DEVICES.load(Ordering::Relaxed);
     estado
 }
 
@@ -1382,6 +1551,7 @@ pub struct Aparatos {
 
 #[tauri::command]
 pub async fn limpio_aparatos() -> Aparatos {
+    listen_devices();
     tauri::async_runtime::spawn_blocking(|| Aparatos { entradas: list(true).into_iter().filter(|a| !a.cable).collect(), salidas: list(false).into_iter().filter(|a| a.cable).collect() }).await.unwrap_or(Aparatos { entradas: Vec::new(), salidas: Vec::new() })
 }
 
@@ -1402,6 +1572,9 @@ pub struct Lista {
 pub async fn limpio_juegos(app: AppHandle) -> Lista {
     let chosen = crate::settings::load(&app).clean_mic_games;
     tauri::async_runtime::spawn_blocking(move || {
+        if WANT.lock().unwrap_or_else(|e| e.into_inner()).is_some() {
+            scan_running();
+        }
         let (rest, cargando) = everything(&app);
         let label = |exe: &str, path: Option<&str>| rest.iter().find(|game| game.exe == exe).map(|game| game.nombre.clone()).unwrap_or_else(|| name_of(exe, path));
         let mut seen = HashSet::new();
@@ -1496,12 +1669,18 @@ mod tests {
     fn finds_the_cable_and_its_other_end() {
         let outputs = [aparato("Altavoces (Realtek(R) Audio)"), aparato("CABLE Input (VB-Audio Virtual Cable)")];
         let inputs = [aparato("Micrófono (Fifine Microphone)"), aparato("CABLE Output (VB-Audio Virtual Cable)")];
-        let out = pick_output("", &outputs).unwrap();
+        let out = pick_output("", &outputs, &inputs).unwrap();
         assert_eq!(out.nombre, "CABLE Input (VB-Audio Virtual Cable)");
         assert_eq!(pair(&out, &inputs).unwrap().nombre, "CABLE Output (VB-Audio Virtual Cable)");
         assert_eq!(pick_input("", "", &inputs).unwrap().nombre, "Micrófono (Fifine Microphone)");
         assert_eq!(pick_input("wasapi:CABLE Output (VB-Audio Virtual Cable)", "", &inputs).unwrap().nombre, "Micrófono (Fifine Microphone)");
-        assert!(pick_output("", &[aparato("Altavoces (Realtek(R) Audio)")]).is_none());
+        assert!(pick_output("", &[aparato("Altavoces (Realtek(R) Audio)")], &inputs).is_none());
+        assert!(pick_output("", &[aparato("NVIDIA Virtual Audio Device (Wave Extensible) (WDM)")], &[aparato("Micrófono (Fifine Microphone)")]).is_none());
+        assert_eq!(picked_input("", "", &inputs).unwrap().1, "otro");
+        let mut windows = aparato("Micrófono (Fifine Microphone)");
+        windows.windows = true;
+        assert_eq!(picked_input("wasapi:no esta", "", &[windows.clone()]).unwrap().1, "windows");
+        assert_eq!(picked_input(&windows.id, "", &[windows.clone()]).unwrap().1, "elegido");
     }
 
     #[test]
@@ -1553,7 +1732,7 @@ mod tests {
         let now = Instant::now();
         assert!(feed(&mut guard, 0.5, false, 20_000, now).is_empty());
         assert!(feed(&mut guard, 5.9, false, 20_000, now).is_empty());
-        assert!(!guard.lowered && guard.raw_until.is_none());
+        assert!(!guard.is_lowered() && guard.raw_until.is_none());
     }
 
     #[test]
@@ -1564,7 +1743,7 @@ mod tests {
         assert!(feed(&mut guard, 9.0, false, 25, now).is_empty());
         assert!(feed(&mut guard, 0.5, false, 25, now).is_empty());
         assert!(feed(&mut guard, 9.0, false, 25, now).is_empty());
-        assert!(!guard.lowered);
+        assert!(!guard.is_lowered());
     }
 
     #[test]
@@ -1573,7 +1752,7 @@ mod tests {
         let now = Instant::now();
         feed(&mut guard, 7.0, false, 10, now);
         assert_eq!(feed(&mut guard, 7.0, false, 50, now), vec![Pace::Lighten]);
-        assert!(guard.lowered);
+        assert!(guard.is_lowered());
         assert!(guard.shape(&Tune::of(&Settings::default())).light);
         guard.restart();
         feed(&mut guard, 7.0, true, 10, now);
@@ -1617,7 +1796,7 @@ mod tests {
             guard.note(Duration::from_micros(2), false, now);
             guard.note(Duration::from_millis(7), false, now);
         }
-        assert!(guard.lowered);
+        assert!(guard.is_lowered());
     }
 
     #[test]

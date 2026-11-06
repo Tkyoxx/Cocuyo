@@ -427,7 +427,7 @@ pub fn shows(who: &str) -> bool {
     places.iter().any(|place| crate::intent::normalize(place).contains(&wanted))
 }
 
-unsafe fn bring(hwnd: HWND) -> bool {
+pub(crate) unsafe fn bring(hwnd: HWND) -> bool {
     if IsIconic(hwnd).as_bool() {
         let _ = ShowWindow(hwnd, SW_RESTORE);
     }

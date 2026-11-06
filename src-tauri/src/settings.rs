@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::hotkeys::{self, Hotkey, ALT, CTRL, DEFAULT_CAPTURES, SHIFT, WIN};
 
@@ -375,6 +375,7 @@ pub fn set_settings(app: AppHandle, settings: Settings) -> Result<(), String> {
     let json = serde_json::to_vec_pretty(&settings).map_err(|e| e.to_string())?;
     std::fs::write(path, json).map_err(|e| e.to_string())?;
     apply(&app);
+    let _ = app.emit("ajustes-cambiados", &settings);
     Ok(())
 }
 

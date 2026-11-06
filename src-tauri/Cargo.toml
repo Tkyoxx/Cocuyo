@@ -1,6 +1,6 @@
 [package]
 name = "cocuyo"
-version = "0.4.6"
+version = "0.4.7"
 description = "Asistente de voz libre para Windows"
 authors = ["Tkyoxx"]
 license = "MIT"

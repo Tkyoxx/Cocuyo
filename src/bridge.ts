@@ -405,8 +405,8 @@ export function getSettings(): Promise<Settings> {
 }
 
 export function setSettings(settings: Settings): Promise<void> {
-  if (!inTauri) vitrina()?.call("set_settings", { settings });
-  return inTauri ? invoke<void>("set_settings", { settings }) : Promise.resolve();
+  if (!inTauri) return Promise.resolve(vitrina()?.call("set_settings", { settings }) as void);
+  return invoke<void>("set_settings", { settings });
 }
 
 export function currentCaptureDir(): Promise<string | null> {

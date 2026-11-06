@@ -190,6 +190,22 @@ const LIVE_VOICES: [string, string][] = [
   ["Zephyr", "brillante"],
 ];
 
+type WaState = { instalado: boolean; corriendo: boolean; conectado: boolean; numero: string; llave: string; codigo: string; segundos: number; fallo: string; sesion: boolean };
+const WA_NONE: WaState = { instalado: false, corriendo: false, conectado: false, numero: "", llave: "", codigo: "", segundos: 0, fallo: "", sesion: false };
+const WA_LEAST = 85;
+const WA_MARGIN = 45;
+const WA_AGAIN = "Toca Sacar código y escanéalo otra vez.";
+const WA_BUTTONS = { firmar: "Reintentar", coincide: "Coincide", codigo: "Sacar código" } as const;
+const WA_FAILS: Record<string, [string, boolean]> = {
+  vencio: ["Se acabó el tiempo de este código.", true],
+  caida: ["Se cayó la conexión con WhatsApp. ¿Hay internet?", true],
+  vieja: ["WhatsApp dice que esta pasarela ya está vieja. Actualiza Cocuyo y vuelve a intentarlo.", false],
+  cortada: ["WhatsApp cortó la conexión mientras vinculabas. Puede ser un bloqueo temporal: espera un rato antes de probar otra vez.", true],
+  multi: ["Tu celular dijo que no puede vincular dispositivos. Actualiza WhatsApp en el celular.", true],
+  envio: ["No pude mandar la firma a WhatsApp. Revisa tu internet.", true],
+  rechazo: ["WhatsApp no aceptó la firma. Revisa que la llave sea de esta cuenta y que tengas internet.", true],
+};
+
 class SettingsPage implements Page {
   id = "ajustes";
   label = "Ajustes";
@@ -205,7 +221,7 @@ class SettingsPage implements Page {
     this.section = section;
     if (section === "extensiones") void this.paintExtensions();
     if (section === "agente") void this.paintMcp();
-    if (section === "whatsapp") void this.paintWhatsapp();
+    if (section === "whatsapp") void this.enterWhatsapp();
     if (section === "remoto") void this.paintRemote();
     if (section === "voz") {
       void this.paintMics();
@@ -492,7 +508,9 @@ class SettingsPage implements Page {
            <div class="card">
              <div class="srow slim"><div><b>WhatsApp sin abrir WhatsApp</b><small id="s-wa-state">Te avisa de los mensajes nuevos, te los lee y le respondes con la voz: «respóndele que ya voy». Usa GOWA, que corre aquí en tu PC.</small></div><button class="ghost pick" id="s-wa-go">Conectar</button></div>
              <div class="wa-qr" id="s-wa-qr" hidden><img alt="QR" /><small>En el celular: WhatsApp → Dispositivos vinculados → Vincular un dispositivo, y escanea este código.</small></div>
+             <div class="srow slim" id="s-wa-key" hidden><div><b>Qué sigue</b><small id="s-wa-key-text"></small></div><button class="ghost pick" id="s-wa-key-go">Reintentar</button></div>
              <div class="srow slim"><div><b>Ojo</b><small>WhatsApp no permite oficialmente apps que no son suyas. Mucha gente usa estas pasarelas sin problema, pero hay cuentas suspendidas por mandar mensajes en masa. Cocuyo nunca envía nada sin que tú lo digas.</small></div></div>
+             <div class="srow slim" id="s-wa-web"><div><b>¿Prefieres lo oficial?</b><small>Abre WhatsApp Web en Chrome o Edge y toca «Instalar» en la barra de direcciones: queda como una app y es lo que WhatsApp permite. Eso sí, por ahí Cocuyo no te lee ni te responde.</small></div><button class="ghost pick" id="s-wa-web-go">Abrir</button></div>
            </div>
            <div class="card">
              <div class="srow stack"><div><b>Sonido</b><small>Hecho para Cocuyo: una kalimba suave que no cansa, con su familia para abrir, enviar y cerrar.</small></div><div class="srow chips flat" id="s-wa-sound"><button class="chip" data-v="kalimba">Kalimba</button><button class="chip" data-v="">Sin sonido</button></div></div>
@@ -576,7 +594,8 @@ class SettingsPage implements Page {
     this.el = el;
     this.host = host;
     const q = <T extends HTMLElement>(sel: string) => el.querySelector<T>(sel)!;
-    this.limpio.mount(q('.ssec[data-sec="microfono"]'), (change) => this.save(change));
+    this.limpio.mount(q('.ssec[data-sec="microfono"]'), (change) => this.save(change), (input) => host.focus(input));
+    on<Settings>("ajustes-cambiados", (fresh) => this.outside(fresh));
 
     for (const button of el.querySelectorAll<HTMLElement>("#s-nav button")) {
       button.addEventListener("click", () => this.open(button.dataset.sec!));
@@ -729,6 +748,8 @@ class SettingsPage implements Page {
     toggle("#s-wa-gaming", "whatsappGaming");
     const burbuja = (detail: { probar?: boolean; oir?: string }) => window.dispatchEvent(new CustomEvent("cocuyo-burbuja", { detail }));
     q("#s-wa-demo").addEventListener("click", () => burbuja({ probar: true }));
+    q("#s-wa-key-go").addEventListener("click", () => void this.keyButton());
+    q("#s-wa-web-go").addEventListener("click", () => void call("whatsapp_abrir_web").catch(() => undefined));
     q("#s-wa-stay").addEventListener("click", (e) => {
       const chip = (e.target as HTMLElement).closest<HTMLElement>("[data-v]");
       if (chip) void this.save({ whatsappStay: Number(chip.dataset.v) });
@@ -1316,7 +1337,12 @@ class SettingsPage implements Page {
   }
 
   async show() {
+    const turn = ++this.showing;
+    this.onScreen = true;
+    await this.saving;
     this.settings = await getSettings();
+    if (turn !== this.showing) return;
+    this.open(this.section);
     await this.paint();
     await this.paintAvailability();
     await this.loadVoice();
@@ -1325,7 +1351,10 @@ class SettingsPage implements Page {
   }
 
   hide() {
+    this.showing += 1;
+    this.onScreen = false;
     this.limpio.hide();
+    if (this.waIdle) this.waStop();
     window.clearInterval(this.remoteTick);
     this.stopRecording();
     this.closeModels();
@@ -1410,10 +1439,25 @@ class SettingsPage implements Page {
   }
 
   private saving: Promise<void> = Promise.resolve();
+  private writing: Settings | null = null;
+  private showing = 0;
+  private onScreen = false;
 
   private save(change: Partial<Settings>) {
-    this.saving = this.saving.then(() => this.saveNow(change));
+    this.saving = this.saving.then(() => this.saveNow(change)).catch((error) => this.note(String(error)));
     return this.saving;
+  }
+
+  private outside(fresh: Settings) {
+    const known = this.writing ?? this.settings;
+    if (!known) return;
+    const changed = (Object.keys(fresh) as (keyof Settings)[]).filter((key) => JSON.stringify(fresh[key]) !== JSON.stringify(known[key]));
+    if (!changed.length) return;
+    this.settings = { ...this.settings!, ...fresh };
+    this.host.settingsChanged(this.settings);
+    if (!this.onScreen) return;
+    if (changed.every((key) => key.startsWith("cleanMic"))) this.limpio.paint(this.settings);
+    else void this.paint();
   }
 
   private find(query: string, go: boolean) {
@@ -1438,6 +1482,7 @@ class SettingsPage implements Page {
   private async saveNow(change: Partial<Settings>) {
     if (!this.settings) return;
     const next = { ...this.settings, ...change };
+    this.writing = next;
     try {
       await setSettings(next);
       this.settings = next;
@@ -1445,7 +1490,11 @@ class SettingsPage implements Page {
       this.host.settingsChanged(next);
     } catch (error) {
       this.note(String(error));
+    } finally {
+      this.writing = null;
     }
+    const keys = Object.keys(change);
+    if (keys.length && keys.every((key) => key.startsWith("cleanMic"))) return this.limpio.paint(this.settings);
     await this.paint();
     setTimeout(() => void this.paintAvailability(), 150);
   }
@@ -1611,6 +1660,18 @@ class SettingsPage implements Page {
   }
 
   private waLinking = 0;
+  private waIdle = false;
+  private waSigning = false;
+  private waConfirming = false;
+  private waConfirmedAt = 0;
+  private waTried = false;
+  private waBusy = false;
+  private waFinish = 0;
+  private waSince = 0;
+  private waQrAt = 0;
+  private waEnded = false;
+  private waSigned = false;
+  private waRun = 0;
 
   private async paintPeople() {
     const people = await call<{ chat: string; nombre: string; contexto: string }[]>("whatsapp_personas", undefined, []);
@@ -1620,21 +1681,104 @@ class SettingsPage implements Page {
       : `<small class="empty-line">${tr("Ninguna todavía.")}</small>`;
   }
 
+  private waState() {
+    return call<WaState>("whatsapp_estado", undefined, WA_NONE);
+  }
+
   private async paintWhatsapp() {
     void this.paintPeople();
-    const state = await call<{ instalado: boolean; corriendo: boolean; conectado: boolean; numero: string }>("whatsapp_estado", undefined, { instalado: false, corriendo: false, conectado: false, numero: "" });
+    const state = await this.waState();
+    this.paintWaTop(state);
+    return state;
+  }
+
+  private paintWaTop(state: WaState) {
     const go = this.el.querySelector<HTMLButtonElement>("#s-wa-go")!;
     const said = this.el.querySelector("#s-wa-state")!;
     if (state.conectado) {
       this.el.querySelector<HTMLElement>("#s-wa-qr")!.hidden = true;
-      window.clearInterval(this.waLinking);
+      this.el.querySelector<HTMLElement>("#s-wa-key")!.hidden = true;
+      this.waStop();
+      this.waEnded = false;
+      this.waSigned = false;
+      this.waFinish = 0;
       said.textContent = `${tr("Conectado")}${state.numero ? ` · +${state.numero}` : ""}. ${tr("Dile «¿qué me escribieron?» o «respóndele que ya voy».")}`;
     } else if (!state.corriendo) {
       said.textContent = tr("Te avisa de los mensajes nuevos, te los lee y le respondes con la voz: «respóndele que ya voy». Usa GOWA, que corre aquí en tu PC.");
     }
+    this.el.querySelector<HTMLElement>("#s-wa-web")!.hidden = state.conectado;
     go.textContent = tr(state.corriendo ? "Desconectar" : "Conectar");
     go.classList.toggle("pick", !state.corriendo);
-    return state;
+  }
+
+  private async enterWhatsapp() {
+    const state = await this.paintWhatsapp();
+    if (!state.corriendo || state.conectado || (this.waLinking && !this.waIdle)) return;
+    const box = this.el.querySelector<HTMLElement>("#s-wa-qr")!;
+    const going = this.waSigning || this.waSigned || state.llave !== "" || Date.now() < this.waFinish || (state.segundos > 0 && !box.hidden);
+    if (!this.waEnded && going) return this.watchLink(false);
+    this.watchLink(true);
+    if (!this.waEnded) this.paintUnlinked(state);
+  }
+
+  private paintUnlinked(state: WaState) {
+    const said = this.el.querySelector("#s-wa-state")!;
+    this.el.querySelector<HTMLElement>("#s-wa-qr")!.hidden = true;
+    if (state.sesion && (state.fallo === "vieja" || state.fallo === "cortada")) {
+      said.textContent = tr("Tu sesión está guardada pero WhatsApp no la deja entrar.");
+      return this.waStep(tr(WA_FAILS[state.fallo][0]));
+    }
+    if (state.sesion) {
+      said.textContent = tr("Conectando tu sesión…");
+      return this.waStep(tr("Tu sesión está guardada y está conectando. Si tarda, revisa tu internet; si sigue igual, toca Desconectar y vincúlalo otra vez."));
+    }
+    said.textContent = tr("Todavía no está vinculado.");
+    this.waStep(tr("WhatsApp no está vinculado a Cocuyo: pudo cerrarse desde el celular o WhatsApp lo sacó. Toca Sacar código para vincularlo otra vez."), "codigo");
+  }
+
+  private waStep(text: string, action: "" | keyof typeof WA_BUTTONS = "") {
+    const go = this.el.querySelector<HTMLButtonElement>("#s-wa-key-go")!;
+    this.el.querySelector<HTMLElement>("#s-wa-key")!.hidden = false;
+    this.el.querySelector("#s-wa-key-text")!.textContent = text;
+    go.hidden = !action;
+    go.disabled = false;
+    go.dataset.do = action;
+    if (action) go.textContent = tr(WA_BUTTONS[action]);
+  }
+
+  private waHelp(seconds: number) {
+    const help = tr("WhatsApp la pide para vincular. Se abre Chrome o Edge aparte: elige «Usar un teléfono o una tablet», escanea con la cámara del celular y confirma con tu huella. Deja el Bluetooth prendido en los dos. Después te llega una notificación de WhatsApp, algo como «¿Estás intentando iniciar sesión?»: tócala y acepta.");
+    const left = seconds - WA_MARGIN;
+    this.waStep(left > 0 ? `${help} ${tr("Te quedan {} s.").replace("{}", String(left))}` : help);
+  }
+
+  private waSignedStep(seconds: number) {
+    const signed = tr("Firmado. Ahora mira el celular: te llega una notificación de WhatsApp, algo como «¿Estás intentando iniciar sesión?». Tócala y acepta para terminar.");
+    this.waStep(seconds ? `${signed} ${tr("Te quedan {} s.").replace("{}", String(seconds))}` : signed);
+  }
+
+  private waStop() {
+    window.clearInterval(this.waLinking);
+    this.waLinking = 0;
+    this.waIdle = false;
+  }
+
+  private waBringBack() {
+    window.dispatchEvent(new CustomEvent("cocuyo-ver-whatsapp"));
+  }
+
+  private waEnd(text: string, action: "" | keyof typeof WA_BUTTONS = "codigo") {
+    this.waStop();
+    this.waEnded = true;
+    if (this.waSigning) {
+      this.waRun += 1;
+      void call("whatsapp_llave_cancelar").catch(() => undefined);
+    }
+    this.el.querySelector<HTMLElement>("#s-wa-qr")!.hidden = true;
+    this.el.querySelector("#s-wa-state")!.textContent = tr("Todavía no está vinculado.");
+    this.waStep(text, action);
+    if (this.waTried) this.waBringBack();
+    if (this.section === "whatsapp" && this.onScreen) this.watchLink(true);
   }
 
   private async whatsappButton() {
@@ -1642,21 +1786,57 @@ class SettingsPage implements Page {
     const box = this.el.querySelector<HTMLElement>("#s-wa-qr")!;
     const said = this.el.querySelector("#s-wa-state")!;
     const state = await this.paintWhatsapp();
+    let failed = "";
     go.disabled = true;
     try {
       if (state.corriendo) {
-        window.clearInterval(this.waLinking);
+        this.waStop();
+        this.waRun += 1;
         box.hidden = true;
+        this.el.querySelector<HTMLElement>("#s-wa-key")!.hidden = true;
+        this.waFinish = 0;
+        this.waTried = false;
+        this.waSigned = false;
+        this.waEnded = false;
         await call("whatsapp_desconectar");
       } else {
         said.textContent = tr(state.instalado ? "Arrancando la pasarela…" : "Bajando la pasarela de WhatsApp (12 MB)…");
+        this.el.querySelector<HTMLElement>("#s-wa-key")!.hidden = true;
         const qr = await call<string>("whatsapp_conectar");
         if (qr) this.showQr(qr);
       }
     } catch (error) {
-      said.textContent = String(error);
+      const now = await this.waState();
+      if (now.corriendo) this.waFailedLink(now, String(error));
+      else failed = tr(String(error));
     } finally {
       go.disabled = false;
+    }
+    await this.paintWhatsapp();
+    if (failed) said.textContent = failed;
+  }
+
+  private waFailedLink(state: WaState, error: string) {
+    if (state.sesion) {
+      this.paintUnlinked(state);
+      if (this.onScreen) this.watchLink(true);
+      return;
+    }
+    this.el.querySelector("#s-wa-state")!.textContent = tr("Todavía no está vinculado.");
+    this.waEnded = true;
+    this.waStep(tr(error), "codigo");
+    if (this.onScreen) this.watchLink(true);
+  }
+
+  private async newCode() {
+    this.waStop();
+    this.el.querySelector<HTMLElement>("#s-wa-key")!.hidden = true;
+    this.el.querySelector("#s-wa-state")!.textContent = tr("Pidiendo un código…");
+    try {
+      const qr = await call<string>("whatsapp_conectar");
+      if (qr) this.showQr(qr);
+    } catch (error) {
+      this.waFailedLink(await this.waState(), String(error));
     }
     await this.paintWhatsapp();
   }
@@ -1665,24 +1845,142 @@ class SettingsPage implements Page {
     const box = this.el.querySelector<HTMLElement>("#s-wa-qr")!;
     box.querySelector("img")!.src = qr;
     box.hidden = false;
-    this.el.querySelector("#s-wa-state")!.textContent = tr("Escanea el código con tu celular. Se renueva solo.");
-    window.clearInterval(this.waLinking);
-    const since = Date.now();
-    let turns = 0;
-    this.waLinking = window.setInterval(async () => {
-      turns += 1;
-      const state = await this.paintWhatsapp();
-      if (state.conectado || !state.corriendo || Date.now() - since > 180_000 || this.section !== "whatsapp") {
-        window.clearInterval(this.waLinking);
-        box.hidden = true;
-        if (!state.conectado && state.corriendo) this.el.querySelector("#s-wa-state")!.textContent = tr("Se acabó el tiempo para escanear. Toca Desconectar y vuelve a conectar.");
-        return;
+    this.el.querySelector<HTMLElement>("#s-wa-key")!.hidden = true;
+    this.el.querySelector("#s-wa-state")!.textContent = tr("Escanea el código con tu celular. Se renueva solo. Si WhatsApp pide tu llave de acceso, abro el navegador y te digo qué hacer.");
+    this.waRun += 1;
+    this.waSince = Date.now();
+    this.waQrAt = Date.now();
+    this.waTried = false;
+    this.waSigned = false;
+    this.waFinish = 0;
+    this.waEnded = false;
+    this.watchLink(false);
+  }
+
+  private watchLink(idle: boolean) {
+    this.waStop();
+    this.waIdle = idle;
+    this.waLinking = window.setInterval(() => void this.waTick(), idle ? 3000 : 2000);
+  }
+
+  private async waTick() {
+    if (this.waBusy) return;
+    if (this.waIdle && (this.section !== "whatsapp" || !this.onScreen)) return this.waStop();
+    this.waBusy = true;
+    try {
+      await this.waLook();
+    } finally {
+      this.waBusy = false;
+    }
+  }
+
+  private async waLook() {
+    const box = this.el.querySelector<HTMLElement>("#s-wa-qr")!;
+    const said = this.el.querySelector("#s-wa-state")!;
+    const watching = this.waLinking;
+    const began = Date.now();
+    const state = await this.waState();
+    if (watching !== this.waLinking) return;
+    this.paintWaTop(state);
+    if (state.conectado) {
+      if (this.waTried) this.waBringBack();
+      this.waTried = false;
+      return;
+    }
+    if (this.waIdle) {
+      if (!state.corriendo) {
+        this.waStop();
+        if (!this.waEnded) this.el.querySelector<HTMLElement>("#s-wa-key")!.hidden = true;
+      } else if (!this.waEnded) this.paintUnlinked(state);
+      return;
+    }
+    if (!state.corriendo) return this.waEnd(tr("La pasarela de WhatsApp se cerró sola. Toca Conectar para abrirla otra vez."), "");
+    if (state.fallo && WA_FAILS[state.fallo]) {
+      const [text, again] = WA_FAILS[state.fallo];
+      return this.waEnd(again ? `${tr(text)} ${tr(WA_AGAIN)}` : tr(text), again ? "codigo" : "");
+    }
+    if (state.llave === "firmar") {
+      box.hidden = true;
+      said.textContent = tr("Código escaneado. Falta tu llave de acceso.");
+      if (this.waSigning) return this.waHelp(state.segundos);
+      if (state.segundos < WA_LEAST) return this.waEnd(`${tr("Se acabó el tiempo de este código.")} ${tr(WA_AGAIN)}`);
+      if (!this.waTried) {
+        this.waTried = true;
+        void this.signKey(state.segundos);
       }
-      if (turns % 12 === 0) {
-        const fresh = await call<string>("whatsapp_qr").catch(() => "");
-        if (fresh) box.querySelector("img")!.src = fresh;
+      return;
+    }
+    if (state.llave === "terminando" || state.llave === "confirmar") {
+      box.hidden = true;
+      if (state.segundos === 0) return this.waEnd(`${tr("WhatsApp no terminó de vincular.")} ${tr(WA_AGAIN)}`);
+      this.waSigned = false;
+      this.waFinish = Date.now() + 60_000;
+      if (this.waConfirming || this.waConfirmedAt >= began) return;
+      said.textContent = tr("Verificado. Ya casi.");
+      if (state.llave === "terminando") return this.waStep(tr("Verificado. Terminando de vincular…"));
+      return this.waStep(tr("¿En tu celular sale este código? {}").replace("{}", state.codigo), "coincide");
+    }
+    if (this.waSigning || Date.now() < this.waFinish) return;
+    if (this.waSigned && state.segundos > 0) return this.waSignedStep(state.segundos);
+    if (this.waTried) return this.waEnd(`${tr("WhatsApp no terminó de vincular.")} ${tr(WA_AGAIN)}`);
+    if (state.segundos === 0 || Date.now() - this.waSince > 180_000) return this.waEnd(`${tr("Se acabó el tiempo para escanear.")} ${tr(WA_AGAIN)}`);
+    if (this.section === "whatsapp" && Date.now() - this.waQrAt > 50_000) {
+      this.waQrAt = Date.now();
+      try {
+        const fresh = await call<string>("whatsapp_qr");
+        if (watching === this.waLinking && fresh) box.querySelector("img")!.src = fresh;
+      } catch (error) {
+        if (watching === this.waLinking) this.waEnd(tr(String(error)));
       }
-    }, 2000);
+    }
+  }
+
+  private async signKey(seconds = 0) {
+    if (this.waSigning) return;
+    const run = this.waRun;
+    this.waSigning = true;
+    this.waHelp(seconds);
+    try {
+      await call("whatsapp_llave_firmar");
+      if (run === this.waRun) {
+        this.waSigned = true;
+        this.el.querySelector("#s-wa-state")!.textContent = tr("Firmado. Falta confirmar en tu celular.");
+        this.waSignedStep((await this.waState()).segundos);
+      }
+    } catch (error) {
+      if (run === this.waRun) {
+        const state = await this.waState();
+        const again = state.llave === "firmar" && state.segundos >= WA_LEAST && !state.fallo;
+        if (!again) {
+          this.waStop();
+          this.waEnded = true;
+          this.el.querySelector("#s-wa-state")!.textContent = tr("Todavía no está vinculado.");
+          if (this.section === "whatsapp" && this.onScreen) this.watchLink(true);
+        }
+        this.waStep(`${tr(String(error))} ${tr(again ? "Toca Reintentar para abrirlo otra vez." : WA_AGAIN)}`, again ? "firmar" : "codigo");
+      }
+    }
+    this.waSigning = false;
+    if (run === this.waRun) this.waBringBack();
+  }
+
+  private async keyButton() {
+    const go = this.el.querySelector<HTMLButtonElement>("#s-wa-key-go")!;
+    const action = go.dataset.do;
+    go.disabled = true;
+    if (action === "firmar") return void this.signKey();
+    if (action === "codigo") return void this.newCode();
+    if (action !== "coincide" || this.waConfirming) return;
+    this.waConfirming = true;
+    try {
+      await call("whatsapp_llave_confirmar");
+      this.waConfirmedAt = Date.now();
+      this.waFinish = Date.now() + 40_000;
+      this.waStep(tr("Verificado. Terminando de vincular…"));
+    } catch (error) {
+      this.waEnd(`${tr(String(error))} ${tr(WA_AGAIN)}`);
+    }
+    this.waConfirming = false;
   }
 
   private async paintHeard() {

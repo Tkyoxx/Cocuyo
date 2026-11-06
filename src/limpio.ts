@@ -5,6 +5,7 @@ import { locale, tr } from "./i18n";
 import { esc } from "./paginas/comun";
 
 type Save = (change: Partial<Settings>) => Promise<unknown>;
+type Focus = (input: HTMLInputElement) => void;
 
 interface Estado {
   prendido: boolean;
@@ -12,6 +13,8 @@ interface Estado {
   cable: string;
   elige: string;
   entrada: string;
+  origen: string;
+  aparatos: number;
   escuchan: string[];
   limpiando: boolean;
   cpu: number;
@@ -145,7 +148,7 @@ export const limpioHtml = () => `<div class="scol">
     ])}</div>
   </div>
   <div class="card">
-    <div class="srow stack"><div><b>Tu micrófono</b><small>El de verdad: el que Cocuyo limpia.</small></div><div class="srow chips flat" id="s-lm-ins"></div></div>
+    <div class="srow stack"><div><b>Tu micrófono</b><small id="s-lm-in-help">El de verdad: el que Cocuyo limpia.</small></div><div class="srow chips flat" id="s-lm-ins"></div></div>
     <div class="srow stack"><div><b>Sale por</b><small id="s-lm-out-help"></small></div><div class="srow chips flat" id="s-lm-outs"></div></div>
   </div>
 </div>`;
@@ -173,31 +176,60 @@ export class Limpio {
   private games: Juego[] = [];
   private filter = "";
   private loadAgain = 0;
-  private myGames: string[] | null = null;
-  private savingGames = 0;
+  private saved: Settings | null = null;
+  private pending: Partial<Settings> = {};
+  private saves = 0;
+  private polling = false;
+  private devices: { entradas: Aparato[]; salidas: Aparato[] } | null = null;
+  private devicesAsked = 0;
+  private devicesShown = "";
+  private pressing = false;
+  private dragging: HTMLInputElement | null = null;
+  private redoAfter = false;
+  private recordAfter = false;
+  private redoQueued = false;
+  private devicesAt = -1;
+  private loading = false;
+  private inHelp = "";
 
-  mount(el: HTMLElement, save: Save) {
+  mount(el: HTMLElement, save: Save, focus: Focus) {
     this.el = el;
     this.save = save;
     const q = <T extends HTMLElement>(sel: string) => el.querySelector<T>(sel)!;
-    q<HTMLInputElement>("#s-lm-on").addEventListener("change", (e) => void this.save({ cleanMic: (e.target as HTMLInputElement).checked }));
+    q<HTMLInputElement>("#s-lm-on").addEventListener("change", (e) => void this.change({ cleanMic: (e.target as HTMLInputElement).checked }));
     q<HTMLInputElement>("#s-lm-between").addEventListener("change", (e) => void this.fine({ cleanMicBetween: (e.target as HTMLInputElement).checked }));
-    q<HTMLInputElement>("#s-lm-level").addEventListener("change", (e) => void this.save({ cleanMicLevel: (e.target as HTMLInputElement).checked }));
+    q<HTMLInputElement>("#s-lm-level").addEventListener("change", (e) => void this.change({ cleanMicLevel: (e.target as HTMLInputElement).checked }));
     const amount = q<HTMLInputElement>("#s-lm-amount");
     amount.addEventListener("input", () => this.paintAmount(Number(amount.value)));
     amount.addEventListener("change", () => void this.fine({ cleanMicAmount: Number(amount.value) }));
     const gain = q<HTMLInputElement>("#s-lm-gain");
     gain.addEventListener("input", () => this.paintGain(Number(gain.value)));
-    gain.addEventListener("change", () => void this.save({ cleanMicGain: Number(gain.value) }));
+    gain.addEventListener("change", () => void this.change({ cleanMicGain: Number(gain.value) }));
+    for (const range of [amount, gain]) {
+      range.addEventListener("pointerdown", () => (this.dragging = range));
+      range.addEventListener("pointerup", () => (this.dragging = null));
+      range.addEventListener("pointercancel", () => (this.dragging = null));
+    }
     const section = el.closest<HTMLElement>(".ssec") ?? el;
+    section.addEventListener("pointerdown", () => (this.pressing = true));
+    const release = () => {
+      if (!this.pressing) return;
+      this.pressing = false;
+      window.setTimeout(() => {
+        this.renderDevices();
+        this.renderGames();
+      });
+    };
+    window.addEventListener("pointerup", release);
+    window.addEventListener("pointercancel", release);
     section.addEventListener("click", (e) => {
       const target = e.target as HTMLElement;
       const button = target.closest<HTMLElement>("button");
       if (!button || !this.s) return;
       const box = button.parentElement!;
       const value = button.dataset.value ?? "";
-      if (button.dataset.lmIn !== undefined) void this.save({ cleanMicIn: button.dataset.lmIn });
-      else if (button.dataset.lmOut !== undefined) void this.save({ cleanMicOut: button.dataset.lmOut });
+      if (button.dataset.lmIn !== undefined) void this.change({ cleanMicIn: button.dataset.lmIn });
+      else if (button.dataset.lmOut !== undefined) void this.change({ cleanMicOut: button.dataset.lmOut });
       else if (button.dataset.lmFind !== undefined) void this.findProgram();
       else if (button.dataset.lmGame !== undefined) {
         const exe = button.dataset.lmGame;
@@ -205,19 +237,23 @@ export class Limpio {
         const on = !games.has(exe);
         if (on) games.add(exe);
         else games.delete(exe);
-        button.classList.toggle("on", on);
-        this.setGames([...games]);
+        void this.change({ cleanMicGames: [...games] });
       } else if (button.dataset.lmInstall !== undefined) void this.installCable();
       else if (button.dataset.lmGet !== undefined) void call("script_action", { action: { abrir: "https://vb-audio.com/Cable/" } }).catch(() => {});
-      else if (button.dataset.lmRetry !== undefined) void this.save({});
-      else if (box.id === "s-lm-mode") void this.save({ cleanMicMode: value });
+      else if (button.dataset.lmRetry !== undefined) void this.change({});
+      else if (box.id === "s-lm-mode") void this.change({ cleanMicMode: value });
       else if (box.id === "s-lm-gate") void this.fine({ cleanMicGate: Number(value) });
-      else if (box.id === "s-lm-light") void this.save({ cleanMicLight: value === "ligera" });
-      else if (box.id === "s-lm-when") void this.save({ cleanMicWhen: value }).then(() => this.el.querySelector("#s-lm-games")?.scrollIntoView({ block: "nearest" }));
+      else if (box.id === "s-lm-light") void this.change({ cleanMicLight: value === "ligera" });
+      else if (box.id === "s-lm-when") {
+        void this.change({ cleanMicWhen: value });
+        this.el.querySelector("#s-lm-games")?.scrollIntoView({ block: "nearest" });
+      }
       else if (box.id === "s-lm-ab") this.choose(value === "crudo" ? "crudo" : "limpio");
     });
-    q<HTMLInputElement>("#s-lm-filter").addEventListener("input", (e) => {
-      this.filter = (e.target as HTMLInputElement).value;
+    const filter = q<HTMLInputElement>("#s-lm-filter");
+    filter.addEventListener("pointerdown", () => focus(filter));
+    filter.addEventListener("input", () => {
+      this.filter = filter.value;
       this.renderGames();
     });
     q("#s-lm-rec").addEventListener("click", () => void this.record());
@@ -236,35 +272,86 @@ export class Limpio {
   private fine(change: Partial<Settings>) {
     if (!this.s) return;
     const now = this.effective(this.s);
-    return this.save({ cleanMicMode: "propio", cleanMicAmount: now.amount, cleanMicBetween: now.between, cleanMicGate: now.gate, ...change });
+    return this.change({ cleanMicMode: "propio", cleanMicAmount: now.amount, cleanMicBetween: now.between, cleanMicGate: now.gate, ...change });
   }
 
-  private setGames(games: string[]) {
-    this.myGames = games;
-    this.s = { ...this.s!, cleanMicGames: games };
-    this.savingGames += 1;
-    void Promise.resolve(this.save({ cleanMicGames: games })).finally(() => {
-      this.savingGames -= 1;
-      if (!this.savingGames) this.myGames = null;
+  private tunedOf(s: Settings) {
+    return JSON.stringify([this.effective(s), s.cleanMicGain, s.cleanMicLevel, s.cleanMicLight]);
+  }
+
+  private settle() {
+    if (this.resumen && this.s && !this.busy && !this.redoQueued && this.tunedOf(this.s) === this.tuned) this.redoing(false);
+  }
+
+  private redoing(on: boolean) {
+    this.el.querySelector<HTMLElement>(".lm-wave")!.style.opacity = on ? "0.45" : "";
+    if (on) {
+      const facts = this.el.querySelector<HTMLElement>("#s-lm-facts")!;
+      facts.textContent = tr("Limpiando tu grabación con los ajustes nuevos…");
+      facts.hidden = false;
+    }
+  }
+
+  private change(change: Partial<Settings>) {
+    if (!this.s) return;
+    this.pending = { ...this.pending, ...change };
+    this.saves += 1;
+    this.s = { ...this.s, ...this.pending };
+    this.paintFields();
+    if (this.resumen && this.tunedOf(this.s) !== this.tuned) this.redoing(true);
+    if (this.s.cleanMicWhen === "elegidos" && !this.games.length && this.visible) void this.fetchGames();
+    void this.poll();
+    return Promise.resolve(this.save(change)).finally(() => {
+      this.saves -= 1;
+      if (this.saves || !this.saved) return;
+      this.pending = {};
+      this.s = this.saved;
+      this.paintFields();
+      this.settle();
+      void this.poll();
     });
   }
 
   paint(s: Settings) {
-    this.s = this.myGames ? { ...s, cleanMicGames: this.myGames } : s;
-    s = this.s;
+    this.saved = s;
+    this.s = { ...s, ...this.pending };
+    this.paintFields();
+    const tuned = this.tunedOf(s);
+    if (this.tuned && tuned !== this.tuned && this.resumen) {
+      this.redoing(true);
+      window.clearTimeout(this.redo);
+      this.redoQueued = true;
+      this.redo = window.setTimeout(() => void this.reprocess(), 350);
+    }
+    this.tuned = tuned;
+    this.settle();
+    if (this.visible) {
+      void this.fetchDevices();
+      if (s.cleanMicWhen === "elegidos" && !this.games.length) void this.fetchGames();
+      void this.poll();
+    }
+  }
+
+  private paintFields() {
+    const s = this.s;
+    if (!s) return;
     const q = <T extends HTMLElement>(sel: string) => this.el.querySelector<T>(sel)!;
     q<HTMLInputElement>("#s-lm-on").checked = s.cleanMic;
     mark(q("#s-lm-mode"), s.cleanMicMode);
     q("#s-lm-mode-help").textContent = tr(MODE_HELP[s.cleanMicMode] ?? MODE_HELP.llamada);
     const now = this.effective(s);
     const amount = q<HTMLInputElement>("#s-lm-amount");
-    amount.value = String(now.amount);
-    this.paintAmount(now.amount);
+    if (this.dragging !== amount) {
+      amount.value = String(now.amount);
+      this.paintAmount(now.amount);
+    }
     q<HTMLInputElement>("#s-lm-between").checked = now.between;
     mark(q("#s-lm-gate"), String(now.gate));
     const gain = q<HTMLInputElement>("#s-lm-gain");
-    gain.value = String(s.cleanMicGain);
-    this.paintGain(s.cleanMicGain);
+    if (this.dragging !== gain) {
+      gain.value = String(s.cleanMicGain);
+      this.paintGain(s.cleanMicGain);
+    }
     q<HTMLInputElement>("#s-lm-level").checked = s.cleanMicLevel;
     mark(q("#s-lm-light"), s.cleanMicLight ? "ligera" : "exacta");
     q("#s-lm-light-help").textContent = tr(s.cleanMicLight ? "Gasta menos procesador, para PC justos. Casi igual de limpio." : "Suena igual al modelo original. Usa un poco más de procesador.");
@@ -273,21 +360,12 @@ export class Limpio {
     q("#s-lm-games").hidden = s.cleanMicWhen !== "elegidos";
     if (s.cleanMicWhen !== "elegidos") this.gamesShown = "";
     else this.renderGames();
-    const tuned = JSON.stringify([now, s.cleanMicGain, s.cleanMicLevel, s.cleanMicLight]);
-    if (this.tuned && tuned !== this.tuned && this.resumen) {
-      window.clearTimeout(this.redo);
-      this.redo = window.setTimeout(() => void this.reprocess(), 350);
-    }
-    this.tuned = tuned;
-    if (this.visible) {
-      void this.paintDevices();
-      if (s.cleanMicWhen === "elegidos" && !this.games.length) void this.fetchGames();
-      void this.poll();
-    }
+    this.renderDevices();
   }
 
   show() {
     this.visible = true;
+    this.devicesAt = -1;
     window.clearInterval(this.tick);
     this.tick = window.setInterval(() => void this.poll(), 250);
     window.clearInterval(this.gamesTick);
@@ -295,7 +373,7 @@ export class Limpio {
       if (this.s?.cleanMicWhen === "elegidos") void this.fetchGames();
     }, 3000);
     void this.poll();
-    void this.paintDevices();
+    void this.fetchDevices();
     if (this.s?.cleanMicWhen === "elegidos") void this.fetchGames();
   }
 
@@ -329,17 +407,27 @@ export class Limpio {
     this.el.querySelector<HTMLElement>("#s-lm-gain")!.style.setProperty("--p", `${((value + 12) / 30) * 100}%`);
   }
 
-  private async paintDevices() {
+  private async fetchDevices() {
+    const asked = ++this.devicesAsked;
     const found = await call<{ entradas: Aparato[]; salidas: Aparato[] }>("limpio_aparatos", undefined, { entradas: [], salidas: [] });
-    if (!this.s) return;
+    if (asked !== this.devicesAsked) return;
+    this.devices = found;
+    this.renderDevices();
+  }
+
+  private renderDevices() {
+    const found = this.devices;
+    if (!found || !this.s || this.pressing) return;
     const chip = (kind: "lmIn" | "lmOut", id: string, label: string, on: boolean) => `<button class="chip${on ? " on" : ""}" data-${kind === "lmIn" ? "lm-in" : "lm-out"}="${esc(id)}">${esc(label)}</button>`;
     const inChosen = found.entradas.some((a) => a.id === this.s!.cleanMicIn) ? this.s.cleanMicIn : "";
-    this.el.querySelector("#s-lm-ins")!.innerHTML =
-      chip("lmIn", "", tr("El mismo que oye Cocuyo"), !inChosen) + found.entradas.map((a) => chip("lmIn", a.id, a.nombre, a.id === inChosen)).join("");
+    const ins = chip("lmIn", "", tr("El mismo que oye Cocuyo"), !inChosen) + found.entradas.map((a) => chip("lmIn", a.id, a.nombre, a.id === inChosen)).join("");
     const outChosen = found.salidas.some((a) => a.id === this.s!.cleanMicOut) ? this.s.cleanMicOut : "";
-    this.el.querySelector("#s-lm-outs")!.innerHTML = found.salidas.length
-      ? chip("lmOut", "", tr("Automático"), !outChosen) + found.salidas.map((a) => chip("lmOut", a.id, a.nombre, a.id === outChosen)).join("")
-      : "";
+    const outs = found.salidas.length ? chip("lmOut", "", tr("Automático"), !outChosen) + found.salidas.map((a) => chip("lmOut", a.id, a.nombre, a.id === outChosen)).join("") : "";
+    if (ins + outs !== this.devicesShown) {
+      this.devicesShown = ins + outs;
+      this.el.querySelector("#s-lm-ins")!.innerHTML = ins;
+      this.el.querySelector("#s-lm-outs")!.innerHTML = outs;
+    }
     this.el.querySelector("#s-lm-out-help")!.textContent = found.salidas.length
       ? tr("El cable virtual. En las otras apps eliges su otra punta, «CABLE Output», como micrófono.")
       : tr("No encuentro un cable virtual. Instala VB-Cable, es gratis.");
@@ -348,13 +436,14 @@ export class Limpio {
   private async fetchGames() {
     const found = await call<{ lista: Juego[]; cargando: boolean }>("limpio_juegos", undefined, { lista: [], cargando: false });
     this.games = found.lista;
+    this.loading = found.cargando;
     this.renderGames();
     window.clearTimeout(this.loadAgain);
     if (found.cargando && this.visible) this.loadAgain = window.setTimeout(() => void this.fetchGames(), 800);
   }
 
   private renderGames() {
-    if (!this.s) return;
+    if (!this.s || this.pressing) return;
     const chosen = new Set(this.s.cleanMicGames.map((g) => g.toLowerCase()));
     const fold = (text: string) => text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     const wanted = fold(this.filter.trim());
@@ -364,7 +453,7 @@ export class Limpio {
       const inside = shown.filter((g) => g.grupo === id);
       return inside.length ? `<small class="lm-group">${esc(tr(title))}</small>${inside.map(chip).join("")}` : "";
     };
-    const empty = wanted && !shown.length ? `<small class="lm-group">${esc(tr("Nada con ese nombre."))}</small>` : "";
+    const empty = this.loading ? `<small class="lm-group">${esc(tr("Buscando tus programas…"))}</small>` : wanted && !shown.length ? `<small class="lm-group">${esc(tr("Nada con ese nombre."))}</small>` : "";
     const html = group("abierta", "Abiertas ahora") + group("voz", "Llamadas y micrófono") + group("juego", "Tus juegos") + group("programa", "Más programas") + group("otra", "Otras") + empty + `<small class="lm-group"></small><button class="chip" data-lm-find>${esc(tr("Buscar un programa…"))}</button>`;
     if (html === this.gamesShown) return;
     this.gamesShown = html;
@@ -374,30 +463,44 @@ export class Limpio {
   private async findProgram() {
     const exe = await call<string | null>("limpio_buscar_programa", undefined, null);
     if (!exe || !this.s) return;
-    this.setGames([...new Set([...this.s.cleanMicGames, exe])]);
+    await this.change({ cleanMicGames: [...new Set([...this.s.cleanMicGames, exe])] });
     void this.fetchGames();
   }
 
   private async poll() {
+    if (!this.visible || !this.s || this.polling) return;
+    this.polling = true;
+    let st: Estado;
+    try {
+      st = await call<Estado>("limpio_estado", undefined, { prendido: false, estado: "apagado", cable: "", elige: "", entrada: "", origen: "", aparatos: 0, escuchan: [], limpiando: false, cpu: 0, voz: false, entra: -120, sale: -120, latencia: 0, error: "", bajo: false, ahora: [] });
+    } finally {
+      this.polling = false;
+    }
     if (!this.visible || !this.s) return;
-    const st = await call<Estado>("limpio_estado", undefined, { prendido: false, estado: "apagado", cable: "", elige: "", entrada: "", escuchan: [], limpiando: false, cpu: 0, voz: false, entra: -120, sale: -120, latencia: 0, error: "", bajo: false, ahora: [] });
+    if (st.aparatos !== this.devicesAt) {
+      if (this.devicesAt >= 0) void this.fetchDevices();
+      this.devicesAt = st.aparatos;
+    }
+    this.paintInUse(st);
     const status = this.el.querySelector<HTMLElement>("#s-lm-status")!;
     const meters = this.el.querySelector<HTMLElement>("#s-lm-meters")!;
-    const running = st.estado === "limpiando" || st.estado === "pasando" || st.estado === "no_da";
+    const running = this.s.cleanMic && (st.estado === "limpiando" || st.estado === "pasando" || st.estado === "no_da");
     meters.hidden = !running;
     if (running) {
       const fill = (db: number) => Math.max(0, Math.min(1, (db + 60) / 60)).toFixed(3);
       this.el.querySelector<HTMLElement>("#s-lm-in")!.style.transform = `scaleX(${fill(st.entra)})`;
       this.el.querySelector<HTMLElement>("#s-lm-out")!.style.transform = `scaleX(${fill(st.sale)})`;
     }
+    const now = this.el.querySelector<HTMLElement>("#s-lm-now")!;
     if (!this.s.cleanMic) {
       status.hidden = true;
+      now.hidden = true;
       return;
     }
-    const now = this.el.querySelector<HTMLElement>("#s-lm-now")!;
     const watching = this.s.cleanMicWhen !== "siempre";
     now.hidden = !watching;
-    if (watching) now.textContent = st.ahora.length ? tr("Ahora: {}. Limpia.").replace("{}", st.ahora.join(tr(" y "))) : tr(this.s.cleanMicWhen === "jugando" ? "Ahora no veo ningún juego abierto." : "Ahora no está abierto nada de lo que marcaste.");
+    const open = st.ahora.join(tr(" y "));
+    if (watching) now.textContent = !st.ahora.length ? tr(this.s.cleanMicWhen === "jugando" ? "Ahora no veo ningún juego abierto." : "Ahora no está abierto nada de lo que marcaste.") : tr(st.estado === "limpiando" ? "Ahora: {}. Limpia." : st.estado === "esperando" ? "Ahora: {}. Limpiará cuando una app te escuche." : "Ahora: {}.").replace("{}", open);
     const who = st.escuchan.length ? st.escuchan.join(tr(" y ")) : tr("Una app");
     let html = "";
     let tone = "";
@@ -408,6 +511,9 @@ export class Limpio {
     } else if (st.estado === "sin_micro") {
       tone = "warn";
       html = `<span>${esc(tr("No encuentro tu micrófono."))}</span>`;
+    } else if (st.estado === "sin_senal") {
+      tone = "warn";
+      html = `<span>${esc(tr("{} te escucha, pero tu micrófono no está mandando sonido. Revisa que esté conectado y sin silenciar.").replace("{}", who))}</span>`;
     } else if (st.estado === "esperando") {
       html = `<span>${esc(tr("Listo. En Discord, Zoom o WhatsApp elige «{}» como micrófono. Mientras nadie lo use, no gasta nada.").replace("{}", st.elige || "CABLE Output"))}</span>`;
     } else if (st.estado === "limpiando") {
@@ -428,10 +534,28 @@ export class Limpio {
     }
     status.hidden = false;
     status.className = `lm-status ${tone}`;
-    if (status.dataset.html !== html) {
-      status.innerHTML = `<i></i>${html}`;
+    if (status.dataset.html !== html && !this.pressing) {
+      const dot = status.querySelector(":scope > i") ?? document.createElement("i");
+      status.innerHTML = html;
+      status.prepend(dot);
       status.dataset.html = html;
     }
+  }
+
+  private paintInUse(st: Estado) {
+    const s = this.s!;
+    const using = s.cleanMic && st.entrada && st.estado !== "apagado" && st.estado !== "sin_micro";
+    const name = `«${st.entrada}»`;
+    const text = !using
+      ? tr("El de verdad: el que Cocuyo limpia.")
+      : st.origen === "otro"
+        ? tr("No veo tu micrófono de Windows o es un cable, así que uso {}. Elige aquí el tuyo.").replace("{}", name)
+        : s.cleanMicIn && st.origen !== "elegido" && !this.devices?.entradas.some((a) => a.id === s.cleanMicIn)
+          ? tr("El que elegiste no está conectado: uso {}.").replace("{}", name)
+          : `${tr("El de verdad: el que Cocuyo limpia.")} ${tr("Ahora uso {}.").replace("{}", name)}`;
+    if (text === this.inHelp) return;
+    this.inHelp = text;
+    this.el.querySelector("#s-lm-in-help")!.textContent = text;
   }
 
   private async installCable() {
@@ -451,7 +575,11 @@ export class Limpio {
   }
 
   private async record() {
-    if (this.busy) return;
+    if (this.busy) {
+      this.recordAfter = true;
+      return;
+    }
+    this.recordAfter = false;
     this.busy = true;
     this.stop();
     const button = this.el.querySelector<HTMLButtonElement>("#s-lm-rec")!;
@@ -474,20 +602,40 @@ export class Limpio {
       button.disabled = false;
       button.textContent = tr("Grabarme otra vez");
       this.busy = false;
+      this.reprocessIfAsked();
     }
   }
 
+  private reprocessIfAsked() {
+    if (this.recordAfter) {
+      void this.record();
+      return;
+    }
+    if (!this.redoAfter) return;
+    this.redoAfter = false;
+    window.clearTimeout(this.redo);
+    this.redo = window.setTimeout(() => void this.reprocess(), 50);
+  }
+
   private async reprocess() {
-    if (this.busy || !this.resumen) return;
+    this.redoQueued = false;
+    if (!this.resumen) return;
+    if (this.busy) {
+      this.redoAfter = true;
+      return;
+    }
     this.busy = true;
     try {
-      const at = this.play ? this.position() : null;
       this.resumen = await call<Resumen>("limpio_reprocesar");
+      const at = this.play ? this.position() : null;
       await this.load();
-      if (at !== null) this.start(at);
+      if (at !== null && this.play && this.visible) this.start(at);
     } catch {
+      this.redoing(false);
+      this.paintFacts();
     } finally {
       this.busy = false;
+      this.reprocessIfAsked();
     }
   }
 
@@ -503,6 +651,7 @@ export class Limpio {
     [this.crudo, this.limpio] = await Promise.all([fetch("crudo"), fetch("limpio")]);
     this.el.querySelector<HTMLElement>("#s-lm-player")!.hidden = false;
     mark(this.el.querySelector("#s-lm-ab")!, this.side);
+    this.redoing(false);
     this.draw();
     this.paintFacts();
   }
