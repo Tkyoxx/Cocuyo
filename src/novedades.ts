@@ -1,6 +1,12 @@
 // lo que trae cada version, para contarlo una vez despues de actualizar. la compilacion falla si falta la de la version
 
 export const NOVEDADES: Record<string, [string, string][]> = {
+  "0.4.8": [
+    ["WhatsApp con llave de acceso", "Si tu cuenta la pide para vincular, Cocuyo abre Chrome aparte, firmas con el celular y listo. La firma no se guarda en ninguna parte."],
+    ["Te dice qué pasó y qué sigue", "Sin internet, tiempo vencido, firma rechazada o bloqueo temporal: en Ajustes → WhatsApp sale clarito, con cuánto tiempo te queda."],
+    ["El micrófono responde al instante", "Lo que tocas se ve de una, lo que cambias por voz también, y si conectas otro micrófono aparece solo."],
+    ["No te corta la llamada", "Cocuyo ya no se actualiza solo mientras alguien te escucha por el micrófono limpio."],
+  ],
   "0.4.6": [
     ["Tu micrófono sin ruido", "Para Discord, Zoom, WhatsApp y tus juegos: el teclado, el ventilador, el perro y la calle se quedan afuera. Todo dentro de tu PC, en Ajustes → Micrófono."],
     ["Grábate y compara", "Te grabas 5 segundos y cambias entre «Sin limpiar» y «Limpio» mientras suena. Si mueves un ajuste, se vuelve a limpiar solo."],

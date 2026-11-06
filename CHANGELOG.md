@@ -2,7 +2,9 @@
 
 Cada versión con lo que trae. La más nueva arriba.
 
-## 0.4.7
+## 0.4.8
+
+La 0.4.7 no llegó a salir: esto es lo que traía.
 
 **WhatsApp con llave de acceso** (Ajustes → WhatsApp)
 - A algunas cuentas WhatsApp ya les pide llave de acceso para vincular, y con el QR solo no alcanzaba. Ahora, si la pide, Cocuyo abre Chrome o Edge aparte, con un perfil de usar y botar, en la página real de WhatsApp Web: eliges «Usar un teléfono o una tablet», escaneas con el celular, confirmas con tu huella y tocas la notificación de WhatsApp que te llega. La firma va directo a la pasarela y no se guarda en ninguna parte; al terminar se cierra la ventana y se borra el perfil.
