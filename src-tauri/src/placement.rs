@@ -12,7 +12,7 @@ use windows::Win32::UI::Accessibility::{SetWinEventHook, UnhookWinEvent, HWINEVE
 use windows::Win32::UI::Shell::{SHQueryUserNotificationState, QUNS_RUNNING_D3D_FULL_SCREEN};
 use windows::Win32::UI::WindowsAndMessaging::{
     GetClassNameW, GetForegroundWindow, GetSystemMetrics, GetTopWindow, GetWindow,
-    GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, IsIconic, IsWindowVisible, IsZoomed,
+    GetWindowLongPtrW, GetWindowRect, GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible, IsZoomed,
     KillTimer, SetTimer, EVENT_OBJECT_FOCUS, EVENT_OBJECT_LOCATIONCHANGE,
     EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_MINIMIZEEND, GWL_EXSTYLE, GW_HWNDNEXT, SM_CXSCREEN,
     SM_CYSCREEN, WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS, WS_EX_NOACTIVATE,
@@ -110,10 +110,25 @@ unsafe extern "system" fn on_event(
     TIMER.store(id, Ordering::Relaxed);
 }
 
+// mientras escribo en la isla la del frente es ella misma, y con la barra escondida mide toda la pantalla: parecia un juego y se escondia
+unsafe fn outside(foreground: HWND, before: isize) -> HWND {
+    let mut process = 0;
+    GetWindowThreadProcessId(foreground, Some(&mut process));
+    if process == 0 || process != GetCurrentProcessId() {
+        return foreground;
+    }
+    let before = HWND(before as _);
+    if before.0 as isize != 0 && IsWindow(Some(before)).as_bool() {
+        before
+    } else {
+        HWND::default()
+    }
+}
+
 fn decide_now() {
     let Some(app) = APP.get() else { return };
-    let foreground = unsafe { GetForegroundWindow() };
     let mut state = STATE.lock().unwrap();
+    let foreground = unsafe { outside(GetForegroundWindow(), state.followed) };
 
     if state.followed != foreground.0 as isize {
         unsafe {
@@ -276,5 +291,23 @@ mod tests {
         assert!(covers_screen(&game, 1920, 1080, false));
         let window = RECT { left: 100, top: 100, right: 900, bottom: 700 };
         assert!(!covers_screen(&window, 1920, 1080, false));
+    }
+
+    #[test]
+    fn writing_in_the_island_does_not_make_it_a_game() {
+        use windows::core::w;
+        use windows::Win32::UI::WindowsAndMessaging::{CreateWindowExW, DestroyWindow, GetDesktopWindow, WINDOW_EX_STYLE, WS_POPUP};
+        unsafe {
+            let (width, height) = (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
+            let island = CreateWindowExW(WINDOW_EX_STYLE(0), w!("STATIC"), w!("isla"), WS_POPUP, 0, 0, width, height, None, None, None, None).unwrap();
+            assert_eq!(decide(island, Dock::Top, true), Place::Hidden);
+            let other = GetDesktopWindow();
+            assert_eq!(outside(island, other.0 as isize), other);
+            assert_eq!(outside(other, island.0 as isize), other);
+            let alone = outside(island, 0);
+            assert!(alone.is_invalid());
+            assert_eq!(decide(alone, Dock::Top, true), Place::Top);
+            let _ = DestroyWindow(island);
+        }
     }
 }

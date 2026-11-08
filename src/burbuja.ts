@@ -227,6 +227,7 @@ export class Burbuja {
   private blurCheck = 0;
   private openedAt = 0;
   private reclaimed = false;
+  private kept = 0;
   private tabs!: HTMLElement;
   private more!: HTMLElement;
   private moreOpen = false;
@@ -576,7 +577,15 @@ export class Burbuja {
         this.input.focus({ preventScroll: true });
         return;
       }
-      this.blurCheck = window.setTimeout(() => {
+      this.blurCheck = window.setTimeout(async () => {
+        if (this.state !== "abierta" || document.hasFocus()) return;
+        if (this.kept < 3 && (await call<boolean>("foco_en_la_isla", undefined, false))) {
+          if (this.state !== "abierta") return;
+          this.kept++;
+          this.onFocus(true);
+          this.input.focus({ preventScroll: true });
+          return;
+        }
         if (this.state === "abierta" && !document.hasFocus()) void this.close();
       }, 150);
     });
@@ -1097,6 +1106,7 @@ export class Burbuja {
         ]);
     this.openedAt = performance.now();
     this.reclaimed = false;
+    this.kept = 0;
     this.input.value = chat.borrador;
     this.fit();
     this.onFocus(true);

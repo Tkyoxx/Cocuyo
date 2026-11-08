@@ -321,6 +321,7 @@ pub fn run() {
             errores::diagnostico,
             overlay::set_region,
             overlay::set_focusable,
+            overlay::foco_en_la_isla,
             hotkeys::set_key_echo,
             hotkeys::set_chords_paused,
             hotkeys::capture_keys_available,

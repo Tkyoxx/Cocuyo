@@ -108,6 +108,7 @@ function publishNow() {
 }
 
 island.onShape = caption.onShape = pill.onShape = cards.onShape = burbuja.onShape = publish;
+window.addEventListener("resize", publish);
 
 const islandEl = document.getElementById("island")!;
 const recMini = document.getElementById("rec-mini")!;

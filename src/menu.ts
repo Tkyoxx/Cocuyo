@@ -28,6 +28,7 @@ export class Menu {
   private typingSince = 0;
   private typingIn: HTMLInputElement | null = null;
   private reclaimed = false;
+  private kept = 0;
   private blurCheck = 0;
   onSize: (size: Size) => void = () => {};
   onSettings: (settings: Settings) => void = () => {};
@@ -59,6 +60,7 @@ export class Menu {
       this.typing = true;
       this.typingSince = performance.now();
       this.reclaimed = false;
+      this.kept = 0;
       void call("set_focusable", { on: true }).then(() => input.focus({ preventScroll: true }));
     },
     settingsChanged: (settings) => this.onSettings(settings),
@@ -124,16 +126,30 @@ export class Menu {
       const fresh = performance.now() - this.typingSince < 800;
       if (fresh && !this.reclaimed) {
         this.reclaimed = true;
-        const input = this.typingIn;
-        void call("set_focusable", { on: true }).then(() => input?.focus({ preventScroll: true }));
+        this.refocus();
       }
-      this.blurCheck = window.setTimeout(() => {
-        if (this.typing && !document.hasFocus()) this.onClose();
-      }, fresh ? 700 : 150);
+      this.blurCheck = window.setTimeout(() => void this.checkFocus(), fresh ? 700 : 150);
     });
     window.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && this.open) this.onClose();
     });
+  }
+
+  private refocus() {
+    const input = this.typingIn;
+    void call("set_focusable", { on: true }).then(() => input?.focus({ preventScroll: true }));
+  }
+
+  // el blur solo cuenta si windows de verdad le dio el teclado a otra ventana
+  private async checkFocus() {
+    if (!this.typing || document.hasFocus()) return;
+    if (this.kept < 3 && (await call<boolean>("foco_en_la_isla", undefined, false))) {
+      if (!this.typing) return;
+      this.kept++;
+      this.refocus();
+      return;
+    }
+    if (this.typing && !document.hasFocus()) this.onClose();
   }
 
   addPage(page: Page) {

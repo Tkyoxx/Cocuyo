@@ -2,6 +2,18 @@
 
 Cada versión con lo que trae. La más nueva arriba.
 
+## 0.4.9
+
+**Escribir en la isla ya no la cierra**
+- En varios PC con Windows 11, tocar cualquier casilla para escribir dentro de la isla la cerraba como si hubieras hecho clic afuera. Era Cocuyo mirándose a sí mismo: al tomar el teclado para que escribas, la isla pasa al frente, y si la barra de tareas estaba escondida (o llegó tarde al prender el PC) la ventana de la isla medía toda la pantalla y Cocuyo creía que tenías un juego a pantalla completa. Se escondía sola. Ahora mientras escribes decide por la ventana que tenías antes, nunca por la isla.
+- La isla sigue el tamaño real del escritorio: si la barra aparece, se esconde, cambias la resolución o la escala, se acomoda sola sin reiniciar.
+- Antes de cerrarse porque «perdió el foco», le pregunta a Windows si de verdad pasaste a otra ventana. Si el teclado sigue en la isla, lo recupera y sigues escribiendo.
+- Si Windows no le quiere dar el teclado a la isla aunque el clic fue en ella, Cocuyo lo pide prestado a la ventana de delante un momento.
+- La burbuja de WhatsApp tiene el mismo arreglo.
+
+**Por dentro**
+- Mientras escribes en la isla, «Jugando» del micrófono limpio ya no confunde a Cocuyo con un juego.
+
 ## 0.4.8
 
 La 0.4.7 no llegó a salir: esto es lo que traía.
