@@ -1,6 +1,11 @@
 // lo que trae cada version, para contarlo una vez despues de actualizar. la compilacion falla si falta la de la version
 
 export const NOVEDADES: Record<string, [string, string][]> = {
+  "0.4.10": [
+    ["Escribir ya no cierra la isla", "En algunos Windows 11, tocar una casilla para escribir la cerraba como si hubieras hecho clic afuera. Ya no."],
+    ["La isla siempre vuelve", "Si se escondía un instante por un juego o un video a pantalla completa, a veces no volvía hasta reiniciar Cocuyo. Ahora vuelve sola."],
+    ["Se acomoda sola", "Si la barra de tareas aparece, se esconde o cambias la resolución, la isla se ajusta sin reiniciar."],
+  ],
   "0.4.9": [
     ["Escribir ya no cierra la isla", "En algunos Windows 11, tocar una casilla para escribir la cerraba como si hubieras hecho clic afuera. Ya no."],
     ["Se acomoda sola", "Si la barra de tareas aparece, se esconde o cambias la resolución, la isla se ajusta sin reiniciar."],

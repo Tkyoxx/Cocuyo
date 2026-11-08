@@ -2,6 +2,12 @@
 
 Cada versión con lo que trae. La más nueva arriba.
 
+## 0.4.10
+
+**La isla ya no se queda escondida**
+- Si Cocuyo le decía a la isla «escóndete» y enseguida «vuelve» (en menos de 200 ms), el «vuelve» se perdía y la isla quedaba escondida hasta reiniciar Cocuyo. Pasaba con lo de la 0.4.9 y también con un juego o un video que entra y sale rápido de pantalla completa. Ahora siempre vuelve.
+- Probado en la app real con un clic de verdad en una casilla, con la ventana de la isla del tamaño de toda la pantalla (lo que pasa con la barra escondida): antes se cerraba al instante y quedaba escondida; ahora se queda abierta y se puede escribir.
+
 ## 0.4.9
 
 **Escribir en la isla ya no la cierra**

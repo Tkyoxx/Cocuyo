@@ -10,6 +10,7 @@ export type State = "piensa" | "espera" | "mal" | "bien" | "nueva";
 export class Island {
   base: Base = "idle";
   place: Place = "top";
+  private going: Place = "top";
   onShape = () => {};
   onOpen = () => {};
   onLeave = () => {};
@@ -136,8 +137,10 @@ export class Island {
     this.apply();
   }
 
+  // se compara con a donde va, no con donde esta: si «escondete» y «vuelve» llegaban en menos de 200 ms se quedaba escondida para siempre
   setPlace(place: Place, instant = false) {
-    if (place === this.place) return;
+    if (place === this.going) return;
+    this.going = place;
     clearTimeout(this.moveTimer);
     this.el.classList.add("away");
     this.moveTimer = window.setTimeout(
