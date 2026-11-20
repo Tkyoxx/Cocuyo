@@ -878,7 +878,11 @@ fn chats(id: &str) -> bool {
 }
 
 pub fn live_models(app: &AppHandle) -> Result<Vec<String>, String> {
-    Ok(bidi_models(app)?.into_iter().filter(|name| !["tts", "transcribe", "translate", "robotics"].iter().any(|job| name.contains(job))).collect())
+    Ok(bidi_models(app)?.into_iter().filter(|name| talks(name)).collect())
+}
+
+pub(crate) fn talks(name: &str) -> bool {
+    name.starts_with("gemini-") && (name.contains("live") || name.contains("audio")) && !["tts", "transcribe", "translate", "robotics"].iter().any(|job| name.contains(job))
 }
 
 pub fn bidi_models(app: &AppHandle) -> Result<Vec<String>, String> {

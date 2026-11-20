@@ -2,6 +2,13 @@
 
 Cada versión con lo que trae. La más nueva arriba.
 
+## 0.4.11
+
+**La voz de Gemini vuelve a hablar**
+- Google metió hoy en la lista de modelos en vivo uno que se llama `genie-4`, que genera video en tiempo real y no sirve para conversar. Cocuyo escogía solo el de número más alto, así que se iba para ese, y como el plan gratis no tiene cupo para él, Google cortaba de una con «exceeded your current quota» y la voz no salía.
+- Ahora Cocuyo solo usa para hablar modelos de Gemini que sean de voz en vivo. Lo que Google saque raro después queda fuera.
+- Si Google no deja entrar a un modelo, Cocuyo ya no se queda pegado: lo deja quieto media hora y sigue con el próximo de la lista (3.8 Live, 3.1 Flash Live, 2.5 Native Audio…). Vale para la conversación y para la voz que lee las respuestas.
+
 ## 0.4.10
 
 **La isla ya no se queda escondida**

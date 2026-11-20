@@ -325,6 +325,19 @@ pub fn wanted(app: &AppHandle) -> bool {
     !resting && config.ai_live && crate::ai::mode(app).is_some() && config.ai_url.contains("googleapis.com") && config.ai_format != "anthropic"
 }
 
+static TURNED_AWAY: Mutex<Vec<(String, Instant)>> = Mutex::new(Vec::new());
+const TURNED_AWAY_FOR: Duration = Duration::from_secs(30 * 60);
+
+fn ranked(mut models: Vec<String>) -> Vec<String> {
+    models.sort_by_key(|name| {
+        let thinking = name.contains("thinking") as u8;
+        let preview = name.contains("preview") as u8;
+        let version: Vec<u32> = name.split(|c: char| !c.is_ascii_digit()).filter_map(|n| n.parse().ok()).take(2).collect();
+        (thinking, std::cmp::Reverse(version), preview)
+    });
+    models
+}
+
 fn model(app: &AppHandle) -> Result<String, String> {
     let chosen = crate::settings::load(app).live_model.trim().to_string();
     if !chosen.is_empty() {
@@ -332,20 +345,52 @@ fn model(app: &AppHandle) -> Result<String, String> {
     }
     let mut known = MODEL.lock().unwrap();
     if known.is_empty() {
-        let mut models = crate::ai::live_models(app)?;
-        models.sort_by_key(|name| {
-            let thinking = name.contains("thinking") as u8;
-            let preview = name.contains("preview") as u8;
-            let version: Vec<u32> = name.split(|c: char| !c.is_ascii_digit()).filter_map(|n| n.parse().ok()).take(2).collect();
-            (thinking, std::cmp::Reverse(version), preview)
-        });
-        *known = models.into_iter().next().ok_or("Tu clave no tiene ningún modelo de voz en vivo.")?;
+        let models = ranked(crate::ai::live_models(app)?);
+        let away = TURNED_AWAY.lock().unwrap();
+        let welcome = models.iter().find(|name| !away.iter().any(|(gone, when)| gone == *name && when.elapsed() < TURNED_AWAY_FOR));
+        *known = welcome.or(models.first()).cloned().ok_or("Tu clave no tiene ningún modelo de voz en vivo.")?;
     }
     Ok(known.clone())
 }
 
+fn turned_away(app: &AppHandle, name: &str, why: &str) -> bool {
+    let refused = why.starts_with("Google cerró la conversación") || why.starts_with("Gemini Live no arrancó");
+    if !refused || !crate::settings::load(app).live_model.trim().is_empty() {
+        return false;
+    }
+    let mut away = TURNED_AWAY.lock().unwrap();
+    away.retain(|(gone, when)| gone != name && when.elapsed() < TURNED_AWAY_FOR);
+    away.push((name.to_string(), Instant::now()));
+    drop(away);
+    let mut known = MODEL.lock().unwrap();
+    if *known == name {
+        known.clear();
+    }
+    true
+}
+
+fn with_model<T>(app: &AppHandle, open: impl Fn(&str) -> Result<T, String>) -> Result<T, String> {
+    let mut tried: Vec<String> = Vec::new();
+    loop {
+        let name = model(app)?;
+        let why = match open(&name) {
+            Ok(done) => return Ok(done),
+            Err(why) => why,
+        };
+        tried.push(name.clone());
+        if tried.len() == 3 || !turned_away(app, &name, &why) {
+            return Err(why);
+        }
+        let next = model(app).unwrap_or_default();
+        if next.is_empty() || tried.contains(&next) {
+            return Err(why);
+        }
+        note(app, &format!("{name} no quiso ({why}), sigo con {next}"));
+    }
+}
+
 fn connect(app: &AppHandle) -> Result<Arc<Live>, String> {
-    let opened = open_live(app);
+    let opened = with_model(app, |name| open_live(app, name));
     if let Err(why) = &opened {
         if out_of_quota(why) {
             *RESTING.lock().unwrap() = Some(Instant::now());
@@ -362,22 +407,23 @@ pub(crate) fn reader(app: &AppHandle, voice: &str) -> Result<Socket, String> {
 
 fn reader_with(app: &AppHandle, voice: &str, instruction: &str) -> Result<Socket, String> {
     let key = crate::ai::key(app).ok_or("Falta la clave de Gemini.")?;
-    let model = model(app)?;
-    let socket = Socket::open(&key)?;
-    let mut setup = json!({ "setup": {
-        "model": format!("models/{model}"),
-        "generationConfig": { "responseModalities": ["AUDIO"], "speechConfig": { "voiceConfig": { "prebuiltVoiceConfig": { "voiceName": voice } } } },
-        "systemInstruction": { "parts": [{ "text": instruction }] },
-    } });
-    if cfg!(debug_assertions) {
-        setup["setup"]["outputAudioTranscription"] = json!({});
-    }
-    socket.send(&setup)?;
-    if socket.receive()?.get("setupComplete").is_none() {
-        return Err("Gemini Live no arrancó.".into());
-    }
-    crate::ai::count(app, &model);
-    Ok(socket)
+    with_model(app, |model| {
+        let socket = Socket::open(&key)?;
+        let mut setup = json!({ "setup": {
+            "model": format!("models/{model}"),
+            "generationConfig": { "responseModalities": ["AUDIO"], "speechConfig": { "voiceConfig": { "prebuiltVoiceConfig": { "voiceName": voice } } } },
+            "systemInstruction": { "parts": [{ "text": instruction }] },
+        } });
+        if cfg!(debug_assertions) {
+            setup["setup"]["outputAudioTranscription"] = json!({});
+        }
+        socket.send(&setup)?;
+        if socket.receive()?.get("setupComplete").is_none() {
+            return Err("Gemini Live no arrancó.".into());
+        }
+        crate::ai::count(app, model);
+        Ok(socket)
+    })
 }
 
 #[cfg(debug_assertions)]
@@ -462,7 +508,7 @@ pub(crate) fn read_aloud(socket: Socket, text: &str, mut chunk: impl FnMut(&[u8]
     read
 }
 
-fn open_live(app: &AppHandle) -> Result<Arc<Live>, String> {
+fn open_live(app: &AppHandle, model: &str) -> Result<Arc<Live>, String> {
     {
         let mut live = LIVE.lock().unwrap();
         if let Some(open) = live.as_ref().filter(|live| !live.dead.load(Ordering::Relaxed) && live.since.elapsed() < STALE_AFTER) {
@@ -473,7 +519,6 @@ fn open_live(app: &AppHandle) -> Result<Arc<Live>, String> {
         }
     }
     let key = crate::ai::key(app).ok_or("Falta la clave de Gemini.")?;
-    let model = model(app)?;
     let started = Instant::now();
     let socket = Arc::new(Socket::open(&key)?);
     let voice = crate::settings::load(app).live_voice;
@@ -1244,6 +1289,34 @@ mod tests {
         assert!(out_of_quota("Gemini Live no aceptó la conexión (429). Resource has been exhausted"));
         assert!(out_of_quota("Google cerró la conversación: You exceeded your current quota"));
         assert!(!out_of_quota("No hay conexión con Google."));
+    }
+
+    #[test]
+    fn only_gemini_voices_are_picked_and_the_newest_plain_one_goes_first() {
+        let listed = [
+            "gemini-3.5-transcribe-live",
+            "gemini-2.5-flash-native-audio-latest",
+            "gemini-2.5-flash-native-audio-preview-12-2025",
+            "gemini-3.1-flash-live-preview",
+            "gemini-3.8-live",
+            "gemini-3.8-live-extended-thinking",
+            "genie-4",
+            "gemini-robotics-er-2-streaming-preview",
+            "gemini-3.5-live-translate-preview",
+            "gemini-3.8-flash-tts",
+        ];
+        let voices: Vec<String> = listed.iter().filter(|name| crate::ai::talks(name)).map(|name| name.to_string()).collect();
+        assert!(!voices.iter().any(|name| name == "genie-4"));
+        assert_eq!(
+            ranked(voices),
+            [
+                "gemini-3.8-live",
+                "gemini-3.1-flash-live-preview",
+                "gemini-2.5-flash-native-audio-latest",
+                "gemini-2.5-flash-native-audio-preview-12-2025",
+                "gemini-3.8-live-extended-thinking",
+            ]
+        );
     }
 
     #[test]
